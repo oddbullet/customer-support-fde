@@ -4,7 +4,13 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "agentevals>=0.0.9",
+    "langchain>=1.4.0",
+    "langchain-openai>=1.6.1",
+    "langgraph>=1.2.11",
+    "pytest>=9.1.1",
+]
 
 [project.scripts]
 customer-support-fde = "customer_support_fde:main"
