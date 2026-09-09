@@ -1,2 +1,7 @@
+import sys
+
+from customer_support_fde.cli import run
+
+
 def main() -> None:
-    print("Hello from customer-support-fde!")
+    sys.exit(run())
