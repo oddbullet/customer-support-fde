@@ -1,9 +1,9 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 → 1.1.0
+- Version change: 1.1.0 → 1.2.0
 - Modified principles:
-  - IV. Observability & Versioning — observability mechanism changed from console/structured
-    stdout+stderr logging to LangSmith-based logging and tracing for agent behavior
+  - I. Test-First (NON-NEGOTIABLE) — added requirement that every test case carry a one-line
+    comment stating what it verifies and its test category (base/edge/error/regression/etc.)
 - Added sections: none
 - Removed sections: none
 - Deferred TODOs: none
@@ -16,10 +16,16 @@ Sync Impact Report
 ### I. Test-First (NON-NEGOTIABLE)
 Tests MUST be written before implementation for every feature or bug fix: write the test,
 get it reviewed/approved, watch it fail, then implement until it passes (red-green-refactor).
-No implementation commit MAY land without a corresponding failing-then-passing test.
+No implementation commit MAY land without a corresponding failing-then-passing test. Every
+test case MUST carry a one-line comment directly above its definition (above the outermost
+`@pytest.mark.parametrize` decorator, if present) stating what it verifies and tagging its
+category — `(base)` for standard/happy-path behavior, `(edge)` for boundary or unusual input,
+`(error)` for exception/failure propagation, `(regression)` for guarding a specific prior bug
+or invariant, with additional short, consistent tags allowed as needed.
 Rationale: this project handles customer-support-facing logic where silent regressions
 directly harm end users; enforcing test-first prevents unverified behavior from ever
-reaching main.
+reaching main. Per-test category comments make the coverage shape of the suite scannable at
+a glance and surface gaps (e.g., missing edge or error cases) during review.
 
 ### II. Library-First & CLI Interface
 Every feature MUST start as a standalone, importable module under `src/customer_support_fde/`
@@ -79,4 +85,4 @@ any complexity that conflicts with Principle III MUST be justified in writing in
 Runtime development guidance beyond this constitution belongs in `CLAUDE.md` or equivalent
 agent guidance files, not here.
 
-**Version**: 1.1.0 | **Ratified**: 2026-09-09 | **Last Amended**: 2026-09-09
+**Version**: 1.2.0 | **Ratified**: 2026-09-09 | **Last Amended**: 2026-09-10

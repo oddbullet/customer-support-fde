@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Kung Pao Chicken",
+    "price": 12.95,
+    "ingredients": ["chicken", "peanuts", "dried chili", "bell pepper", "scallion"]
+  },
+  {
+    "name": "Mapo Tofu",
+    "price": 11.50,
+    "ingredients": ["tofu", "ground pork", "chili bean paste", "scallion", "sichuan peppercorn"]
+  },
+  {
+    "name": "Spring Rolls",
+    "price": 6.95,
+    "ingredients": ["cabbage", "carrot", "wood ear mushroom", "wheat wrapper"]
+  },
+  {
+    "name": "Hot and Sour Soup",
+    "price": 5.50,
+    "ingredients": ["tofu", "wood ear mushroom", "egg", "bamboo shoot", "white pepper", "vinegar"]
+  },
+  {
+    "name": "Beef Chow Fun",
+    "price": 13.50,
+    "ingredients": ["beef", "rice noodle", "bean sprout", "scallion", "soy sauce"]
+  },
+  {
+    "name": "Vegetable Fried Rice",
+    "price": 9.95,
+    "ingredients": ["rice", "egg", "carrot", "peas", "scallion", "soy sauce"]
+  }
+]

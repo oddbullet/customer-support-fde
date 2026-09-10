@@ -2,8 +2,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from customer_support_fde import router_agent
-from customer_support_fde.router_agent import RouterDecision
+from customer_support_fde.nodes import router_agent
+from customer_support_fde.nodes.router_agent import RouterDecision
 from customer_support_fde.state import SupportState
 
 
@@ -13,6 +13,7 @@ def _fake_llm(decision: RouterDecision) -> MagicMock:
     return llm
 
 
+# A clear order/menu query routes to order_support and carries no sentiment. (base)
 def test_order_support_query_has_no_sentiment(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -35,6 +36,7 @@ def test_order_support_query_has_no_sentiment(monkeypatch):
     assert result["user_query"] == query
 
 
+# A clear complaint routes to refund and carries the negative sentiment through. (base)
 def test_refund_query_carries_negative_sentiment(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -57,6 +59,7 @@ def test_refund_query_carries_negative_sentiment(monkeypatch):
     assert result["user_query"] == query
 
 
+# Regardless of which of the three sentiment values the LLM returns, it passes through unchanged. (edge)
 @pytest.mark.parametrize("sentiment", ["positive", "neutral", "negative"])
 def test_refund_sentiment_is_always_one_of_the_three_fixed_categories(
     monkeypatch, sentiment
@@ -77,6 +80,7 @@ def test_refund_sentiment_is_always_one_of_the_three_fixed_categories(
     assert result["sentiment"] in ("positive", "neutral", "negative")
 
 
+# Vague or mixed-signal queries stay "unclear" and keep whatever sentiment was returned. (edge)
 @pytest.mark.parametrize(
     "query",
     [
@@ -104,6 +108,7 @@ def test_ambiguous_or_mixed_signal_query_stays_unclear_and_keeps_sentiment(
     assert result["sentiment"] == "neutral"
 
 
+# An LLM call failure in router_agent raises rather than returning partial state. (error)
 def test_llm_call_failure_propagates_rather_than_returning_partial_state(monkeypatch):
     failing_llm = MagicMock()
     failing_llm.invoke.side_effect = RuntimeError("OpenRouter request failed")

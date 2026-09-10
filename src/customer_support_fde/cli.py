@@ -6,8 +6,11 @@ import uuid
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
-from customer_support_fde.clarify_intent import QUESTION
 from customer_support_fde.graph import build_graph
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -38,6 +41,12 @@ def _print_result(state, as_json: bool) -> None:
 
 
 def run(argv: list[str] | None = None) -> int:
+    # Model-composed replies can contain characters (em dashes, curly quotes)
+    # that the default console codec on Windows can't encode; without this,
+    # printing such a reply crashes the CLI mid-conversation.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     args = _parse_args(argv)
     query = _read_query(args)
 
@@ -46,11 +55,19 @@ def run(argv: list[str] | None = None) -> int:
 
     try:
         result = graph.invoke(
-            {"user_query": query, "destination": "order_support", "sentiment": None},
+            {
+                "user_query": query,
+                "destination": "order_support",
+                "sentiment": None,
+                "messages": [],
+                "menu_items": {},
+                "order_confirmed": False,
+                "order_ticket": None,
+            },
             config,
         )
         while "__interrupt__" in result:
-            print(QUESTION)
+            print(result["__interrupt__"][0].value)
             answer = sys.stdin.readline().rstrip("\n")
             result = graph.invoke(Command(resume=answer), config)
     except Exception as exc:
