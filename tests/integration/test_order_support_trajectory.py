@@ -55,6 +55,7 @@ def _mock_menu(monkeypatch) -> None:
     )
 
 
+# Asking about the menu triggers a get_menu tool call, then the graph pauses for the customer. (base)
 def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -94,6 +95,7 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
     assert "__interrupt__" in result
 
 
+# Adding the same and different items across three separate turns accumulates quantities correctly. (base)
 def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -153,6 +155,7 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
     assert final_menu_items == {"Kung Pao Chicken": 2, "Spring Rolls": 1}
 
 
+# Guards that per-turn message reset in await_customer keeps message count roughly constant. (regression)
 def test_messages_do_not_accumulate_across_turns(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -215,6 +218,7 @@ def test_messages_do_not_accumulate_across_turns(monkeypatch):
     assert len(messages_after_turn_3) <= len(messages_after_turn_1) + 2
 
 
+# A full multi-turn conversation confirms the order and produces the expected ticket and graph trajectory. (base)
 def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -306,6 +310,7 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
     assert match_result["score"] is True
 
 
+# Confirming an empty cart never advances the graph to confirm_node/ticket_gen_node. (edge)
 def test_confirming_with_an_empty_cart_never_reaches_confirm_node(monkeypatch):
     monkeypatch.setattr(
         router_agent,

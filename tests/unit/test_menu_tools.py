@@ -29,6 +29,7 @@ SAMPLE_MENU = [
 ]
 
 
+# An exact name match resolves directly to that menu item. (base)
 def test_exact_name_match_resolves_found():
     match = resolve_menu_item("Kung Pao Chicken", SAMPLE_MENU)
 
@@ -36,6 +37,7 @@ def test_exact_name_match_resolves_found():
     assert match.item["name"] == "Kung Pao Chicken"
 
 
+# Matching ignores case, so a lowercase query still resolves the exact item. (edge)
 def test_case_insensitive_exact_match_resolves_found():
     match = resolve_menu_item("kung pao chicken", SAMPLE_MENU)
 
@@ -43,6 +45,7 @@ def test_case_insensitive_exact_match_resolves_found():
     assert match.item["name"] == "Kung Pao Chicken"
 
 
+# A substring query resolves when it uniquely identifies one menu item. (edge)
 def test_partial_substring_match_resolves_found_when_unique():
     match = resolve_menu_item("Mapo", SAMPLE_MENU)
 
@@ -50,6 +53,7 @@ def test_partial_substring_match_resolves_found_when_unique():
     assert match.item["name"] == "Mapo Tofu"
 
 
+# Fuzzy matching tolerates a minor typo and still resolves the closest item. (edge)
 def test_minor_typo_resolves_found():
     match = resolve_menu_item("Sprng Rolls", SAMPLE_MENU)
 
@@ -57,12 +61,14 @@ def test_minor_typo_resolves_found():
     assert match.item["name"] == "Spring Rolls"
 
 
+# A query with no candidate above the similarity cutoff resolves as not found. (edge)
 def test_not_found_when_nothing_meets_the_cutoff():
     match = resolve_menu_item("Pizza", SAMPLE_MENU)
 
     assert match.status == "not_found"
 
 
+# Two items scoring equally at the top resolve as a tie listing both candidates. (edge)
 def test_tie_when_two_items_score_equally_at_the_top():
     match = resolve_menu_item("Beef Noodle", SAMPLE_MENU)
 
@@ -70,6 +76,7 @@ def test_tie_when_two_items_score_equally_at_the_top():
     assert set(match.candidates) == {"Beef Noodle Soup", "Beef Noodle Bowl"}
 
 
+# Sanity-checks that the real menu.json data is present and well-formed. (base)
 def test_real_menu_json_has_at_least_five_well_formed_items():
     menu = _load_menu()
 

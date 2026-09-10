@@ -99,6 +99,7 @@ def _run_inner_loop(state: dict) -> dict:
     return state
 
 
+# A get_menu tool call returns a listing containing every seeded menu item. (base)
 def test_get_menu_tool_call_lists_every_seeded_item(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -120,6 +121,7 @@ def test_get_menu_tool_call_lists_every_seeded_item(monkeypatch):
         assert item["name"] in tool_message.content
 
 
+# A get_menu_item tool call for a matched name returns that item's details. (base)
 def test_get_menu_item_tool_call_found(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -143,6 +145,7 @@ def test_get_menu_item_tool_call_found(monkeypatch):
     assert "tofu" in tool_message.content
 
 
+# A get_menu_item tool call for an ambiguous name reports both tied candidates. (edge)
 def test_get_menu_item_tool_call_tie(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -170,6 +173,7 @@ def test_get_menu_item_tool_call_tie(monkeypatch):
     assert "Beef Noodle Bowl" in tool_message.content
 
 
+# A get_menu_item tool call for an unmatched name reports it was not found. (edge)
 def test_get_menu_item_tool_call_not_found(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -192,6 +196,7 @@ def test_get_menu_item_tool_call_not_found(monkeypatch):
     assert "No menu item matches" in tool_message.content
 
 
+# An add_items_to_cart tool call for one item updates the state's menu_items. (base)
 def test_add_items_to_cart_tool_call_updates_menu_items(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -215,6 +220,7 @@ def test_add_items_to_cart_tool_call_updates_menu_items(monkeypatch):
     assert state["menu_items"] == {"Kung Pao Chicken": 1}
 
 
+# An add_items_to_cart tool call with multiple names updates all of them at once. (base)
 def test_add_items_to_cart_tool_call_batch_updates_menu_items(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -240,6 +246,7 @@ def test_add_items_to_cart_tool_call_batch_updates_menu_items(monkeypatch):
     assert state["menu_items"] == {"Kung Pao Chicken": 1, "Spring Rolls": 1}
 
 
+# Unmatched/ambiguous names in an add_items_to_cart call leave menu_items unchanged. (edge)
 def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_menu_items_unchanged(
     monkeypatch,
 ):
@@ -265,6 +272,7 @@ def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_menu_items_unchange
     assert state["menu_items"] == {}
 
 
+# await_customer interrupts for the next message and resets state from the reply. (base)
 def test_await_customer_interrupts_when_not_confirmed(monkeypatch):
     fake_interrupt = MagicMock(return_value="add one")
     monkeypatch.setattr(order_support_agent, "interrupt", fake_interrupt)
@@ -280,6 +288,7 @@ def test_await_customer_interrupts_when_not_confirmed(monkeypatch):
     assert result["user_query"] == "add one"
 
 
+# await_customer skips the interrupt once the order is already confirmed. (edge)
 def test_await_customer_does_not_interrupt_when_confirmed(monkeypatch):
     fake_interrupt = MagicMock()
     monkeypatch.setattr(order_support_agent, "interrupt", fake_interrupt)
@@ -293,6 +302,7 @@ def test_await_customer_does_not_interrupt_when_confirmed(monkeypatch):
     assert result["order_confirmed"] is True
 
 
+# An LLM call failure in call_model raises rather than returning partial state. (error)
 def test_call_model_llm_failure_propagates_rather_than_returning_partial_state(
     monkeypatch,
 ):

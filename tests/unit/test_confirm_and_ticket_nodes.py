@@ -14,6 +14,7 @@ def _base_state() -> dict:
     }
 
 
+# confirm_node is a pass-through that returns state unchanged. (base)
 def test_confirm_node_returns_state_unchanged():
     state = _base_state()
 
@@ -22,6 +23,7 @@ def test_confirm_node_returns_state_unchanged():
     assert result == state
 
 
+# ticket_gen_node builds order_ticket from the cart, leaving other state untouched. (base)
 def test_ticket_gen_node_sets_order_ticket_from_menu_items():
     state = _base_state()
 

@@ -42,6 +42,7 @@ def _invoke_add(names, menu_items):
     )
 
 
+# Adds a single matched item to an empty cart at quantity one. (base)
 def test_found_name_added_to_empty_cart_has_quantity_one():
     result = _invoke_add(["Kung Pao Chicken"], {})
 
@@ -49,12 +50,14 @@ def test_found_name_added_to_empty_cart_has_quantity_one():
     assert result.update["menu_items"] == {"Kung Pao Chicken": 1}
 
 
+# Duplicate names within one call each increment the same item's quantity. (edge)
 def test_adding_same_item_twice_in_one_call_increments_quantity():
     result = _invoke_add(["Kung Pao Chicken", "Kung Pao Chicken"], {})
 
     assert result.update["menu_items"] == {"Kung Pao Chicken": 2}
 
 
+# Quantity for an item persists and accumulates across separate tool calls. (base)
 def test_adding_same_item_across_two_calls_increments_quantity():
     first = _invoke_add(["Kung Pao Chicken"], {})
     second = _invoke_add(["Kung Pao Chicken"], first.update["menu_items"])
@@ -62,6 +65,7 @@ def test_adding_same_item_across_two_calls_increments_quantity():
     assert second.update["menu_items"] == {"Kung Pao Chicken": 2}
 
 
+# An ambiguous (tied) name is not added, and both candidates are reported. (edge)
 def test_tie_name_leaves_cart_unchanged_but_is_reported():
     result = _invoke_add(["Beef Noodle"], {})
 
@@ -71,6 +75,7 @@ def test_tie_name_leaves_cart_unchanged_but_is_reported():
     assert "Beef Noodle Bowl" in tool_message.content
 
 
+# An unmatched name is not added, and a not-found message is reported. (edge)
 def test_not_found_name_leaves_cart_unchanged_but_is_reported():
     result = _invoke_add(["Pizza"], {})
 
@@ -79,12 +84,14 @@ def test_not_found_name_leaves_cart_unchanged_but_is_reported():
     assert "No menu item matches" in tool_message.content
 
 
+# In a mixed batch, only the successfully matched names are added to the cart. (edge)
 def test_batch_with_mixed_results_only_applies_found_items():
     result = _invoke_add(["Kung Pao Chicken", "Pizza", "Beef Noodle"], {})
 
     assert result.update["menu_items"] == {"Kung Pao Chicken": 1}
 
 
+# The tool must copy the cart rather than mutate the caller's state dict in place. (regression)
 def test_never_mutates_input_menu_items_in_place():
     original = {"Spring Rolls": 1}
 
@@ -93,6 +100,7 @@ def test_never_mutates_input_menu_items_in_place():
     assert original == {"Spring Rolls": 1}
 
 
+# Confirming a non-empty cart sets order_confirmed and returns a confirmation message. (base)
 def test_mark_order_confirmed_sets_true_for_non_empty_cart():
     result = mark_order_confirmed.func(
         state={"menu_items": {"Spring Rolls": 1}}, tool_call_id="call_1"
@@ -102,6 +110,7 @@ def test_mark_order_confirmed_sets_true_for_non_empty_cart():
     assert result.update["order_confirmed"] is True
 
 
+# Confirming an empty cart does not set order_confirmed, just informs the customer. (edge)
 def test_mark_order_confirmed_omits_flag_for_empty_cart():
     result = mark_order_confirmed.func(state={"menu_items": {}}, tool_call_id="call_1")
 

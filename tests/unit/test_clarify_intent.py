@@ -7,6 +7,7 @@ from customer_support_fde.nodes.clarify_intent import QUESTION, clarify_intent
 from customer_support_fde.state import SupportState
 
 
+# Answers "1" and "2" both route to order_support and clear any sentiment. (base)
 @pytest.mark.parametrize("answer", ["1", "2"])
 def test_order_support_answers_resolve_destination_with_no_sentiment(
     monkeypatch, answer
@@ -26,6 +27,7 @@ def test_order_support_answers_resolve_destination_with_no_sentiment(
     assert result["sentiment"] is None
 
 
+# Answer "3" routes to refund and preserves the sentiment already in state. (base)
 def test_refund_answer_forwards_the_sentiment_already_in_state(monkeypatch):
     monkeypatch.setattr(
         clarify_intent_module,
@@ -44,6 +46,7 @@ def test_refund_answer_forwards_the_sentiment_already_in_state(monkeypatch):
     assert result["sentiment"] == "negative"
 
 
+# An unrecognized answer re-prompts with the same question instead of failing. (edge)
 def test_unrecognized_answer_re_asks_the_same_question(monkeypatch):
     fake_interrupt = MagicMock(side_effect=["banana", "3"])
     monkeypatch.setattr(clarify_intent_module, "interrupt", fake_interrupt)
