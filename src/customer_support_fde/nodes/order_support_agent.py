@@ -7,7 +7,11 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 
 from customer_support_fde.state import SupportState
-from customer_support_fde.tools.cart_tools import add_items_to_cart, mark_order_confirmed
+from customer_support_fde.tools.cart_tools import (
+    add_items_to_cart,
+    mark_order_confirmed,
+    remove_items_from_cart,
+)
 from customer_support_fde.tools.menu_tools import get_menu, get_menu_item
 
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -18,11 +22,19 @@ with menu questions, ingredient/allergy questions, recommendations, and \
 building their order. Use the available tools to look up real menu \
 information and manage the cart rather than guessing. After a successful \
 add to the cart, ask the customer if there's anything else they'd like. \
+You can also remove items the customer no longer wants from the cart, \
+either entirely or by a specific quantity. \
 When a tool reports multiple equally-close matches for a name, ask the \
 customer which one they meant instead of guessing.
 """
 
-_ORDER_TOOLS = [get_menu, get_menu_item, add_items_to_cart, mark_order_confirmed]
+_ORDER_TOOLS = [
+    get_menu,
+    get_menu_item,
+    add_items_to_cart,
+    remove_items_from_cart,
+    mark_order_confirmed,
+]
 
 order_tools = ToolNode(_ORDER_TOOLS)
 

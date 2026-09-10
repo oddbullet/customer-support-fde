@@ -272,6 +272,60 @@ def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_menu_items_unchange
     assert state["menu_items"] == {}
 
 
+# A remove_items_from_cart tool call for an unqualified name deletes the entry entirely. (base)
+def test_remove_items_from_cart_tool_call_unqualified_deletes_entry(monkeypatch):
+    tool_call_response = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "remove_items_from_cart",
+                "args": {"items": [{"name": "Kung Pao Chicken"}]},
+                "id": "call_1",
+            }
+        ],
+    )
+    final_response = AIMessage(content="Removed it! Anything else?")
+    _patch_llm(monkeypatch, [tool_call_response, final_response])
+    monkeypatch.setattr(
+        "customer_support_fde.tools.menu_tools._load_menu",
+        lambda: SAMPLE_MENU,
+    )
+
+    state = _base_state("Remove the kung pao chicken")
+    state["menu_items"] = {"Kung Pao Chicken": 2}
+
+    state = _run_inner_loop(state)
+
+    assert state["menu_items"] == {}
+
+
+# A remove_items_from_cart tool call with a quantity decrements and keeps the entry. (base)
+def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatch):
+    tool_call_response = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "remove_items_from_cart",
+                "args": {"items": [{"name": "Kung Pao Chicken", "quantity": 1}]},
+                "id": "call_1",
+            }
+        ],
+    )
+    final_response = AIMessage(content="Removed one! Anything else?")
+    _patch_llm(monkeypatch, [tool_call_response, final_response])
+    monkeypatch.setattr(
+        "customer_support_fde.tools.menu_tools._load_menu",
+        lambda: SAMPLE_MENU,
+    )
+
+    state = _base_state("Remove one kung pao chicken")
+    state["menu_items"] = {"Kung Pao Chicken": 3}
+
+    state = _run_inner_loop(state)
+
+    assert state["menu_items"] == {"Kung Pao Chicken": 2}
+
+
 # await_customer interrupts for the next message and resets state from the reply. (base)
 def test_await_customer_interrupts_when_not_confirmed(monkeypatch):
     fake_interrupt = MagicMock(return_value="add one")

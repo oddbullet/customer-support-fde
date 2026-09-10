@@ -155,6 +155,71 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
     assert final_menu_items == {"Kung Pao Chicken": 2, "Spring Rolls": 1}
 
 
+# Adding two items then removing one entirely in a later turn leaves only the other. (base)
+def test_add_then_remove_across_turns_reflects_removal(monkeypatch):
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+    _mock_menu(monkeypatch)
+
+    def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
+        return AIMessage(
+            content="", tool_calls=[{"name": name, "args": args, "id": call_id}]
+        )
+
+    order_llm = _fake_order_llm(
+        [
+            _tool_call(
+                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+            ),
+            AIMessage(content="Added! Anything else?"),
+            _tool_call("add_items_to_cart", {"names": ["Spring Rolls"]}, "call_2"),
+            AIMessage(content="Added! Anything else?"),
+            _tool_call(
+                "remove_items_from_cart",
+                {"items": [{"name": "Kung Pao Chicken"}]},
+                "call_3",
+            ),
+            AIMessage(content="Removed! Anything else?"),
+            _tool_call("mark_order_confirmed", {}, "call_4"),
+            AIMessage(content="Great, your order is confirmed!"),
+        ]
+    )
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "Add a kung pao chicken",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="Also add spring rolls"), config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="Remove the kung pao chicken"), config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="That's all, I'm done"), config)
+    assert "__interrupt__" not in result
+
+    final_state = graph.get_state(config).values
+    assert final_state["menu_items"] == {"Spring Rolls": 1}
+    assert final_state["order_ticket"] == {"items": {"Spring Rolls": 1}}
+
+
 # Guards that per-turn message reset in await_customer keeps message count roughly constant. (regression)
 def test_messages_do_not_accumulate_across_turns(monkeypatch):
     monkeypatch.setattr(
