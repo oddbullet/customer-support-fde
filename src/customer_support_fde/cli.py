@@ -8,6 +8,10 @@ from langgraph.types import Command
 
 from customer_support_fde.graph import build_graph
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="customer-support-fde")
