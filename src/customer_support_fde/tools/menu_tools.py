@@ -73,11 +73,26 @@ def _render_match(match: MenuMatch) -> str:
 
 @tool
 def get_menu() -> str:
-    """Return every item currently on the menu, with price and ingredients."""
+    """Return every item currently on the menu, with price and ingredients.
+
+    Returns:
+        str: A newline-separated listing of every menu item (name, price,
+        ingredients), or a message saying the menu is empty.
+    """
     return _render_menu(_load_menu())
 
 
 @tool
 def get_menu_item(name: str) -> str:
-    """Look up details for one menu item by name (fuzzy-matched against the menu)."""
+    """Look up details for one menu item by name (fuzzy-matched against the menu).
+
+    Args:
+        name: The menu item name to search for. Matched against the menu
+            with fuzzy string matching, so it need not be exact.
+
+    Returns:
+        str: The matched item's name, price, and ingredients; a prompt
+        listing the candidates if multiple items tie; or a not-found
+        message if nothing matches.
+    """
     return _render_match(resolve_menu_item(name, _load_menu()))

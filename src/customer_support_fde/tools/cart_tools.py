@@ -24,7 +24,11 @@ def add_items_to_cart(
     state: Annotated[SupportState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
-    """Add one or more menu items (by name) to the customer's cart."""
+    """Add one or more menu items (by name) to the customer's cart.
+
+    Args:
+        names: Menu item names to add, one entry per unit.
+    """
     cart = dict(state["menu_items"])
     menu = _load_menu()
     summaries = []
@@ -50,7 +54,9 @@ def mark_order_confirmed(
     state: Annotated[SupportState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
-    """Confirm the customer is done ordering, finalizing the current cart."""
+    """Confirm the customer is done ordering, finalizing the current cart.
+
+    """
     if not state["menu_items"]:
         return Command(
             update={
