@@ -2,8 +2,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from customer_support_fde import clarify_intent as clarify_intent_module
-from customer_support_fde.clarify_intent import QUESTION, clarify_intent
+from customer_support_fde.nodes import clarify_intent as clarify_intent_module
+from customer_support_fde.nodes.clarify_intent import QUESTION, clarify_intent
 from customer_support_fde.state import SupportState
 
 

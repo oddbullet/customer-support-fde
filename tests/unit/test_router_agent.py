@@ -2,8 +2,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from customer_support_fde import router_agent
-from customer_support_fde.router_agent import RouterDecision
+from customer_support_fde.nodes import router_agent
+from customer_support_fde.nodes.router_agent import RouterDecision
 from customer_support_fde.state import SupportState
 
 
