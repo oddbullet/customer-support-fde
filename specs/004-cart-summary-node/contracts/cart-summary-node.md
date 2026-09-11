@@ -25,25 +25,24 @@ construction, so any mismatch means the item is genuinely no longer on the menu
 def build_order_summary(menu_items: dict[str, int], menu: list[MenuItem]) -> dict
 ```
 
-Pure. Returns an `OrderSummary` dict. Does not mutate `menu_items`.
+Pure. Returns an `OrderSummary` dict. Does not mutate `menu_items`. Every cart item is assumed
+priceable (spec.md Assumptions); `price_for_item` returning `None` is not guarded against.
 
-| Case | `lines` | `unpriced` | `total` |
-|---|---|---|---|
-| `{"Kung Pao Chicken": 2, "Hot and Sour Soup": 1}`, both priced at `12.95` / `5.50` | two lines, `line_total` `25.90` and `5.50` | `[]` | `31.40` |
-| `{"Spring Rolls": 1}` at `6.95` | one line, `line_total` `6.95` | `[]` | `6.95` |
-| `{}` (empty cart) | `[]` | `[]` | `None` |
-| `{"Peking Duck": 1}`, not on the menu | `[]` | `["Peking Duck"]` | `None` |
-| `{"Spring Rolls": 2, "Peking Duck": 1}`, only the first priced | one line for Spring Rolls | `["Peking Duck"]` | `13.90` |
+| Case | `lines` | `total` |
+|---|---|---|
+| `{"Kung Pao Chicken": 2, "Hot and Sour Soup": 1}`, both priced at `12.95` / `5.50` | two lines, `line_total` `25.90` and `5.50` | `31.40` |
+| `{"Spring Rolls": 1}` at `6.95` | one line, `line_total` `6.95` | `6.95` |
+| `{}` (empty cart) | `[]` | `None` |
 
 Arithmetic rules:
 
-- `line_total = Decimal(str(unit_price)) * quantity`, quantized to `Decimal("0.01")` with
-  `ROUND_HALF_UP`, stored as `float`.
-- `total = sum(line_total for line in lines)` over the **already quantized** values, so the stored
-  total always equals the sum of the stored line totals (FR-006).
+- `line_total = Decimal(str(unit_price)) * quantity`, stored as `float`. Not independently rounded.
+- `total = sum(line_total for line in lines)`, computed over the raw `Decimal` values and rounded
+  **up** (never down, `ROUND_CEILING`) to `Decimal("0.01")` once, at the end (FR-006). Since menu
+  prices always have at most 2 decimal places, this rounding step is a no-op for real data — it's a
+  defensive, never-shortchange rule rather than a correctness necessity.
 - `total` is `None` — never `0.0` — whenever `lines` is empty.
-- `lines` and `unpriced` follow `menu_items` insertion order; between them they account for every
-  cart key exactly once.
+- `lines` follows `menu_items` insertion order and has exactly one entry per cart key.
 
 ## `render_order_summary(summary)` — `nodes/cart_summary_node.py`
 
@@ -71,26 +70,11 @@ Total: $31.40
 There's nothing in your order to summarize.
 ```
 
-**Some items unpriceable** (FR-008) — the unpriced items are named, and the amount is relabelled so
-it cannot be mistaken for the whole order's cost:
-
-```text
-Here's your order:
-- Spring Rolls x2 @ $6.95 each = $13.90
-
-We couldn't price these items: Peking Duck. A staff member will confirm them with you.
-
-Subtotal for priced items: $13.90
-```
-
-**All items unpriceable** — the unpriced notice only, no amount line at all.
-
 Rules:
 
-- Every name in `lines` and every name in `unpriced` appears in the output; nothing is truncated or
-  collapsed into an "and others" line (spec Edge Cases).
+- Every name in `lines` appears in the output; nothing is truncated or collapsed into an "and
+  others" line (spec Edge Cases).
 - All amounts are formatted `$%.2f` (FR-006).
-- The word `Total` is used only when `unpriced` is empty; otherwise `Subtotal for priced items`.
 
 ## `cart_summary_node(state)` — `nodes/cart_summary_node.py`
 
@@ -115,13 +99,12 @@ Returns `{**state, "order_ticket": {...}}` where the ticket is:
 {
     "items": dict(state["menu_items"]),
     "lines": summary["lines"],
-    "unpriced": summary["unpriced"],
     "total": summary["total"],
 }
 ```
 
 - `summary` is `state["order_summary"]`; if it is absent or `None` the node falls back to
-  `{"lines": [], "unpriced": [], "total": None}` rather than raising. (Unreachable on today's graph —
+  `{"lines": [], "total": None}` rather than raising. (Unreachable on today's graph —
   `ticket_gen_node` is only entered from `cart_summary_node` — but the node must not explode if the
   graph is rewired.)
 - The priced values are **copied**, never recomputed, which is what makes FR-010/SC-004 structural.

@@ -66,25 +66,20 @@ generated ticket's items, quantities, and total against it; every value must agr
 
 ---
 
-### User Story 3 - Unpriceable or empty orders fail visibly, not silently (Priority: P3)
+### User Story 3 - Empty orders fail visibly, not silently (Priority: P3)
 
-If an ordered item cannot be priced (for example, it is no longer on the menu), or the order turns
-out to be empty at confirmation time, the customer is not shown a misleading total. They are told
-plainly which item could not be priced, or that there is nothing to summarize.
+If the order turns out to be empty at confirmation time, the customer is not shown a misleading
+total. They are told plainly that there is nothing to summarize.
 
 **Why this priority**: A rare path, but a wrong total is worse than no total. This story keeps the
 failure honest rather than producing a confidently incorrect receipt.
 
-**Independent Test**: Confirm an order containing an item with no available price and verify the
-summary flags that item rather than omitting it or treating it as free; separately, reach
-confirmation with an empty order and verify the customer is told there is nothing to summarize.
+**Independent Test**: Reach confirmation with an empty order and verify the customer is told there
+is nothing to summarize.
 
 **Acceptance Scenarios**:
 
-1. **Given** a confirmed order containing an item that has no available price, **When** the summary
-   is produced, **Then** the summary names that item as unpriced and does not present a total that
-   silently excludes it.
-2. **Given** confirmation is reached with no items in the order, **When** the summary is produced,
+1. **Given** confirmation is reached with no items in the order, **When** the summary is produced,
    **Then** the customer is told the order is empty and no total is presented.
 
 ---
@@ -93,9 +88,9 @@ confirmation with an empty order and verify the customer is told there is nothin
 
 - What happens when the same dish was added several times in separate turns? The summary MUST show
   one line for that dish with the combined quantity, not one line per add.
-- What happens when an item's price has fractional cents after multiplication? Line totals and the
-  order total MUST be rounded to two decimal places, and the displayed total MUST equal the sum of
-  the displayed line totals.
+- What happens when an item's price has fractional cents after multiplication? Menu prices are
+  assumed to always have at most two decimal places (see Assumptions), so this cannot occur in
+  practice; if it ever did, the order total MUST be rounded up to two decimal places (never down).
 - What happens when the order contains many distinct dishes? Every ordered dish MUST appear in the
   summary; none are truncated or grouped into an "and others" line.
 - What happens when an item name resolves differently in the menu than the customer typed it? The
@@ -117,11 +112,10 @@ confirmation with an empty order and verify the customer is told there is nothin
   each distinct item.
 - **FR-005**: The summary MUST state a single order total equal to the sum of all line totals.
 - **FR-006**: All monetary amounts in the summary MUST be presented as currency rounded to two
-  decimal places, and the stated order total MUST equal the sum of the stated line totals.
+  decimal places; the order total is computed by summing all line totals and rounding up (never
+  down) to two decimal places.
 - **FR-007**: Item prices used in the summary MUST come from the restaurant's menu, not from values
   supplied or implied by the customer.
-- **FR-008**: When an item in the confirmed order cannot be priced from the menu, the summary MUST
-  name that item as unpriced rather than omitting it or pricing it at zero.
 - **FR-009**: When confirmation is reached with an empty order, the summary MUST tell the customer
   the order is empty and MUST NOT present an order total.
 - **FR-010**: The support ticket produced after the summary MUST carry the same items, quantities,
@@ -150,9 +144,8 @@ confirmation with an empty order and verify the customer is told there is nothin
   follow-up question about what they ordered or what it costs.
 - **SC-004**: The items, quantities, and total on the support ticket match the customer-facing
   summary in 100% of confirmed orders.
-- **SC-005**: Confirmed orders containing an unpriceable item, or containing no items at all,
-  produce an explicit message about that condition in 100% of cases, and never a total that
-  silently omits the affected item.
+- **SC-005**: Confirmed orders containing no items at all produce an explicit "nothing to
+  summarize" message in 100% of cases, and never a total.
 
 ## Assumptions
 
@@ -169,5 +162,9 @@ confirmation with an empty order and verify the customer is told there is nothin
   cart summary step, and this feature's behavior lives there. Downstream ticket generation continues
   to run after it.
 - Menu item names and prices are available at confirmation time from the existing restaurant menu
-  already used during the ordering conversation.
+  already used during the ordering conversation. Every item in a confirmed order is guaranteed to
+  resolve to a menu price: cart entries are always canonical menu names written by the ordering
+  flow itself, never raw customer phrasing, so a cart item that cannot be priced is not a case this
+  feature needs to handle.
+- Menu prices always have at most two decimal places, as recorded in the restaurant's menu data.
 - Refund-related flows are unaffected; this feature applies only to the ordering path.

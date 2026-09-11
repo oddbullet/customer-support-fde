@@ -2,8 +2,8 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import tools_condition
 
+from customer_support_fde.nodes.cart_summary_node import cart_summary_node
 from customer_support_fde.nodes.clarify_intent import clarify_intent
-from customer_support_fde.nodes.confirm_node import confirm_node
 from customer_support_fde.nodes.order_support_agent import (
     await_customer,
     call_model,
@@ -31,7 +31,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_node("call_model", call_model)
     graph.add_node("order_tools", order_tools)
     graph.add_node("await_customer", await_customer)
-    graph.add_node("confirm_node", confirm_node)
+    graph.add_node("cart_summary", cart_summary_node)
     graph.add_node("ticket_gen_node", ticket_gen_node)
     graph.add_node("refund_agent", refund_agent)
 
@@ -62,9 +62,9 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_conditional_edges(
         "await_customer",
         _route_from_await_customer,
-        {"continue": "call_model", "confirmed": "confirm_node"},
+        {"continue": "call_model", "confirmed": "cart_summary"},
     )
-    graph.add_edge("confirm_node", "ticket_gen_node")
+    graph.add_edge("cart_summary", "ticket_gen_node")
     graph.add_edge("ticket_gen_node", END)
     graph.add_edge("refund_agent", END)
 

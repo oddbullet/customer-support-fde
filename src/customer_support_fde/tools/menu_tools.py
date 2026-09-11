@@ -41,6 +41,13 @@ def resolve_menu_item(name: str, menu: list[MenuItem]) -> MenuMatch:
     return MenuMatch(status="found", item=top[0])
 
 
+def price_for_item(name: str, menu: list[MenuItem]) -> float | None:
+    for item in menu:
+        if item["name"] == name:
+            return item["price"]
+    return None
+
+
 @lru_cache(maxsize=1)
 def _load_menu() -> list[MenuItem]:
     data = (

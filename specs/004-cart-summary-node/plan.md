@@ -60,12 +60,13 @@ is introduced.
 
 **Constraints**: Summary values MUST be derived from the recorded cart and menu prices, never from
 customer-supplied or model-generated numbers (FR-007, FR-011) — which rules out asking the LLM to
-compose the recap. The displayed order total MUST equal the sum of the displayed line totals after
-rounding (FR-006), so line totals are rounded first and the total is the sum of the rounded lines,
-not a rounded sum of unrounded products. Repeat additions MUST appear as one consolidated line
-(FR-003) — already guaranteed by `menu_items` being a `dict[str, int]`. An unpriceable item MUST be
-named rather than dropped or zero-priced (FR-008), and an empty cart MUST produce no total (FR-009).
-The ticket MUST carry the same numbers shown to the customer (FR-010).
+compose the recap. The order total is the sum of all raw line values, rounded up (never down) to two
+decimals once (FR-006) — sum-then-round rather than round-then-sum, since menu prices are assumed to
+always have ≤2 decimal places (spec.md Assumptions), making the two orderings equivalent for real
+data. Repeat additions MUST appear as one consolidated line (FR-003) — already guaranteed by
+`menu_items` being a `dict[str, int]`. Every cart item is assumed priceable by construction, so
+there is no unpriceable-item branch; an empty cart MUST produce no total (FR-009). The ticket MUST
+carry the same numbers shown to the customer (FR-010).
 
 **Scale/Scope**: One renamed module gaining two pure functions (`build_order_summary`,
 `render_order_summary`) plus the node itself; one new helper in `tools/menu_tools.py`; one new
@@ -78,11 +79,11 @@ initial-state and output changes. No new graph nodes, no new tools, no new edges
 
 - **I. Test-First (NON-NEGOTIABLE)**: PASS (planned) — failing tests land before implementation, in
   this order: `price_for_item` unit cases; `build_order_summary` cases (multi-item totalling,
-  single unit, rounding where line totals carry fractional cents, unpriced item, empty cart, input
-  not mutated); `render_order_summary` cases (every item named, total line present, empty-cart
-  wording, unpriced wording); `cart_summary_node` (writes `order_summary`, appends one `AIMessage`);
-  `ticket_gen_node` (ticket mirrors `order_summary`); then the trajectory updates. Every case carries
-  the required one-line `(base)`/`(edge)`/`(error)`/`(regression)` comment.
+  single unit, always-rounds-up total, empty cart, input not mutated); `render_order_summary` cases
+  (every item named, total line present, empty-cart wording); `cart_summary_node` (writes
+  `order_summary`, appends one `AIMessage`); `ticket_gen_node` (ticket mirrors `order_summary`); then
+  the trajectory updates. Every case carries the required one-line
+  `(base)`/`(edge)`/`(error)`/`(regression)` comment.
 - **II. Library-First & CLI Interface**: PASS (planned) — `build_order_summary` and
   `render_order_summary` are plain importable pure functions taking a cart dict and returning
   data/text, with no LangGraph coupling; only the thin `cart_summary_node` wrapper touches

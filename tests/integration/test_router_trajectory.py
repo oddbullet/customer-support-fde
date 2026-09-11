@@ -41,6 +41,7 @@ def _new_order_support_initial_state(query: str) -> dict:
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
+        "order_summary": None,
     }
 
 

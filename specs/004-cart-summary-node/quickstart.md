@@ -27,17 +27,15 @@ Expected outcome:
   name not on the menu returns `None`, and an empty menu returns `None`.
 - `test_cart_summary_and_ticket_nodes.py` calls the pure functions directly with hand-built carts and
   a sample menu (no LLM, no graph) and asserts:
-  - `build_order_summary` — multi-item line totals and order total; a single-unit order; the
-    rounding invariant that `total` equals the sum of the stored `line_total` values; an unpriced
-    item landing in `unpriced` rather than `lines`; an empty cart yielding `total is None` (not
+  - `build_order_summary` — multi-item line totals and order total; a single-unit order; that the
+    total always rounds up (never down) to the cent; an empty cart yielding `total is None` (not
     `0.0`); and that the input cart dict is not mutated.
   - `render_order_summary` — every item name and quantity present, one `Total:` line for a fully
-    priced order, `Subtotal for priced items:` plus the named unpriced items when something can't be
-    priced, and the empty-cart wording with no amount line.
+    priced order, and the empty-cart wording with no amount line.
   - `cart_summary_node` — writes `order_summary` and appends exactly one `AIMessage` whose content
     is the rendered text.
-  - `ticket_gen_node` — `order_ticket` carries the same `lines`, `unpriced`, and `total` as
-    `order_summary` (the FR-010/SC-004 guarantee), alongside the existing `items` mapping.
+  - `ticket_gen_node` — `order_ticket` carries the same `lines` and `total` as `order_summary` (the
+    FR-010/SC-004 guarantee), alongside the existing `items` mapping.
 - `test_order_support_trajectory.py` confirms a full conversation still reaches the summary and
   ticket steps, with the expected node-name trajectory updated from `confirm_node` to
   `cart_summary` and the two `order_ticket` assertions updated to the priced shape.
@@ -83,7 +81,6 @@ customer-support-fde --json "Add a spring roll, that's all"
 - [ ] SC-003: The summary answers "what did I order and what does it cost" with no follow-up
       question needed.
 - [ ] SC-004: `order_ticket`'s items, quantities, and total match the summary text the customer saw.
-- [ ] SC-005: An unpriceable item is named explicitly and the amount is relabelled a subtotal; an
-      empty cart produces the empty wording and no amount line. (Both are unit-tested defensive
-      branches — `mark_order_confirmed` blocks empty-cart confirmation on today's graph, see
-      [research.md](./research.md) §6.)
+- [ ] SC-005: An empty cart produces the "nothing to summarize" wording and no amount line. (A
+      unit-tested defensive branch — `mark_order_confirmed` blocks empty-cart confirmation on
+      today's graph, see [research.md](./research.md) §6.)

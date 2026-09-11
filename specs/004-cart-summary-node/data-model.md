@@ -23,9 +23,8 @@ confirms an order — refund conversations included). Written exactly once, by `
 
 | Field | Type | Notes |
 |---|---|---|
-| `lines` | `list[SummaryLine]` | One entry per priceable distinct cart item, in `menu_items` iteration order (insertion order — the order the customer added them). Empty when the cart is empty or nothing could be priced. |
-| `unpriced` | `list[str]` | Canonical names of cart items with no menu price, in cart order. Empty in the normal case. Never merged into `lines` and never silently dropped (FR-008). |
-| `total` | `float \| None` | Sum of every `lines[].line_total`, rounded to 2 decimals. `None` when `lines` is empty — which covers the empty-cart case (FR-009) and the all-items-unpriced case. |
+| `lines` | `list[SummaryLine]` | One entry per distinct cart item, in `menu_items` iteration order (insertion order — the order the customer added them). Every cart item is guaranteed priceable (see spec.md Assumptions), so `lines` has exactly one entry per cart key. Empty only when the cart is empty. |
+| `total` | `float \| None` | Sum of every `lines[].line_total`, rounded up to 2 decimals. `None` when `lines` is empty (the empty-cart case, FR-009). |
 
 ### SummaryLine (entry in `lines`)
 
@@ -34,14 +33,14 @@ confirms an order — refund conversations included). Written exactly once, by `
 | `name` | `str` | Canonical menu name, copied from the `menu_items` key (FR-002). |
 | `quantity` | `int` | Units ordered, copied from the `menu_items` value (FR-003). Always `>= 1` — the cart never holds zero-quantity entries. |
 | `unit_price` | `float` | Menu price at summary time, from `price_for_item` (FR-007). |
-| `line_total` | `float` | `unit_price * quantity`, computed as `Decimal` and quantized to `0.01` with `ROUND_HALF_UP`, then stored as `float` (FR-004). |
+| `line_total` | `float` | `unit_price * quantity`, computed as `Decimal` and stored as `float` (FR-004). Not independently rounded — see the `total` rule below. |
 
 ### Validation rules
 
-- `total` MUST equal the sum of the `line_total` values as stored, not a separately rounded product
-  — line totals are rounded first, then summed (FR-006). A test asserts this invariant directly.
-- Every key in `menu_items` MUST appear exactly once across `lines` and `unpriced` combined; nothing
-  is dropped and nothing is duplicated (FR-002, FR-008).
+- `total` is computed by summing every line's raw `Decimal` value first, then rounding the sum up
+  (never down) to 2 decimals in a single step (FR-006). Since menu prices always have at most 2
+  decimal places (spec.md Assumptions), this rounding step never actually changes the sum for real
+  data — it exists as a defensive, never-shortchange rule for the total.
 - `unit_price` MUST come from the menu, never from `SupportState`, the conversation, or the model
   (FR-007).
 - `total` MUST be `None`, not `0.0`, when `lines` is empty — a zero total would read as a free order
@@ -49,6 +48,9 @@ confirms an order — refund conversations included). Written exactly once, by `
 - `build_order_summary` MUST NOT mutate the `menu_items` mapping it is given — same
   no-in-place-mutation guarantee `add_items_to_cart` and `remove_items_from_cart` already provide.
 - The same `menu_items` and the same menu MUST always produce an identical `order_summary` (FR-011).
+- `build_order_summary` does not guard against `price_for_item` returning `None` — every cart item
+  is assumed priceable by construction (spec.md Assumptions), so this is treated as an impossible
+  state rather than a case to handle.
 
 ## OrderTicket (`order_ticket`) — existing field, **changed shape**
 
@@ -58,7 +60,6 @@ Built by `ticket_gen_node` from `order_summary`, not recomputed from `menu_items
 |---|---|---|
 | `items` | `dict[str, int]` | Unchanged from 002 — a copy of `menu_items`. Retained so existing staff-facing consumers of the item/quantity mapping keep working. |
 | `lines` | `list[SummaryLine]` | Same list as `order_summary["lines"]`. |
-| `unpriced` | `list[str]` | Same list as `order_summary["unpriced"]`. |
 | `total` | `float \| None` | Same value as `order_summary["total"]`. |
 
 **Backward-incompatible**: 002 produced `{"items": {...}}` and nothing else. Two existing assertions
@@ -70,7 +71,7 @@ against that exact dict and must be updated. Called out under Constitution Princ
 
 - Every priced value on the ticket MUST be identical to the value presented to the customer — the
   ticket copies `order_summary`, it does not re-derive (FR-010).
-- `items` MUST stay consistent with `lines` + `unpriced`: same names, same quantities.
+- `items` MUST stay consistent with `lines`: same names, same quantities.
 
 ## Menu access (`tools/menu_tools.py`) — one new helper
 
@@ -87,5 +88,5 @@ against that exact dict and must be updated. Called out under Constitution Princ
 | `cart_summary_node` | `menu_items`, menu prices | `order_summary`, plus one `AIMessage` appended to `messages` carrying the rendered recap (FR-001) |
 | `ticket_gen_node` | `menu_items`, `order_summary` | `order_ticket` (FR-010) |
 
-Full behavioral contract, including rendering rules and the empty/unpriced wording, in
+Full behavioral contract, including rendering rules and the empty-cart wording, in
 [contracts/cart-summary-node.md](./contracts/cart-summary-node.md).

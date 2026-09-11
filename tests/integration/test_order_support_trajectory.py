@@ -9,6 +9,7 @@ from agentevals.graph_trajectory.strict import graph_trajectory_strict_match
 
 from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes import order_support_agent, router_agent
+from customer_support_fde.nodes.cart_summary_node import render_order_summary
 from customer_support_fde.nodes.router_agent import RouterDecision
 
 from _trajectory import extract_outputs
@@ -88,6 +89,7 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
+        "order_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -140,6 +142,7 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
+        "order_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -201,6 +204,7 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch):
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
+        "order_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -217,7 +221,18 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch):
 
     final_state = graph.get_state(config).values
     assert final_state["menu_items"] == {"Spring Rolls": 1}
-    assert final_state["order_ticket"] == {"items": {"Spring Rolls": 1}}
+    assert final_state["order_ticket"] == {
+        "items": {"Spring Rolls": 1},
+        "lines": [
+            {
+                "name": "Spring Rolls",
+                "quantity": 1,
+                "unit_price": 6.95,
+                "line_total": 6.95,
+            }
+        ],
+        "total": 6.95,
+    }
 
 
 # Guards that per-turn message reset in await_customer keeps message count roughly constant. (regression)
@@ -265,6 +280,7 @@ def test_messages_do_not_accumulate_across_turns(monkeypatch):
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
+        "order_summary": None,
     }
 
     graph.invoke(initial_state, config)
@@ -323,6 +339,7 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
+        "order_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -337,8 +354,28 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
     final_state = graph.get_state(config).values
     assert final_state["order_confirmed"] is True
     assert final_state["order_ticket"] == {
-        "items": {"Kung Pao Chicken": 1, "Spring Rolls": 1}
+        "items": {"Kung Pao Chicken": 1, "Spring Rolls": 1},
+        "lines": final_state["order_summary"]["lines"],
+        "total": final_state["order_summary"]["total"],
     }
+    assert final_state["order_summary"]["lines"] == [
+        {
+            "name": "Kung Pao Chicken",
+            "quantity": 1,
+            "unit_price": 12.95,
+            "line_total": 12.95,
+        },
+        {
+            "name": "Spring Rolls",
+            "quantity": 1,
+            "unit_price": 6.95,
+            "line_total": 6.95,
+        },
+    ]
+    assert final_state["order_summary"]["total"] == 19.90
+    assert final_state["messages"][-1].content == render_order_summary(
+        final_state["order_summary"]
+    )
 
     actual = extract_outputs(graph, config)
     reference_outputs = {
@@ -364,7 +401,7 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
                 "order_tools",
                 "call_model",
                 "await_customer",
-                "confirm_node",
+                "cart_summary",
                 "ticket_gen_node",
             ],
         ]
@@ -375,8 +412,8 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
     assert match_result["score"] is True
 
 
-# Confirming an empty cart never advances the graph to confirm_node/ticket_gen_node. (edge)
-def test_confirming_with_an_empty_cart_never_reaches_confirm_node(monkeypatch):
+# Confirming an empty cart never advances the graph to cart_summary/ticket_gen_node. (edge)
+def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
     monkeypatch.setattr(
         router_agent,
         "_build_llm",
@@ -409,6 +446,7 @@ def test_confirming_with_an_empty_cart_never_reaches_confirm_node(monkeypatch):
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
+        "order_summary": None,
     }
 
     result = graph.invoke(initial_state, config)

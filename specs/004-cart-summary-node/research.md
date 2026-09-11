@@ -46,25 +46,30 @@ summary step.
 
 ## 3. Money arithmetic: `decimal.Decimal` vs. raw floats vs. integer cents
 
-**Decision**: Compute with stdlib `decimal.Decimal`, built from `Decimal(str(price))`. Each line
-total is `unit_price * quantity` quantized to `0.01` with `ROUND_HALF_UP`; the order total is the sum
-of the already-quantized line totals. Amounts are stored in `order_summary`/`order_ticket` as
-`float` rounded to two decimals (JSON-serializable for the CLI's `--json` mode) and rendered as
-`$%.2f`.
+**Decision** (revised after checking real menu data): Compute each line's raw value with stdlib
+`decimal.Decimal`, built from `Decimal(str(unit_price)) * quantity` and left unrounded. Sum all raw
+line values first, then round the total **up** to `0.01` (`ROUND_CEILING`, never down) in a single
+step at the end. Amounts are stored in `order_summary`/`order_ticket` as `float` (JSON-serializable
+for the CLI's `--json` mode) and rendered as `$%.2f`.
 
-**Rationale**: FR-006 requires the displayed total to equal the sum of the displayed line totals.
-Rounding each line first and then summing is the only ordering that guarantees this; rounding a sum
-of unrounded products can land a cent away from what the customer can add up on screen. `Decimal`
-makes that rounding exact and explicit, and it is stdlib — no new dependency, so Principle III is
-untouched. Prices come out of `menu.json` as JSON floats, hence `Decimal(str(price))` rather than
-`Decimal(price)`, which would carry the float's binary error into the decimal.
+**Rationale**: The original design rounded every line first (`ROUND_HALF_UP`) and summed the
+already-rounded values, specifically so the stated total would always equal the sum of the stated
+lines even if a price had more than 2 decimal places. Checking `menu.json` shows every real price
+already has at most 2 decimal places, and cart keys are always canonical menu names (§4) — so
+`unit_price * integer_quantity` can never actually produce a fractional cent, and the two rounding
+orderings always agree for real data. Given that, the simpler sum-then-round-once approach was
+chosen instead, with "round up" (rather than nearest) as a deliberate business rule: never
+shortchange the total, even in a scenario the current menu can't produce. `Decimal` is kept for the
+line-level arithmetic (avoiding float binary representation error) even though rounding is now a
+single step — it's stdlib, so Principle III is untouched.
 
-**Alternatives considered**: Plain floats with `round(x, 2)` — workable for this menu's price range
-but leaves binary representation error in the arithmetic for no saving, and makes the rounding order
-easy to get silently wrong later. Integer cents throughout — rejected under YAGNI: it would require
-converting the menu's float prices at every boundary and reads worse for a cart of a few items.
-Storing `Decimal` in state — rejected: not JSON-serializable, which would break the CLI's `--json`
-path the moment the summary is included there.
+**Alternatives considered**: Round-then-sum (the original decision) — reverted once real menu data
+confirmed the guarantee it existed for can never actually be tested or triggered; keeping it would
+have been unjustified defensive complexity for a case that can't occur (menu prices always have ≤2
+decimal places, per spec.md Assumptions). Plain floats with `round(x, 2)` — still rejected: leaves
+binary representation error in the arithmetic for no saving. Integer cents throughout — rejected
+under YAGNI: would require converting the menu's float prices at every boundary. Storing `Decimal`
+in state — rejected: not JSON-serializable, which would break the CLI's `--json` path.
 
 ## 4. Price lookup: exact canonical-name match vs. reusing `resolve_menu_item`'s fuzzy matcher
 
@@ -75,9 +80,16 @@ matches.
 **Rationale**: `menu_items` keys are already canonical — `add_items_to_cart` stores
 `match.item["name"]`, never the customer's phrasing — so fuzzy matching at summary time would be
 re-solving a problem already solved upstream, and worse, could quietly price an item as some *other*
-menu item if the menu changed underneath. An exact miss is the honest signal that the item is no
-longer priceable, which is precisely the FR-008 condition. Returning `None` rather than raising lets
-the node report the item as unpriced instead of failing the whole summary.
+menu item if the menu changed underneath. An exact miss would be the honest signal that the item is
+no longer priceable, if that were reachable.
+
+**Follow-up decision**: `price_for_item` still returns `float | None` (an honest signature — a
+lookup that might not find something), but `build_order_summary` does not check for `None`. Cart
+keys are guaranteed canonical menu names by construction, so a miss is treated as an impossible
+state rather than a case to design a fallback path for; the `unpriced` list and its FR-008 handling
+in `build_order_summary`/`render_order_summary`/`ticket_gen_node` were removed as unreachable
+defensive code (see spec.md Assumptions). If `price_for_item` ever did return `None`, the caller
+lets a `TypeError` surface naturally from `Decimal(str(None))` rather than guarding against it.
 
 **Alternatives considered**: Reuse `resolve_menu_item` — rejected for the mispricing risk above; its
 `tie`/`not_found` statuses also have no meaningful interpretation when the input is already a

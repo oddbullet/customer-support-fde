@@ -12,3 +12,4 @@ class SupportState(TypedDict):
     menu_items: dict[str, int]
     order_confirmed: bool
     order_ticket: dict | None
+    order_summary: dict | None
