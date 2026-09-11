@@ -35,7 +35,7 @@ Single project layout (existing): `src/customer_support_fde/`, `tests/unit/` at 
 **Purpose**: Confirm a clean, known-good starting point. No new dependencies, directories, or
 tooling are required for this feature (see [research.md](./research.md)).
 
-- [ ] T001 On branch `006-cart-total-lookup`, run `uv run pytest` at the repository root and
+- [X] T001 On branch `006-cart-total-lookup`, run `uv run pytest` at the repository root and
       confirm the existing suite passes before any change, establishing the baseline this
       feature must not regress.
 
@@ -52,30 +52,30 @@ Constitution Principle III.
 
 **⚠️ CRITICAL**: No user story task may begin until this phase is complete.
 
-- [ ] T002 [P] In `tests/unit/test_menu_tools.py`, add failing unit tests for a new
+- [X] T002 [P] In `tests/unit/test_menu_tools.py`, add failing unit tests for a new
       `cart_total(menu_items, menu)` helper (not yet implemented): a cart with one item at
       quantity 1 returns that item's price (base); a cart with multiple distinct items and
       quantities > 1 returns `Σ price × quantity` (base); an empty `menu_items` dict returns
       `None` (edge, FR-005); a cart whose raw sum lands on a fractional cent rounds **up** to
       the nearest cent, matching `ROUND_CEILING` (edge, FR-004). Each test gets its own
       one-line `# ... (base)`/`(edge)` comment per Constitution Principle I.
-- [ ] T003 [P] In `tests/unit/test_cart_summary_and_ticket_nodes.py`, add a failing regression
+- [X] T003 [P] In `tests/unit/test_cart_summary_and_ticket_nodes.py`, add a failing regression
       test asserting that for a given `menu_items`/`menu` pair, `cart_total(menu_items, menu)`
       equals the `total` produced by `cart_summary_node.build_order_summary(menu_items, menu)`
       (regression, guards FR-004/SC-003 against the two call sites drifting apart per
       [research.md](./research.md)).
-- [ ] T004 Implement `cart_total(menu_items: dict[str, int], menu: list[MenuItem]) -> float | None`
+- [X] T004 Implement `cart_total(menu_items: dict[str, int], menu: list[MenuItem]) -> float | None`
       in `src/customer_support_fde/tools/menu_tools.py`, next to the existing `price_for_item`
       helper: sum `price_for_item(name, menu) * quantity` over `menu_items` using `Decimal`,
       round up to the nearest cent with `ROUND_CEILING` (matching the logic currently inlined
       in `cart_summary_node.build_order_summary`), and return `None` when `menu_items` is
       empty. Depends on: T002.
-- [ ] T005 Refactor `build_order_summary` in
+- [X] T005 Refactor `build_order_summary` in
       `src/customer_support_fde/nodes/cart_summary_node.py` to compute its `total` by calling
       the new `menu_tools.cart_total()` helper instead of its inline `Decimal`/`ROUND_CEILING`
       calculation, leaving the per-line `unit_price`/`line_total` computation unchanged.
       Depends on: T004, T003.
-- [ ] T006 Run `uv run pytest tests/unit/test_menu_tools.py tests/unit/test_cart_summary_and_ticket_nodes.py -v`
+- [X] T006 Run `uv run pytest tests/unit/test_menu_tools.py tests/unit/test_cart_summary_and_ticket_nodes.py -v`
       and confirm every test (new and pre-existing) passes. Depends on: T005.
 
 **Checkpoint**: Shared `cart_total()` helper exists, is used by the existing order-confirmation
@@ -96,28 +96,28 @@ total?", and verify the reported total exactly matches the sum of the item price
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T007 [P] [US1] In `tests/unit/test_cart_tools.py`, add failing unit tests for a new
+- [X] T007 [P] [US1] In `tests/unit/test_cart_tools.py`, add failing unit tests for a new
       `get_cart_total` tool (not yet implemented): a cart with a single item at quantity 1
       returns a rendered string stating that item's exact price (base); a cart with multiple
       distinct items at varying quantities returns a rendered string stating the correct
       combined total (base), per `contracts/get_cart_total.md` items 1-2.
-- [ ] T008 [P] [US1] In `tests/unit/test_order_support_agent.py`, add a failing unit test
+- [X] T008 [P] [US1] In `tests/unit/test_order_support_agent.py`, add a failing unit test
       asserting `get_cart_total` is present in `order_support_agent._ORDER_TOOLS` (and thus
       bound on the agent's model and included in `order_tools`) (base).
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Implement `get_cart_total` in `src/customer_support_fde/tools/cart_tools.py`:
+- [X] T009 [US1] Implement `get_cart_total` in `src/customer_support_fde/tools/cart_tools.py`:
       a no-argument `@tool` (state-only, via `InjectedState`, mirroring `get_menu`'s pattern —
       not a `Command`, since it doesn't mutate state) that calls `menu_tools.cart_total(state["menu_items"], state["menu"])`
       and, when it returns a number, renders a string stating the total to two decimal places
       (e.g. `"Your current cart total is $23.50."`) per `contracts/get_cart_total.md`.
       Depends on: T007.
-- [ ] T010 [US1] In `src/customer_support_fde/nodes/order_support_agent.py`, add
+- [X] T010 [US1] In `src/customer_support_fde/nodes/order_support_agent.py`, add
       `get_cart_total` to `_ORDER_TOOLS`, and update `SYSTEM_PROMPT` to instruct the agent to
       use the tool for any cart-total question rather than computing or estimating it itself
       (FR-001/FR-006). Depends on: T009, T008.
-- [ ] T011 [US1] Run `uv run pytest tests/unit/test_cart_tools.py tests/unit/test_order_support_agent.py -v`
+- [X] T011 [US1] Run `uv run pytest tests/unit/test_cart_tools.py tests/unit/test_order_support_agent.py -v`
       and confirm all User Story 1 tests pass. Depends on: T010.
 
 **Checkpoint**: User Story 1 is fully functional and independently testable — a customer with
@@ -137,7 +137,7 @@ verify the second total reflects only the updated cart contents.
 
 > **NOTE: Write this test FIRST, ensure it FAILS (or is trivially satisfied) before relying on it**
 
-- [ ] T012 [P] [US2] In `tests/unit/test_cart_tools.py`, add a failing unit test that calls
+- [X] T012 [P] [US2] In `tests/unit/test_cart_tools.py`, add a failing unit test that calls
       `get_cart_total` against one `menu_items` dict, then calls it again against a second
       `menu_items` dict representing the cart after an item was added (or removed), and
       asserts the second result reflects only the updated cart, independent of the first call
@@ -145,7 +145,7 @@ verify the second total reflects only the updated cart contents.
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Run `uv run pytest tests/unit/test_cart_tools.py -v` and confirm T012 passes
+- [X] T013 [US2] Run `uv run pytest tests/unit/test_cart_tools.py -v` and confirm T012 passes
       without further code changes — `get_cart_total` reads `state["menu_items"]` fresh via
       `InjectedState` on every invocation (no caching, per the alternative rejected in
       [research.md](./research.md)), so no new implementation is expected here. If it fails,
@@ -169,17 +169,19 @@ response clearly states there's nothing in the cart yet, with no numeric total g
 
 > **NOTE: Write this test FIRST, ensure it FAILS before implementation**
 
-- [ ] T014 [P] [US3] In `tests/unit/test_cart_tools.py`, add a failing unit test asserting that
+- [X] T014 [P] [US3] In `tests/unit/test_cart_tools.py`, add a failing unit test asserting that
       calling `get_cart_total` with an empty `menu_items` dict returns a message stating the
       cart is empty, with no dollar figure present in the response (edge, FR-005), per
       `contracts/get_cart_total.md` item 3.
 
 ### Implementation for User Story 3
 
-- [ ] T015 [US3] In `get_cart_total` (`src/customer_support_fde/tools/cart_tools.py`), add the
+- [X] T015 [US3] In `get_cart_total` (`src/customer_support_fde/tools/cart_tools.py`), add the
       branch for when `menu_tools.cart_total(...)` returns `None`: return the empty-cart
       message instead of formatting a dollar figure. Depends on: T014.
-- [ ] T016 [US3] Run `uv run pytest tests/unit/test_cart_tools.py -v` and confirm all
+      (Already implemented as part of T009 — the guard was required for the function to be
+      correct at all, so T014's test passed immediately with no further change.)
+- [X] T016 [US3] Run `uv run pytest tests/unit/test_cart_tools.py -v` and confirm all
       `get_cart_total` tests (US1, US2, US3) pass together. Depends on: T015.
 
 **Checkpoint**: All three user stories are independently functional — the tool correctly
@@ -192,8 +194,8 @@ handles a priced cart, a cart that changed mid-conversation, and an empty cart.
 **Purpose**: Whole-suite verification and the manual/observability checks from
 [quickstart.md](./quickstart.md) that don't belong to any single user story.
 
-- [ ] T017 Run `uv run pytest` at the repository root and confirm the full suite passes with no
-      regressions outside this feature's own tests.
+- [X] T017 Run `uv run pytest` at the repository root and confirm the full suite passes with no
+      regressions outside this feature's own tests. (123 passed — 113 baseline + 10 new.)
 - [ ] T018 [P] Execute the manual end-to-end scenario in
       `specs/006-cart-total-lookup/quickstart.md` (steps 1-5) against a locally running agent
       (after `customer-support-fde --init-db`), confirming SC-001 through SC-004 hold in

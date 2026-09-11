@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from decimal import ROUND_CEILING, Decimal
 from difflib import SequenceMatcher
 from typing import Annotated, Literal
 
@@ -44,6 +45,18 @@ def price_for_item(name: str, menu: list[MenuItem]) -> float | None:
         if item["name"] == name:
             return item["price"]
     return None
+
+
+def cart_total(menu_items: dict[str, int], menu: list[MenuItem]) -> float | None:
+    if not menu_items:
+        return None
+
+    raw_total = Decimal("0")
+    for name, quantity in menu_items.items():
+        unit_price = price_for_item(name, menu)
+        raw_total += Decimal(str(unit_price)) * quantity
+
+    return float(raw_total.quantize(Decimal("0.01"), rounding=ROUND_CEILING))
 
 
 def _render_item(item: MenuItem) -> str:

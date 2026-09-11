@@ -9,6 +9,7 @@ from langgraph.types import interrupt
 from customer_support_fde.state import SupportState
 from customer_support_fde.tools.cart_tools import (
     add_items_to_cart,
+    get_cart_total,
     mark_order_confirmed,
     remove_items_from_cart,
 )
@@ -25,7 +26,10 @@ add to the cart, ask the customer if there's anything else they'd like. \
 You can also remove items the customer no longer wants from the cart, \
 either entirely or by a specific quantity. \
 When a tool reports multiple equally-close matches for a name, ask the \
-customer which one they meant instead of guessing.
+customer which one they meant instead of guessing. \
+Whenever the customer asks for their cart total (or anything about how much \
+they currently owe), call get_cart_total to look it up rather than adding up \
+prices yourself.
 """
 
 _ORDER_TOOLS = [
@@ -34,6 +38,7 @@ _ORDER_TOOLS = [
     add_items_to_cart,
     remove_items_from_cart,
     mark_order_confirmed,
+    get_cart_total,
 ]
 
 order_tools = ToolNode(_ORDER_TOOLS)

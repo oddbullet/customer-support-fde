@@ -1,20 +1,18 @@
-from decimal import ROUND_CEILING, Decimal
+from decimal import Decimal
 
 from langchain_core.messages import AIMessage
 
 from customer_support_fde import db
 from customer_support_fde.state import SupportState
-from customer_support_fde.tools.menu_tools import MenuItem, price_for_item
+from customer_support_fde.tools.menu_tools import MenuItem, cart_total, price_for_item
 
 
 def build_order_summary(menu_items: dict[str, int], menu: list[MenuItem]) -> dict:
     lines = []
-    raw_total = Decimal("0")
 
     for name, quantity in menu_items.items():
         unit_price = price_for_item(name, menu)
         line_total_decimal = Decimal(str(unit_price)) * quantity
-        raw_total += line_total_decimal
         lines.append(
             {
                 "name": name,
@@ -24,13 +22,7 @@ def build_order_summary(menu_items: dict[str, int], menu: list[MenuItem]) -> dic
             }
         )
 
-    total = (
-        float(raw_total.quantize(Decimal("0.01"), rounding=ROUND_CEILING))
-        if lines
-        else None
-    )
-
-    return {"lines": lines, "total": total}
+    return {"lines": lines, "total": cart_total(menu_items, menu)}
 
 
 def render_order_summary(summary: dict, order_id: str | None = None) -> str:

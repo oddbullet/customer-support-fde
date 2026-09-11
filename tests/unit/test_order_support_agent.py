@@ -9,10 +9,12 @@ from langgraph.types import Command
 
 from customer_support_fde.nodes import order_support_agent
 from customer_support_fde.nodes.order_support_agent import (
+    _ORDER_TOOLS,
     await_customer,
     call_model,
     order_tools,
 )
+from customer_support_fde.tools.cart_tools import get_cart_total
 
 # ToolNode.invoke() requires a LangGraph Runtime in its config even outside a
 # compiled graph run; this matches the minimal one the graph executor injects.
@@ -336,3 +338,9 @@ def test_call_model_llm_failure_propagates_rather_than_returning_partial_state(
 
     with pytest.raises(RuntimeError):
         call_model(state)
+
+
+# get_cart_total is registered on the order support agent's tool list, so the
+# model can look up an exact total instead of computing one itself. (base)
+def test_get_cart_total_is_registered_on_order_tools():
+    assert get_cart_total in _ORDER_TOOLS
