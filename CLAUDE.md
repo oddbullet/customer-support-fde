@@ -20,8 +20,9 @@ This project is still in development.
     - Purpose: Produces the final support ticket summary artifact.
     - Two types of tickets: refund ticket and order / support ticket.
 
-# Tach Stack
+# Tech Stack
 - LangGraph
 - LangSmith
 - PyTest
 - Python
+- SQLite
