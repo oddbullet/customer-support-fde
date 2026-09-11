@@ -17,3 +17,8 @@ class SupportState(TypedDict):
     order_ticket: dict | None
     order_summary: dict | None
     order_id: str | None
+    order_lookup: dict | None
+    refund_resolved: bool
+    refund_request: dict | None
+    complaint_ids: dict[str, int]
+    refund_ticket: dict | None

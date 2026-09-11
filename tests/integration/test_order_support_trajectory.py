@@ -89,6 +89,11 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
         "order_ticket": None,
         "order_summary": None,
         "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -143,6 +148,11 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
         "order_ticket": None,
         "order_summary": None,
         "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -207,6 +217,11 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
         "order_ticket": None,
         "order_summary": None,
         "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -286,6 +301,11 @@ def test_messages_do_not_accumulate_across_turns(monkeypatch):
         "order_ticket": None,
         "order_summary": None,
         "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
     }
 
     graph.invoke(initial_state, config)
@@ -347,6 +367,11 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
         "order_ticket": None,
         "order_summary": None,
         "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -457,6 +482,11 @@ def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
         "order_ticket": None,
         "order_summary": None,
         "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -511,6 +541,11 @@ def test_price_change_mid_conversation_does_not_affect_confirmed_order(
         "order_ticket": None,
         "order_summary": None,
         "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
     }
 
     result = graph.invoke(initial_state, config)

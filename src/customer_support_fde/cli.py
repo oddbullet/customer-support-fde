@@ -33,6 +33,7 @@ def _print_result(state, as_json: bool) -> None:
         payload = {"destination": state["destination"], "query": state["user_query"]}
         if state["destination"] == "refund":
             payload["sentiment"] = state["sentiment"]
+            payload["refund_ticket"] = state.get("refund_ticket")
         if state["order_confirmed"]:
             payload["order_summary"] = state["order_summary"]
             payload["order_id"] = state["order_id"]
@@ -40,6 +41,8 @@ def _print_result(state, as_json: bool) -> None:
         return
 
     if state["order_confirmed"] and state["messages"]:
+        print(state["messages"][-1].content)
+    elif state["destination"] == "refund" and state.get("refund_resolved") and state["messages"]:
         print(state["messages"][-1].content)
 
     print(f"Destination: {state['destination']}")
@@ -84,6 +87,11 @@ def run(argv: list[str] | None = None) -> int:
                 "order_ticket": None,
                 "order_summary": None,
                 "order_id": None,
+                "order_lookup": None,
+                "refund_resolved": False,
+                "refund_request": None,
+                "complaint_ids": {},
+                "refund_ticket": None,
             },
             config,
         )

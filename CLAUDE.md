@@ -38,3 +38,7 @@ customer-support-fde --init-db
 This is idempotent and safe to re-run after editing `menu.json` — it updates existing dishes and
 inserts new ones without deleting anything. The database path defaults to `customer_support.db` in
 the working directory, overridable via `CUSTOMER_SUPPORT_DB`.
+
+Re-run `--init-db` on an existing database too: it also creates the `refund_requests`,
+`refund_request_lines`, and `complaints` tables used by the refund agent, and is safe to run
+against a database that already has orders in it.

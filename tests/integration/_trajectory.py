@@ -3,9 +3,9 @@
 `extract_langgraph_trajectory_from_thread` raises IndexError on a terminal
 snapshot whose "messages" list is empty (agentevals==0.0.9). SupportState's
 `messages` field is scratch, per-turn state that legitimately stays an empty
-list for conversations that never enter the order-support tool-calling loop
-(e.g. a refund conversation) — so we drop an empty "messages" key from each
-snapshot's values before handing it to agentevals, which only touches
+list for conversations that never enter a tool-calling loop at all (e.g. one
+that never leaves `router_agent`) — so we drop an empty "messages" key from
+each snapshot's values before handing it to agentevals, which only touches
 "steps" for `graph_trajectory_strict_match` and doesn't need "results".
 """
 

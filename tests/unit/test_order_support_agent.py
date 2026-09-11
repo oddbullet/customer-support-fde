@@ -61,6 +61,11 @@ def _base_state(user_query: str) -> dict:
         "order_ticket": None,
         "order_summary": None,
         "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
     }
 
 

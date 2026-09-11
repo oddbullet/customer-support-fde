@@ -35,6 +35,56 @@ CREATE TABLE IF NOT EXISTS order_lines (
     line_total REAL NOT NULL CHECK (line_total > 0),
     PRIMARY KEY (order_id, name)
 );
+
+-- A customer's qualifying refund, recorded as pending.
+-- UNIQUE (order_id) is the storage-level enforcement of FR-011 / SC-007: a denied refund is
+-- never stored here (it becomes a complaint), so every row is open or approved, which makes
+-- "at most one row per order" identical to "no second open or approved request per order".
+CREATE TABLE IF NOT EXISTS refund_requests (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id          TEXT    NOT NULL UNIQUE REFERENCES orders (id) ON DELETE CASCADE,
+    amount            REAL    NOT NULL CHECK (amount > 0),
+    substitute_dishes TEXT,
+    return_confirmed  INTEGER NOT NULL CHECK (return_confirmed IN (0, 1)),
+    status            TEXT    NOT NULL CHECK (status IN ('pending', 'approved')),
+    created_at        TEXT    NOT NULL,
+
+    -- FR-006: the return requirement may be waived only when nothing arrived in place of the
+    -- missing item. A received substitute with no return commitment is a denial and must never
+    -- reach this table.
+    CHECK (return_confirmed = 1 OR substitute_dishes IS NULL)
+);
+
+-- One ordered line the customer paid for but did not receive.
+-- Mirrors order_lines so the two read the same way. unit_price is copied from the order rather
+-- than looked up on the menu, so a later price change cannot alter a past refund (SC-008).
+CREATE TABLE IF NOT EXISTS refund_request_lines (
+    refund_request_id INTEGER NOT NULL REFERENCES refund_requests (id) ON DELETE CASCADE,
+    name              TEXT    NOT NULL,
+    quantity          INTEGER NOT NULL CHECK (quantity > 0),
+    unit_price        REAL    NOT NULL CHECK (unit_price > 0),
+    line_total        REAL    NOT NULL CHECK (line_total > 0),
+    PRIMARY KEY (refund_request_id, name)
+);
+
+-- Customer dissatisfaction: standalone (US3) or the residue of a denied refund (FR-018).
+-- order_id is nullable because a complaint may arrive with no order identified (FR-019).
+-- policy_reason is NULL for a standalone complaint and carries the denial reason code
+-- otherwise. There is deliberately no uniqueness constraint here: FR-020 scopes complaint
+-- uniqueness to a single conversation, which SupportState.complaint_ids tracks in memory
+-- (research.md Decision 5). The same order complained about in a later conversation correctly
+-- gets its own row.
+CREATE TABLE IF NOT EXISTS complaints (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id      TEXT REFERENCES orders (id) ON DELETE CASCADE,
+    description   TEXT NOT NULL,
+    policy_reason TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+-- Backs the FR-011 duplicate check and the FR-024 per-order retrieval path.
+CREATE INDEX IF NOT EXISTS idx_complaints_order_id ON complaints (order_id);
 """
 
 MenuItem = dict[str, object]
@@ -240,5 +290,217 @@ def get_order(order_id: str, path: Path | str | None = None) -> dict | None:
                 for name, quantity, unit_price, line_total in line_rows
             ],
         }
+    finally:
+        conn.close()
+
+
+def record_refund_request(
+    order_id: str,
+    lines: list[dict],
+    amount: float,
+    substitute_dishes: list[str] | None,
+    return_confirmed: bool,
+    path: Path | str | None = None,
+) -> int:
+    resolved = _resolve_path(path)
+    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    substitute_json = json.dumps(substitute_dishes) if substitute_dishes else None
+
+    conn = _connect(resolved)
+    try:
+        try:
+            with conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO refund_requests
+                        (order_id, amount, substitute_dishes, return_confirmed,
+                         status, created_at)
+                    VALUES (?, ?, ?, ?, 'pending', ?)
+                    """,
+                    (
+                        order_id,
+                        amount,
+                        substitute_json,
+                        1 if return_confirmed else 0,
+                        created_at,
+                    ),
+                )
+                request_id = cursor.lastrowid
+                for line in lines:
+                    conn.execute(
+                        """
+                        INSERT INTO refund_request_lines
+                            (refund_request_id, name, quantity, unit_price, line_total)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            request_id,
+                            line["name"],
+                            line["quantity"],
+                            line["unit_price"],
+                            line["line_total"],
+                        ),
+                    )
+            return request_id
+        except sqlite3.Error as exc:
+            raise OrderStoreError(
+                f"Failed to record refund request in database at '{resolved}': {exc}"
+            ) from exc
+    finally:
+        conn.close()
+
+
+def _row_to_refund_request(
+    conn: sqlite3.Connection,
+    row: tuple,
+) -> dict:
+    request_id, order_id, amount, substitute_json, return_confirmed, status, created_at = row
+    line_rows = conn.execute(
+        """
+        SELECT name, quantity, unit_price, line_total
+        FROM refund_request_lines
+        WHERE refund_request_id = ?
+        ORDER BY name
+        """,
+        (request_id,),
+    ).fetchall()
+    return {
+        "id": request_id,
+        "order_id": order_id,
+        "amount": amount,
+        "substitute_dishes": json.loads(substitute_json) if substitute_json else None,
+        "return_confirmed": bool(return_confirmed),
+        "status": status,
+        "created_at": created_at,
+        "lines": [
+            {
+                "name": name,
+                "quantity": quantity,
+                "unit_price": unit_price,
+                "line_total": line_total,
+            }
+            for name, quantity, unit_price, line_total in line_rows
+        ],
+    }
+
+
+def get_refund_request_for_order(order_id: str, path: Path | str | None = None) -> dict | None:
+    resolved = _resolve_path(path)
+    conn = _connect(resolved)
+    try:
+        row = conn.execute(
+            """
+            SELECT id, order_id, amount, substitute_dishes, return_confirmed,
+                   status, created_at
+            FROM refund_requests
+            WHERE order_id = ?
+            """,
+            (order_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return _row_to_refund_request(conn, row)
+    finally:
+        conn.close()
+
+
+def list_refund_requests(path: Path | str | None = None) -> list[dict]:
+    resolved = _resolve_path(path)
+    conn = _connect(resolved)
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, order_id, amount, substitute_dishes, return_confirmed,
+                   status, created_at
+            FROM refund_requests
+            ORDER BY id DESC
+            """
+        ).fetchall()
+        return [_row_to_refund_request(conn, row) for row in rows]
+    finally:
+        conn.close()
+
+
+def record_complaint(
+    description: str,
+    order_id: str | None = None,
+    policy_reason: str | None = None,
+    path: Path | str | None = None,
+) -> int:
+    resolved = _resolve_path(path)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    conn = _connect(resolved)
+    try:
+        try:
+            with conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO complaints
+                        (order_id, description, policy_reason, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (order_id, description, policy_reason, now, now),
+                )
+            return cursor.lastrowid
+        except sqlite3.Error as exc:
+            raise OrderStoreError(
+                f"Failed to record complaint in database at '{resolved}': {exc}"
+            ) from exc
+    finally:
+        conn.close()
+
+
+def extend_complaint(
+    complaint_id: int,
+    description: str,
+    policy_reason: str | None,
+    path: Path | str | None = None,
+) -> None:
+    resolved = _resolve_path(path)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    conn = _connect(resolved)
+    try:
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    UPDATE complaints
+                    SET description = ?, policy_reason = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (description, policy_reason, now, complaint_id),
+                )
+        except sqlite3.Error as exc:
+            raise OrderStoreError(
+                f"Failed to update complaint in database at '{resolved}': {exc}"
+            ) from exc
+    finally:
+        conn.close()
+
+
+def list_complaints(path: Path | str | None = None) -> list[dict]:
+    resolved = _resolve_path(path)
+    conn = _connect(resolved)
+    try:
+        rows = conn.execute(
+            """
+            SELECT id, order_id, description, policy_reason, created_at, updated_at
+            FROM complaints
+            ORDER BY id DESC
+            """
+        ).fetchall()
+        return [
+            {
+                "id": row[0],
+                "order_id": row[1],
+                "description": row[2],
+                "policy_reason": row[3],
+                "created_at": row[4],
+                "updated_at": row[5],
+            }
+            for row in rows
+        ]
     finally:
         conn.close()
