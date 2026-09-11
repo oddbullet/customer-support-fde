@@ -12,3 +12,6 @@ wheels/
 # Environment variables (secrets)
 .env
 !.env.example
+
+# Local SQLite database (order data, not checked in)
+*.db

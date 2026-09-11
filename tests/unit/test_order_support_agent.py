@@ -53,10 +53,12 @@ def _base_state(user_query: str) -> dict:
         "destination": "order_support",
         "sentiment": None,
         "messages": [],
+        "menu": SAMPLE_MENU,
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
+        "order_id": None,
     }
 
 
@@ -108,10 +110,6 @@ def test_get_menu_tool_call_lists_every_seeded_item(monkeypatch):
     )
     final_response = AIMessage(content="Here's our menu.")
     _patch_llm(monkeypatch, [tool_call_response, final_response])
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu",
-        lambda: SAMPLE_MENU,
-    )
 
     state = _run_inner_loop(_base_state("What's on the menu?"))
 
@@ -132,10 +130,6 @@ def test_get_menu_item_tool_call_found(monkeypatch):
     )
     final_response = AIMessage(content="Mapo Tofu has tofu and pork.")
     _patch_llm(monkeypatch, [tool_call_response, final_response])
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu",
-        lambda: SAMPLE_MENU,
-    )
 
     state = _run_inner_loop(_base_state("What's in the mapo tofu?"))
 
@@ -160,10 +154,6 @@ def test_get_menu_item_tool_call_tie(monkeypatch):
     )
     final_response = AIMessage(content="Which one did you mean?")
     _patch_llm(monkeypatch, [tool_call_response, final_response])
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu",
-        lambda: SAMPLE_MENU,
-    )
 
     state = _run_inner_loop(_base_state("Tell me about the beef noodle dish"))
 
@@ -184,10 +174,6 @@ def test_get_menu_item_tool_call_not_found(monkeypatch):
     )
     final_response = AIMessage(content="We don't have that.")
     _patch_llm(monkeypatch, [tool_call_response, final_response])
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu",
-        lambda: SAMPLE_MENU,
-    )
 
     state = _run_inner_loop(_base_state("Do you have pizza?"))
 
@@ -211,10 +197,6 @@ def test_add_items_to_cart_tool_call_updates_menu_items(monkeypatch):
     )
     final_response = AIMessage(content="Added it! Anything else?")
     _patch_llm(monkeypatch, [tool_call_response, final_response])
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu",
-        lambda: SAMPLE_MENU,
-    )
 
     state = _run_inner_loop(_base_state("Add a kung pao chicken"))
 
@@ -235,10 +217,6 @@ def test_add_items_to_cart_tool_call_batch_updates_menu_items(monkeypatch):
     )
     final_response = AIMessage(content="Added both! Anything else?")
     _patch_llm(monkeypatch, [tool_call_response, final_response])
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu",
-        lambda: SAMPLE_MENU,
-    )
 
     state = _run_inner_loop(
         _base_state("Add a kung pao chicken and spring rolls")
@@ -263,10 +241,6 @@ def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_menu_items_unchange
     )
     final_response = AIMessage(content="I couldn't find those.")
     _patch_llm(monkeypatch, [tool_call_response, final_response])
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu",
-        lambda: SAMPLE_MENU,
-    )
 
     state = _run_inner_loop(_base_state("Add a pizza and beef noodle"))
 
@@ -287,10 +261,6 @@ def test_remove_items_from_cart_tool_call_unqualified_deletes_entry(monkeypatch)
     )
     final_response = AIMessage(content="Removed it! Anything else?")
     _patch_llm(monkeypatch, [tool_call_response, final_response])
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu",
-        lambda: SAMPLE_MENU,
-    )
 
     state = _base_state("Remove the kung pao chicken")
     state["menu_items"] = {"Kung Pao Chicken": 2}
@@ -314,10 +284,6 @@ def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatc
     )
     final_response = AIMessage(content="Removed one! Anything else?")
     _patch_llm(monkeypatch, [tool_call_response, final_response])
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu",
-        lambda: SAMPLE_MENU,
-    )
 
     state = _base_state("Remove one kung pao chicken")
     state["menu_items"] = {"Kung Pao Chicken": 3}

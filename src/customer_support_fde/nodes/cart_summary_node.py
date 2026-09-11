@@ -2,8 +2,9 @@ from decimal import ROUND_CEILING, Decimal
 
 from langchain_core.messages import AIMessage
 
+from customer_support_fde import db
 from customer_support_fde.state import SupportState
-from customer_support_fde.tools.menu_tools import MenuItem, _load_menu, price_for_item
+from customer_support_fde.tools.menu_tools import MenuItem, price_for_item
 
 
 def build_order_summary(menu_items: dict[str, int], menu: list[MenuItem]) -> dict:
@@ -32,7 +33,7 @@ def build_order_summary(menu_items: dict[str, int], menu: list[MenuItem]) -> dic
     return {"lines": lines, "total": total}
 
 
-def render_order_summary(summary: dict) -> str:
+def render_order_summary(summary: dict, order_id: str | None = None) -> str:
     lines = summary["lines"]
 
     if not lines:
@@ -46,14 +47,23 @@ def render_order_summary(summary: dict) -> str:
         )
 
     total_line = f"Total: ${summary['total']:.2f}"
-    return "\n".join(body_lines) + "\n\n" + total_line
+    rendered = "\n".join(body_lines) + "\n\n" + total_line
+    if order_id is not None:
+        rendered += f"\nOrder ID: {db.format_order_id(order_id)}"
+    return rendered
 
 
 def cart_summary_node(state: SupportState) -> SupportState:
-    summary = build_order_summary(state["menu_items"], _load_menu())
-    rendered = render_order_summary(summary)
+    summary = build_order_summary(state["menu_items"], state["menu"])
+
+    order_id = None
+    if summary["lines"]:
+        order_id = db.record_order(summary)
+
+    rendered = render_order_summary(summary, order_id)
     return {
         **state,
         "order_summary": summary,
+        "order_id": order_id,
         "messages": [AIMessage(content=rendered)],
     }

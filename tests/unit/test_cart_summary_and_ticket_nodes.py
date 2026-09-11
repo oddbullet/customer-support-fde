@@ -1,5 +1,7 @@
+import pytest
 from langchain_core.messages import AIMessage
 
+from customer_support_fde import db
 from customer_support_fde.nodes.cart_summary_node import (
     build_order_summary,
     cart_summary_node,
@@ -32,10 +34,12 @@ def _base_state() -> dict:
         "destination": "order_support",
         "sentiment": None,
         "messages": [],
+        "menu": SAMPLE_MENU,
         "menu_items": {"Kung Pao Chicken": 2, "Spring Rolls": 1},
         "order_confirmed": True,
         "order_ticket": None,
         "order_summary": None,
+        "order_id": None,
     }
 
 
@@ -145,22 +149,77 @@ def test_render_order_summary_empty_cart_wording():
     assert rendered == "There's nothing in your order to summarize."
 
 
-# cart_summary_node writes order_summary and appends exactly one AIMessage
-# carrying the rendered recap. (base)
-def test_cart_summary_node_writes_summary_and_appends_one_message(monkeypatch):
-    monkeypatch.setattr(
-        "customer_support_fde.nodes.cart_summary_node._load_menu",
-        lambda: SAMPLE_MENU,
-    )
+def _use_tmp_db(monkeypatch, tmp_path):
+    path = tmp_path / "test.db"
+    db.init_database(path)
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
+    return path
+
+
+# cart_summary_node writes order_summary, records the order, writes order_id,
+# and appends exactly one AIMessage carrying the rendered recap with a
+# hyphenated Order ID line. (base)
+def test_cart_summary_node_writes_summary_and_appends_one_message(
+    monkeypatch, tmp_path
+):
+    _use_tmp_db(monkeypatch, tmp_path)
     state = _base_state()
 
     result = cart_summary_node(state)
 
     expected_summary = build_order_summary(state["menu_items"], SAMPLE_MENU)
     assert result["order_summary"] == expected_summary
+    assert result["order_id"] is not None
     assert len(result["messages"]) == 1
     assert isinstance(result["messages"][0], AIMessage)
-    assert result["messages"][0].content == render_order_summary(expected_summary)
+    assert result["messages"][0].content == render_order_summary(
+        expected_summary, result["order_id"]
+    )
+    assert result["messages"][0].content.endswith(
+        f"Order ID: {db.format_order_id(result['order_id'])}"
+    )
+
+
+# An empty cart writes no order, leaves order_id as None, and keeps the
+# existing "nothing to summarize" wording. (edge)
+def test_cart_summary_node_empty_cart_writes_no_order(monkeypatch, tmp_path):
+    _use_tmp_db(monkeypatch, tmp_path)
+    state = _base_state()
+    state["menu_items"] = {}
+
+    result = cart_summary_node(state)
+
+    assert result["order_id"] is None
+    assert result["messages"][0].content == "There's nothing in your order to summarize."
+
+
+# An OrderStoreError from record_order propagates and no success AIMessage
+# is produced. (error)
+def test_cart_summary_node_record_order_failure_propagates(monkeypatch, tmp_path):
+    _use_tmp_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "customer_support_fde.db.record_order",
+        lambda summary: (_ for _ in ()).throw(db.OrderStoreError("boom")),
+    )
+    state = _base_state()
+
+    with pytest.raises(db.OrderStoreError):
+        cart_summary_node(state)
+
+
+# render_order_summary(summary) called without an order_id is byte-identical
+# to today's output. (regression)
+def test_render_order_summary_without_order_id_is_byte_identical():
+    summary = build_order_summary(
+        {"Kung Pao Chicken": 2, "Spring Rolls": 1}, SAMPLE_MENU
+    )
+
+    assert render_order_summary(summary) == (
+        "Here's your order:\n"
+        f"- Kung Pao Chicken x2 @ ${12.95:.2f} each = ${25.90:.2f}\n"
+        f"- Spring Rolls x1 @ ${6.95:.2f} each = ${6.95:.2f}\n\n"
+        f"Total: ${summary['total']:.2f}"
+    )
 
 
 # order_ticket carries items plus the same lines/total as order_summary. (base)
@@ -168,10 +227,12 @@ def test_ticket_gen_node_ticket_mirrors_order_summary():
     state = _base_state()
     summary = build_order_summary(state["menu_items"], SAMPLE_MENU)
     state["order_summary"] = summary
+    state["order_id"] = "K7QP3M9X"
 
     result = ticket_gen_node(state)
 
     assert result["order_ticket"] == {
+        "order_id": "K7QP3M9X",
         "items": {"Kung Pao Chicken": 2, "Spring Rolls": 1},
         "lines": summary["lines"],
         "total": summary["total"],

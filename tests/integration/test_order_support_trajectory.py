@@ -1,3 +1,4 @@
+import sqlite3
 import uuid
 from unittest.mock import MagicMock
 
@@ -7,6 +8,7 @@ from langgraph.types import Command
 
 from agentevals.graph_trajectory.strict import graph_trajectory_strict_match
 
+from customer_support_fde import db
 from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes import order_support_agent, router_agent
 from customer_support_fde.nodes.cart_summary_node import render_order_summary
@@ -47,13 +49,11 @@ def _fake_order_llm(responses: list[AIMessage]) -> MagicMock:
     return llm
 
 
-def _mock_menu(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu", lambda: SAMPLE_MENU
-    )
-    monkeypatch.setattr(
-        "customer_support_fde.tools.cart_tools._load_menu", lambda: SAMPLE_MENU
-    )
+def _use_tmp_db(monkeypatch, tmp_path):
+    path = tmp_path / "test.db"
+    db.init_database(path)
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
+    return path
 
 
 # Asking about the menu triggers a get_menu tool call, then the graph pauses for the customer. (base)
@@ -75,9 +75,6 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
         ]
     )
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
-    monkeypatch.setattr(
-        "customer_support_fde.tools.menu_tools._load_menu", lambda: SAMPLE_MENU
-    )
 
     graph = build_graph(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
@@ -86,10 +83,12 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
         "destination": "order_support",
         "sentiment": None,
         "messages": [],
+        "menu": SAMPLE_MENU,
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
+        "order_id": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -106,7 +105,6 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
             RouterDecision(destination="order_support", sentiment="neutral")
         ),
     )
-    _mock_menu(monkeypatch)
 
     def _add_call(item_name: str, call_id: str) -> AIMessage:
         return AIMessage(
@@ -139,10 +137,12 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
         "destination": "order_support",
         "sentiment": None,
         "messages": [],
+        "menu": SAMPLE_MENU,
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
+        "order_id": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -159,7 +159,8 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
 
 
 # Adding two items then removing one entirely in a later turn leaves only the other. (base)
-def test_add_then_remove_across_turns_reflects_removal(monkeypatch):
+def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
+    _use_tmp_db(monkeypatch, tmp_path)
     monkeypatch.setattr(
         router_agent,
         "_build_llm",
@@ -167,7 +168,6 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch):
             RouterDecision(destination="order_support", sentiment="neutral")
         ),
     )
-    _mock_menu(monkeypatch)
 
     def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
         return AIMessage(
@@ -201,10 +201,12 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch):
         "destination": "order_support",
         "sentiment": None,
         "messages": [],
+        "menu": SAMPLE_MENU,
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
+        "order_id": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -221,7 +223,9 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch):
 
     final_state = graph.get_state(config).values
     assert final_state["menu_items"] == {"Spring Rolls": 1}
+    assert final_state["order_id"] is not None
     assert final_state["order_ticket"] == {
+        "order_id": final_state["order_id"],
         "items": {"Spring Rolls": 1},
         "lines": [
             {
@@ -244,7 +248,6 @@ def test_messages_do_not_accumulate_across_turns(monkeypatch):
             RouterDecision(destination="order_support", sentiment="neutral")
         ),
     )
-    _mock_menu(monkeypatch)
 
     def _add_call(item_name: str, call_id: str) -> AIMessage:
         return AIMessage(
@@ -277,10 +280,12 @@ def test_messages_do_not_accumulate_across_turns(monkeypatch):
         "destination": "order_support",
         "sentiment": None,
         "messages": [],
+        "menu": SAMPLE_MENU,
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
+        "order_id": None,
     }
 
     graph.invoke(initial_state, config)
@@ -300,7 +305,8 @@ def test_messages_do_not_accumulate_across_turns(monkeypatch):
 
 
 # A full multi-turn conversation confirms the order and produces the expected ticket and graph trajectory. (base)
-def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
+def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_path):
+    _use_tmp_db(monkeypatch, tmp_path)
     monkeypatch.setattr(
         router_agent,
         "_build_llm",
@@ -308,7 +314,6 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
             RouterDecision(destination="order_support", sentiment="neutral")
         ),
     )
-    _mock_menu(monkeypatch)
 
     def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
         return AIMessage(
@@ -336,10 +341,12 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
         "destination": "order_support",
         "sentiment": None,
         "messages": [],
+        "menu": SAMPLE_MENU,
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
+        "order_id": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -353,7 +360,9 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
 
     final_state = graph.get_state(config).values
     assert final_state["order_confirmed"] is True
+    assert final_state["order_id"] is not None
     assert final_state["order_ticket"] == {
+        "order_id": final_state["order_id"],
         "items": {"Kung Pao Chicken": 1, "Spring Rolls": 1},
         "lines": final_state["order_summary"]["lines"],
         "total": final_state["order_summary"]["total"],
@@ -374,7 +383,7 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch):
     ]
     assert final_state["order_summary"]["total"] == 19.90
     assert final_state["messages"][-1].content == render_order_summary(
-        final_state["order_summary"]
+        final_state["order_summary"], final_state["order_id"]
     )
 
     actual = extract_outputs(graph, config)
@@ -421,7 +430,6 @@ def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
             RouterDecision(destination="order_support", sentiment="neutral")
         ),
     )
-    _mock_menu(monkeypatch)
 
     order_llm = _fake_order_llm(
         [
@@ -443,10 +451,12 @@ def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
         "destination": "order_support",
         "sentiment": None,
         "messages": [],
+        "menu": SAMPLE_MENU,
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
+        "order_id": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -455,3 +465,71 @@ def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
     final_state = graph.get_state(config).values
     assert final_state["order_confirmed"] is False
     assert final_state["order_ticket"] is None
+
+
+# A price changed in the database mid-conversation does not affect the
+# confirmed order — the run keeps using the menu snapshot taken at start. (regression)
+def test_price_change_mid_conversation_does_not_affect_confirmed_order(
+    monkeypatch, tmp_path
+):
+    db_path = _use_tmp_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+
+    def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
+        return AIMessage(
+            content="", tool_calls=[{"name": name, "args": args, "id": call_id}]
+        )
+
+    order_llm = _fake_order_llm(
+        [
+            _tool_call(
+                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+            ),
+            AIMessage(content="Added! Anything else?"),
+            _tool_call("mark_order_confirmed", {}, "call_2"),
+            AIMessage(content="Great, your order is confirmed!"),
+        ]
+    )
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "Add a kung pao chicken",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE menu_items SET price = 999.99 WHERE name = 'Kung Pao Chicken'"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = graph.invoke(Command(resume="That's all, I'm done"), config)
+    assert "__interrupt__" not in result
+
+    final_state = graph.get_state(config).values
+    assert final_state["order_summary"]["lines"][0]["unit_price"] == 12.95
+    assert final_state["order_summary"]["total"] == 12.95
+    stored = db.get_order(final_state["order_id"], db_path)
+    assert stored["lines"][0]["unit_price"] == 12.95

@@ -26,3 +26,15 @@ This project is still in development.
 - PyTest
 - Python
 - SQLite
+
+# Setup
+The menu and confirmed orders live in a SQLite database, not `menu/menu.json` (which now only
+serves as seed data). Before running any conversation, initialize and seed the database:
+
+```
+customer-support-fde --init-db
+```
+
+This is idempotent and safe to re-run after editing `menu.json` — it updates existing dishes and
+inserts new ones without deleting anything. The database path defaults to `customer_support.db` in
+the working directory, overridable via `CUSTOMER_SUPPORT_DB`.
