@@ -1,11 +1,9 @@
-import json
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from functools import lru_cache
-from importlib import resources
-from typing import Literal
+from typing import Annotated, Literal
 
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
 MATCH_CUTOFF = 0.6
 TIE_EPSILON = 1e-9
@@ -48,16 +46,6 @@ def price_for_item(name: str, menu: list[MenuItem]) -> float | None:
     return None
 
 
-@lru_cache(maxsize=1)
-def _load_menu() -> list[MenuItem]:
-    data = (
-        resources.files("customer_support_fde.menu")
-        .joinpath("menu.json")
-        .read_text(encoding="utf-8")
-    )
-    return json.loads(data)
-
-
 def _render_item(item: MenuItem) -> str:
     ingredients = ", ".join(item["ingredients"])
     return f"{item['name']} (${item['price']:.2f}): {ingredients}"
@@ -79,18 +67,18 @@ def _render_match(match: MenuMatch) -> str:
 
 
 @tool
-def get_menu() -> str:
+def get_menu(state: Annotated[dict, InjectedState]) -> str:
     """Return every item currently on the menu, with price and ingredients.
 
     Returns:
         str: A newline-separated listing of every menu item (name, price,
         ingredients), or a message saying the menu is empty.
     """
-    return _render_menu(_load_menu())
+    return _render_menu(state["menu"])
 
 
 @tool
-def get_menu_item(name: str) -> str:
+def get_menu_item(name: str, state: Annotated[dict, InjectedState]) -> str:
     """Look up details for one menu item by name (fuzzy-matched against the menu).
 
     Args:
@@ -102,4 +90,4 @@ def get_menu_item(name: str) -> str:
         listing the candidates if multiple items tie; or a not-found
         message if nothing matches.
     """
-    return _render_match(resolve_menu_item(name, _load_menu()))
+    return _render_match(resolve_menu_item(name, state["menu"]))

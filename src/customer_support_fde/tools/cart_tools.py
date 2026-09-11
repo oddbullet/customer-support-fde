@@ -7,7 +7,7 @@ from langgraph.types import Command
 from pydantic import BaseModel
 
 from customer_support_fde.state import SupportState
-from customer_support_fde.tools.menu_tools import MenuMatch, _load_menu, resolve_menu_item
+from customer_support_fde.tools.menu_tools import MenuMatch, resolve_menu_item
 
 
 class CartRemoval(BaseModel):
@@ -36,7 +36,7 @@ def add_items_to_cart(
         names: Menu item names to add, one entry per unit.
     """
     cart = dict(state["menu_items"])
-    menu = _load_menu()
+    menu = state["menu"]
     summaries = []
     for name in names:
         match = resolve_menu_item(name, menu)
@@ -90,7 +90,7 @@ def remove_items_from_cart(
             the cart (deleting the entry if the cap is reached).
     """
     cart = dict(state["menu_items"])
-    menu = _load_menu()
+    menu = state["menu"]
     summaries = []
     for removal in items:
         match = resolve_menu_item(removal.name, menu)

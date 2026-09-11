@@ -1,6 +1,5 @@
 from langgraph.types import Command
 
-from customer_support_fde.tools import cart_tools
 from customer_support_fde.tools.cart_tools import (
     CartRemoval,
     add_items_to_cart,
@@ -37,19 +36,19 @@ SAMPLE_MENU = [
 ]
 
 
-def setup_function(_):
-    cart_tools._load_menu = lambda: SAMPLE_MENU
-
-
 def _invoke_add(names, menu_items):
     return add_items_to_cart.func(
-        names=names, state={"menu_items": menu_items}, tool_call_id="call_1"
+        names=names,
+        state={"menu_items": menu_items, "menu": SAMPLE_MENU},
+        tool_call_id="call_1",
     )
 
 
 def _invoke_remove(items, menu_items):
     return remove_items_from_cart.func(
-        items=items, state={"menu_items": menu_items}, tool_call_id="call_1"
+        items=items,
+        state={"menu_items": menu_items, "menu": SAMPLE_MENU},
+        tool_call_id="call_1",
     )
 
 

@@ -8,6 +8,7 @@ def ticket_gen_node(state: SupportState) -> SupportState:
     return {
         **state,
         "order_ticket": {
+            "order_id": state.get("order_id"),
             "items": dict(state["menu_items"]),
             "lines": summary["lines"],
             "total": summary["total"],

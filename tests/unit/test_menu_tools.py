@@ -1,5 +1,7 @@
+from customer_support_fde import db
 from customer_support_fde.tools.menu_tools import (
-    _load_menu,
+    get_menu,
+    get_menu_item,
     price_for_item,
     resolve_menu_item,
 )
@@ -80,15 +82,41 @@ def test_tie_when_two_items_score_equally_at_the_top():
     assert set(match.candidates) == {"Beef Noodle Soup", "Beef Noodle Bowl"}
 
 
-# Sanity-checks that the real menu.json data is present and well-formed. (base)
-def test_real_menu_json_has_at_least_five_well_formed_items():
-    menu = _load_menu()
+# Sanity-checks that the real menu.json data, seeded into the database, is
+# present and well-formed. (base)
+def test_seeded_menu_json_has_at_least_five_well_formed_items(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+
+    menu = db.load_menu(path)
 
     assert len(menu) >= 5
     for item in menu:
         assert isinstance(item["name"], str) and item["name"]
         assert isinstance(item["price"], (int, float)) and item["price"] > 0
         assert isinstance(item["ingredients"], list) and item["ingredients"]
+
+
+# get_menu reads the menu from state["menu"] rather than loading it itself. (base)
+def test_get_menu_reads_menu_from_state():
+    rendered = get_menu.func(state={"menu": SAMPLE_MENU})
+
+    for item in SAMPLE_MENU:
+        assert item["name"] in rendered
+
+
+# An empty state["menu"] renders the existing "no items available" text. (edge)
+def test_get_menu_empty_state_menu_renders_no_items_available():
+    rendered = get_menu.func(state={"menu": []})
+
+    assert rendered == "There are no items available on the menu right now."
+
+
+# get_menu_item reads the menu from state["menu"] rather than loading it itself. (base)
+def test_get_menu_item_reads_menu_from_state():
+    rendered = get_menu_item.func(name="Mapo Tofu", state={"menu": SAMPLE_MENU})
+
+    assert "Mapo Tofu" in rendered
 
 
 # An exact canonical-name match returns that menu entry's price. (base)
