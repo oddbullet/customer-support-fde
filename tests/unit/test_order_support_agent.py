@@ -56,6 +56,7 @@ def _base_state(user_query: str) -> dict:
         "menu_items": {},
         "order_confirmed": False,
         "order_ticket": None,
+        "order_summary": None,
     }
 
 

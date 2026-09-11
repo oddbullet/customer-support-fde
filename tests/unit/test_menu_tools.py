@@ -1,4 +1,8 @@
-from customer_support_fde.tools.menu_tools import _load_menu, resolve_menu_item
+from customer_support_fde.tools.menu_tools import (
+    _load_menu,
+    price_for_item,
+    resolve_menu_item,
+)
 
 SAMPLE_MENU = [
     {
@@ -85,3 +89,27 @@ def test_real_menu_json_has_at_least_five_well_formed_items():
         assert isinstance(item["name"], str) and item["name"]
         assert isinstance(item["price"], (int, float)) and item["price"] > 0
         assert isinstance(item["ingredients"], list) and item["ingredients"]
+
+
+# An exact canonical-name match returns that menu entry's price. (base)
+def test_price_for_item_returns_price_on_exact_match():
+    assert price_for_item("Kung Pao Chicken", SAMPLE_MENU) == 12.95
+
+
+# A name absent from the menu returns None rather than raising. (edge)
+def test_price_for_item_returns_none_when_name_not_on_menu():
+    assert price_for_item("Peking Duck", SAMPLE_MENU) is None
+
+
+# An empty menu list returns None for any name. (edge)
+def test_price_for_item_returns_none_for_empty_menu():
+    assert price_for_item("Kung Pao Chicken", []) is None
+
+
+# A near-miss name that resolve_menu_item would fuzzy-match returns None
+# instead of another item's price, guarding the mispricing risk in
+# research.md §4. (regression)
+def test_price_for_item_does_not_fuzzy_match_near_miss_name():
+    assert resolve_menu_item("Sprng Rolls", SAMPLE_MENU).status == "found"
+
+    assert price_for_item("Sprng Rolls", SAMPLE_MENU) is None
