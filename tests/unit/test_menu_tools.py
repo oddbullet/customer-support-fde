@@ -1,5 +1,6 @@
 from customer_support_fde import db
 from customer_support_fde.tools.menu_tools import (
+    cart_total,
     get_menu,
     get_menu_item,
     price_for_item,
@@ -141,3 +142,30 @@ def test_price_for_item_does_not_fuzzy_match_near_miss_name():
     assert resolve_menu_item("Sprng Rolls", SAMPLE_MENU).status == "found"
 
     assert price_for_item("Sprng Rolls", SAMPLE_MENU) is None
+
+
+# A single item at quantity 1 totals to exactly that item's price. (base)
+def test_cart_total_single_item_quantity_one():
+    assert cart_total({"Kung Pao Chicken": 1}, SAMPLE_MENU) == 12.95
+
+
+# Multiple distinct items at varying quantities sum to price times quantity
+# across every line. (base)
+def test_cart_total_multiple_items_varying_quantities():
+    cart = {"Kung Pao Chicken": 2, "Mapo Tofu": 1, "Spring Rolls": 3}
+
+    assert cart_total(cart, SAMPLE_MENU) == 12.95 * 2 + 11.50 + 6.95 * 3
+
+
+# An empty cart returns None rather than 0.0, matching
+# build_order_summary's existing "no total" convention. (edge)
+def test_cart_total_empty_cart_returns_none():
+    assert cart_total({}, SAMPLE_MENU) is None
+
+
+# The total always rounds up (never down) on a fractional-cent sum, matching
+# the ROUND_CEILING rule build_order_summary already relies on. (edge)
+def test_cart_total_rounds_up_on_fractional_cent():
+    fractional_cent_menu = [{"name": "Item A", "price": 4.321, "ingredients": []}]
+
+    assert cart_total({"Item A": 1}, fractional_cent_menu) == 4.33

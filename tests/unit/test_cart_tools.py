@@ -3,6 +3,7 @@ from langgraph.types import Command
 from customer_support_fde.tools.cart_tools import (
     CartRemoval,
     add_items_to_cart,
+    get_cart_total,
     mark_order_confirmed,
     remove_items_from_cart,
 )
@@ -220,3 +221,42 @@ def test_remove_never_mutates_input_menu_items_in_place():
     _invoke_remove([CartRemoval(name="Kung Pao Chicken")], original)
 
     assert original == {"Kung Pao Chicken": 1, "Spring Rolls": 2}
+
+
+def _invoke_get_cart_total(menu_items):
+    return get_cart_total.func(state={"menu_items": menu_items, "menu": SAMPLE_MENU})
+
+
+# A single item at quantity one reports that exact item's price as the total. (base)
+def test_get_cart_total_single_item_reports_exact_price():
+    rendered = _invoke_get_cart_total({"Kung Pao Chicken": 1})
+
+    assert "$12.95" in rendered
+
+
+# Multiple distinct items at varying quantities report the correct combined total. (base)
+def test_get_cart_total_multiple_items_reports_combined_total():
+    rendered = _invoke_get_cart_total(
+        {"Kung Pao Chicken": 2, "Mapo Tofu": 1, "Spring Rolls": 3}
+    )
+
+    expected = 12.95 * 2 + 11.50 + 6.95 * 3
+    assert f"${expected:.2f}" in rendered
+
+
+# Asking for the total again after the cart changed reflects only the
+# updated cart, not a stale figure from the earlier call. (base)
+def test_get_cart_total_reflects_cart_after_it_changes():
+    first = _invoke_get_cart_total({"Kung Pao Chicken": 1})
+    assert "$12.95" in first
+
+    second = _invoke_get_cart_total({"Kung Pao Chicken": 1, "Spring Rolls": 1})
+    assert f"${12.95 + 6.95:.2f}" in second
+
+
+# An empty cart is reported as empty, with no dollar figure in the response. (edge)
+def test_get_cart_total_empty_cart_reports_no_numeric_total():
+    rendered = _invoke_get_cart_total({})
+
+    assert "$" not in rendered
+    assert "empty" in rendered.lower()

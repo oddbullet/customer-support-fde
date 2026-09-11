@@ -8,6 +8,7 @@ from customer_support_fde.nodes.cart_summary_node import (
     render_order_summary,
 )
 from customer_support_fde.nodes.ticket_gen_node import ticket_gen_node
+from customer_support_fde.tools.menu_tools import cart_total
 
 SAMPLE_MENU = [
     {
@@ -118,6 +119,18 @@ def test_build_order_summary_empty_cart_yields_none_total():
 
     assert summary["lines"] == []
     assert summary["total"] is None
+
+
+# build_order_summary's total matches the shared cart_total() helper for the
+# same cart, so a mid-conversation total (get_cart_total) can never drift
+# from the final order total — guards FR-004/SC-003 in
+# specs/006-cart-total-lookup/spec.md. (regression)
+def test_build_order_summary_total_matches_shared_cart_total_helper():
+    cart = {"Kung Pao Chicken": 2, "Hot and Sour Soup": 1, "Spring Rolls": 3}
+
+    summary = build_order_summary(cart, SAMPLE_MENU)
+
+    assert summary["total"] == cart_total(cart, SAMPLE_MENU)
 
 
 # render_order_summary names every item, shows unit price and line total

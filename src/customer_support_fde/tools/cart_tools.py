@@ -7,7 +7,7 @@ from langgraph.types import Command
 from pydantic import BaseModel
 
 from customer_support_fde.state import SupportState
-from customer_support_fde.tools.menu_tools import MenuMatch, resolve_menu_item
+from customer_support_fde.tools.menu_tools import MenuMatch, cart_total, resolve_menu_item
 
 
 class CartRemoval(BaseModel):
@@ -146,3 +146,19 @@ def mark_order_confirmed(
             ],
         }
     )
+
+
+@tool
+def get_cart_total(state: Annotated[SupportState, InjectedState]) -> str:
+    """Return the customer's current cart total, computed from cart contents and
+    live menu prices. Always use this instead of computing or estimating the
+    total yourself.
+
+    Returns:
+        str: A message stating the exact current total, or a message saying
+        the cart is empty when there's nothing in it yet.
+    """
+    total = cart_total(state["menu_items"], state["menu"])
+    if total is None:
+        return "Your cart is empty, so there's no total yet."
+    return f"Your current cart total is ${total:.2f}."
