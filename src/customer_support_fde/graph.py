@@ -9,9 +9,13 @@ from customer_support_fde.nodes.order_support_agent import (
     call_model,
     order_tools,
 )
-from customer_support_fde.nodes.refund_agent import refund_agent
+from customer_support_fde.nodes.refund_agent import (
+    refund_agent,
+    refund_await_customer,
+    refund_tools,
+)
 from customer_support_fde.nodes.router_agent import router_agent
-from customer_support_fde.nodes.ticket_gen_node import ticket_gen_node
+from customer_support_fde.nodes.ticket_gen_node import refund_ticket_node, ticket_gen_node
 from customer_support_fde.state import SupportState
 
 
@@ -21,6 +25,10 @@ def _route_from_destination(state: SupportState) -> str:
 
 def _route_from_await_customer(state: SupportState) -> str:
     return "confirmed" if state["order_confirmed"] else "continue"
+
+
+def _route_from_refund_await_customer(state: SupportState) -> str:
+    return "resolved" if state["refund_resolved"] else "continue"
 
 
 def build_graph(checkpointer: BaseCheckpointSaver | None = None):
@@ -34,6 +42,9 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_node("cart_summary", cart_summary_node)
     graph.add_node("ticket_gen_node", ticket_gen_node)
     graph.add_node("refund_agent", refund_agent)
+    graph.add_node("refund_tools", refund_tools)
+    graph.add_node("refund_await_customer", refund_await_customer)
+    graph.add_node("refund_ticket_node", refund_ticket_node)
 
     graph.set_entry_point("router_agent")
     graph.add_conditional_edges(
@@ -66,6 +77,18 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     )
     graph.add_edge("cart_summary", "ticket_gen_node")
     graph.add_edge("ticket_gen_node", END)
-    graph.add_edge("refund_agent", END)
+
+    graph.add_conditional_edges(
+        "refund_agent",
+        tools_condition,
+        {"tools": "refund_tools", "__end__": "refund_await_customer"},
+    )
+    graph.add_edge("refund_tools", "refund_agent")
+    graph.add_conditional_edges(
+        "refund_await_customer",
+        _route_from_refund_await_customer,
+        {"continue": "refund_agent", "resolved": "refund_ticket_node"},
+    )
+    graph.add_edge("refund_ticket_node", END)
 
     return graph.compile(checkpointer=checkpointer)

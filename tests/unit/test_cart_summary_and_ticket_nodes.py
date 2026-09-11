@@ -7,7 +7,7 @@ from customer_support_fde.nodes.cart_summary_node import (
     cart_summary_node,
     render_order_summary,
 )
-from customer_support_fde.nodes.ticket_gen_node import ticket_gen_node
+from customer_support_fde.nodes.ticket_gen_node import refund_ticket_node, ticket_gen_node
 from customer_support_fde.tools.menu_tools import cart_total
 
 SAMPLE_MENU = [
@@ -286,3 +286,55 @@ def test_ticket_gen_node_defaults_when_order_summary_missing():
 
     assert result["order_ticket"]["lines"] == []
     assert result["order_ticket"]["total"] is None
+
+
+def _refund_base_state() -> dict:
+    return {
+        "user_query": "I got the wrong dish",
+        "destination": "refund",
+        "sentiment": "negative",
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": True,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+    }
+
+
+# refund_ticket_node produces the data-model.md ticket shape from state. (base)
+def test_refund_ticket_node_produces_documented_shape():
+    state = _refund_base_state()
+    state["order_lookup"] = {"order_id": "K7QP3M9X", "total": 22.0, "lines": []}
+    state["refund_request"] = {"id": 1, "amount": 10.0}
+    state["complaint_ids"] = {"K7QP3M9X": 5}
+
+    result = refund_ticket_node(state)
+
+    assert result["refund_ticket"] == {
+        "order_id": "K7QP3M9X",
+        "order": state["order_lookup"],
+        "sentiment": "negative",
+        "decision": "eligible",
+        "refund_request": state["refund_request"],
+        "complaint_ids": [5],
+    }
+
+
+# refund_ticket_node handles the case where no order was ever identified. (edge)
+def test_refund_ticket_node_handles_no_order_identified():
+    state = _refund_base_state()
+
+    result = refund_ticket_node(state)
+
+    assert result["refund_ticket"]["order_id"] is None
+    assert result["refund_ticket"]["order"] is None
+    assert result["refund_ticket"]["refund_request"] is None
+    assert result["refund_ticket"]["complaint_ids"] == []
+    assert result["refund_ticket"]["decision"] is None

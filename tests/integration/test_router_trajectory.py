@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
-from customer_support_fde.nodes import order_support_agent, router_agent
+from customer_support_fde.nodes import order_support_agent, refund_agent, router_agent
 from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes.router_agent import RouterDecision
 from _trajectory import extract_outputs
@@ -32,6 +32,11 @@ def _mock_order_support_reply(monkeypatch, content: str = "Sure, how can I help?
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
 
 
+def _mock_refund_reply(monkeypatch, content: str = "Can you give me your order id?") -> None:
+    refund_llm = _fake_order_llm([AIMessage(content=content)])
+    monkeypatch.setattr(refund_agent, "_build_llm", lambda: refund_llm)
+
+
 def _new_order_support_initial_state(query: str) -> dict:
     return {
         "user_query": query,
@@ -44,6 +49,11 @@ def _new_order_support_initial_state(query: str) -> dict:
         "order_ticket": None,
         "order_summary": None,
         "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
     }
 
 
@@ -87,26 +97,33 @@ def test_order_support_style_request_reaches_call_model_and_pauses(monkeypatch):
     assert result["score"] is True
 
 
-# A clear refund/complaint request routes straight through to refund_agent. (base)
+# A clear refund/complaint request routes through refund_agent and pauses for the customer. (base)
 def test_refund_style_request_routes_through_refund_agent(monkeypatch):
     monkeypatch.setattr(
         router_agent,
         "_build_llm",
         lambda: _fake_llm(RouterDecision(destination="refund", sentiment="negative")),
     )
+    _mock_refund_reply(monkeypatch)
     graph = build_graph(checkpointer=MemorySaver())
-    initial_state = {
-        "user_query": "My order arrived cold and an hour late, I want my money back",
-        "destination": "order_support",
-        "sentiment": None,
-    }
+    initial_state = _new_order_support_initial_state(
+        "My order arrived cold and an hour late, I want my money back"
+    )
 
     actual = _run_and_extract_trajectory(graph, initial_state)
 
     result = graph_trajectory_strict_match(
         outputs=actual,
         reference_outputs={
-            "steps": [["__start__", "router_agent", "refund_agent"]],
+            "steps": [
+                [
+                    "__start__",
+                    "router_agent",
+                    "refund_agent",
+                    "refund_await_customer",
+                    "__interrupt__",
+                ]
+            ],
         },
     )
     assert result["score"] is True
@@ -125,7 +142,7 @@ def test_refund_style_request_routes_through_refund_agent(monkeypatch):
     [
         ("1", ["call_model", "await_customer", "__interrupt__"]),
         ("2", ["call_model", "await_customer", "__interrupt__"]),
-        ("3", ["refund_agent"]),
+        ("3", ["refund_agent", "refund_await_customer", "__interrupt__"]),
     ],
 )
 def test_ambiguous_or_mixed_signal_request_resolved_via_clarify_intent(
@@ -138,6 +155,8 @@ def test_ambiguous_or_mixed_signal_request_resolved_via_clarify_intent(
     )
     if answer in ("1", "2"):
         _mock_order_support_reply(monkeypatch)
+    else:
+        _mock_refund_reply(monkeypatch)
     graph = build_graph(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = _new_order_support_initial_state(query)
@@ -250,6 +269,8 @@ def test_labeled_sample_set_routes_to_the_expected_destination_at_least_90_perce
         )
         if expected_destination == "order_support":
             _mock_order_support_reply(monkeypatch)
+        elif expected_destination == "refund":
+            _mock_refund_reply(monkeypatch)
         graph = build_graph(checkpointer=MemorySaver())
         config = {"configurable": {"thread_id": str(uuid.uuid4())}}
         initial_state = _new_order_support_initial_state(query)

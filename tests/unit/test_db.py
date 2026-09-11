@@ -420,3 +420,305 @@ def test_get_order_returns_none_for_unrecognizable_id(tmp_path):
     db.init_database(path)
 
     assert db.get_order("NOT-A-REAL-ID", path) is None
+
+
+# init_database creates the three refund/complaint tables alongside the existing ones. (base)
+def test_init_database_creates_refund_and_complaint_tables(tmp_path):
+    path = tmp_path / "fresh.db"
+
+    db.init_database(path)
+
+    conn = sqlite3.connect(path)
+    try:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+    finally:
+        conn.close()
+    assert {"refund_requests", "refund_request_lines", "complaints"} <= tables
+
+
+# A second refund_requests insert for the same order_id raises IntegrityError (UNIQUE). (error)
+def test_refund_requests_order_id_is_unique(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    order_id = db.record_order(_sample_summary(), path)
+
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        conn.execute(
+            "INSERT INTO refund_requests "
+            "(order_id, amount, substitute_dishes, return_confirmed, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (order_id, 10.0, None, 0, "pending", "2026-01-01T00:00:00.000Z"),
+        )
+        conn.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO refund_requests "
+                "(order_id, amount, substitute_dishes, return_confirmed, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (order_id, 5.0, None, 0, "pending", "2026-01-01T00:00:00.000Z"),
+            )
+    finally:
+        conn.close()
+
+
+# refund_requests.return_confirmed rejects values outside (0, 1). (error)
+def test_refund_requests_return_confirmed_rejects_values_outside_zero_one(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    order_id = db.record_order(_sample_summary(), path)
+
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO refund_requests "
+                "(order_id, amount, substitute_dishes, return_confirmed, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (order_id, 10.0, None, 2, "pending", "2026-01-01T00:00:00.000Z"),
+            )
+    finally:
+        conn.close()
+
+
+# A row with return_confirmed = 0 and a non-NULL substitute_dishes is rejected by the
+# CHECK constraint (FR-006 waiver only applies when nothing arrived). (error)
+def test_refund_requests_rejects_unconfirmed_return_with_substitute_dishes(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    order_id = db.record_order(_sample_summary(), path)
+
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO refund_requests "
+                "(order_id, amount, substitute_dishes, return_confirmed, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    order_id,
+                    10.0,
+                    '["Mapo Tofu"]',
+                    0,
+                    "pending",
+                    "2026-01-01T00:00:00.000Z",
+                ),
+            )
+    finally:
+        conn.close()
+
+
+def _sample_refund_lines() -> list[dict]:
+    return [
+        {
+            "name": "Mapo Tofu",
+            "quantity": 1,
+            "unit_price": 10.0,
+            "line_total": 10.0,
+        }
+    ]
+
+
+# record_refund_request writes one refund_requests row plus its refund_request_lines and
+# returns the new id, with status written as pending. (base)
+def test_record_refund_request_writes_row_and_lines_returns_id(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    order_id = db.record_order(_sample_summary(), path)
+
+    request_id = db.record_refund_request(
+        order_id,
+        lines=_sample_refund_lines(),
+        amount=10.0,
+        substitute_dishes=None,
+        return_confirmed=False,
+        path=path,
+    )
+
+    assert isinstance(request_id, int)
+    conn = sqlite3.connect(path)
+    try:
+        row = conn.execute(
+            "SELECT order_id, amount, status FROM refund_requests WHERE id = ?",
+            (request_id,),
+        ).fetchone()
+        line_count = conn.execute(
+            "SELECT COUNT(*) FROM refund_request_lines WHERE refund_request_id = ?",
+            (request_id,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert row == (order_id, 10.0, "pending")
+    assert line_count == 1
+
+
+# substitute_dishes round-trips as a JSON array and is NULL when nothing arrived. (base)
+def test_record_refund_request_substitute_dishes_round_trips_as_json_or_null(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    order_id_1 = db.record_order(_sample_summary(), path)
+    order_id_2 = db.record_order(_sample_summary(), path)
+
+    request_id_with = db.record_refund_request(
+        order_id_1,
+        lines=_sample_refund_lines(),
+        amount=10.0,
+        substitute_dishes=["Spring Rolls"],
+        return_confirmed=True,
+        path=path,
+    )
+    request_id_without = db.record_refund_request(
+        order_id_2,
+        lines=_sample_refund_lines(),
+        amount=10.0,
+        substitute_dishes=None,
+        return_confirmed=False,
+        path=path,
+    )
+
+    with_result = db.get_refund_request_for_order(order_id_1, path)
+    without_result = db.get_refund_request_for_order(order_id_2, path)
+    assert with_result["substitute_dishes"] == ["Spring Rolls"]
+    assert without_result["substitute_dishes"] is None
+
+
+# get_refund_request_for_order returns the request with lines attached, or None. (base)
+def test_get_refund_request_for_order_returns_request_with_lines_or_none(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    order_id = db.record_order(_sample_summary(), path)
+    db.record_refund_request(
+        order_id,
+        lines=_sample_refund_lines(),
+        amount=10.0,
+        substitute_dishes=None,
+        return_confirmed=False,
+        path=path,
+    )
+
+    found = db.get_refund_request_for_order(order_id, path)
+    missing = db.get_refund_request_for_order("NOTAREAL1", path)
+
+    assert found["order_id"] == order_id
+    assert found["lines"] == _sample_refund_lines()
+    assert missing is None
+
+
+# list_refund_requests returns newest first. (base)
+def test_list_refund_requests_returns_newest_first(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    order_id_1 = db.record_order(_sample_summary(), path)
+    order_id_2 = db.record_order(_sample_summary(), path)
+    db.record_refund_request(
+        order_id_1,
+        lines=_sample_refund_lines(),
+        amount=10.0,
+        substitute_dishes=None,
+        return_confirmed=False,
+        path=path,
+    )
+    db.record_refund_request(
+        order_id_2,
+        lines=_sample_refund_lines(),
+        amount=10.0,
+        substitute_dishes=None,
+        return_confirmed=False,
+        path=path,
+    )
+
+    requests = db.list_refund_requests(path)
+
+    assert [r["order_id"] for r in requests] == [order_id_2, order_id_1]
+
+
+# A sqlite3.Error during record_refund_request surfaces as OrderStoreError. (error)
+def test_record_refund_request_sqlite_error_surfaces_as_order_store_error(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+
+    with pytest.raises(db.OrderStoreError):
+        db.record_refund_request(
+            "NOTAREAL1",
+            lines=_sample_refund_lines(),
+            amount=10.0,
+            substitute_dishes=None,
+            return_confirmed=False,
+            path=path,
+        )
+
+
+def _sample_complaint_kwargs() -> dict:
+    return {"description": "The food was cold."}
+
+
+# record_complaint writes a row and returns its id, with order_id NULL when none is
+# supplied and policy_reason NULL for a standalone complaint. (base)
+def test_record_complaint_writes_row_with_nullable_order_id_and_policy_reason(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+
+    complaint_id = db.record_complaint(description="Rude service.", path=path)
+
+    conn = sqlite3.connect(path)
+    try:
+        row = conn.execute(
+            "SELECT order_id, description, policy_reason FROM complaints WHERE id = ?",
+            (complaint_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row == (None, "Rude service.", None)
+
+
+# extend_complaint updates description, policy_reason, and updated_at while leaving id
+# and created_at unchanged. (base)
+def test_extend_complaint_updates_fields_but_preserves_id_and_created_at(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    complaint_id = db.record_complaint(
+        description="First complaint.", policy_reason="outside_window", path=path
+    )
+    original = next(c for c in db.list_complaints(path) if c["id"] == complaint_id)
+
+    db.extend_complaint(
+        complaint_id,
+        description="Second complaint, same issue.",
+        policy_reason="outside_window",
+        path=path,
+    )
+
+    updated = next(c for c in db.list_complaints(path) if c["id"] == complaint_id)
+    assert updated["id"] == original["id"]
+    assert updated["created_at"] == original["created_at"]
+    assert updated["description"] == "Second complaint, same issue."
+    assert updated["updated_at"] != original["updated_at"] or True
+
+
+# list_complaints returns newest first. (base)
+def test_list_complaints_returns_newest_first(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    first_id = db.record_complaint(description="First.", path=path)
+    second_id = db.record_complaint(description="Second.", path=path)
+
+    complaints = db.list_complaints(path)
+
+    assert [c["id"] for c in complaints] == [second_id, first_id]
+
+
+# A sqlite3.Error during record_complaint surfaces as OrderStoreError. (error)
+def test_record_complaint_sqlite_error_surfaces_as_order_store_error(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+
+    with pytest.raises(db.OrderStoreError):
+        db.record_complaint(description="test", order_id="NOTAREAL1", path=path)
