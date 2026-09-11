@@ -54,6 +54,7 @@ def _new_order_support_initial_state(query: str) -> dict:
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
 

@@ -1,9 +1,8 @@
 from unittest.mock import MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, RemoveMessage
+from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from langgraph._internal._constants import CONF, CONFIG_KEY_RUNTIME
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
@@ -66,7 +65,22 @@ def _base_state(user_query: str) -> dict:
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
+
+
+def _turn(i: int) -> list:
+    return [
+        HumanMessage(content=f"turn {i} query", id=f"h{i}"),
+        AIMessage(content=f"turn {i} reply", id=f"a{i}"),
+    ]
+
+
+def _conversation(num_turns: int) -> list:
+    messages: list = []
+    for i in range(1, num_turns + 1):
+        messages.extend(_turn(i))
+    return messages
 
 
 def _fake_bound_llm(responses: list[AIMessage]) -> MagicMock:
@@ -300,19 +314,22 @@ def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatc
     assert state["menu_items"] == {"Kung Pao Chicken": 2}
 
 
-# await_customer interrupts for the next message and resets state from the reply. (base)
+# await_customer appends the resumed reply as a new HumanMessage onto the existing
+# transcript instead of wiping it (supersedes the old per-turn reset contract). (regression)
 def test_await_customer_interrupts_when_not_confirmed(monkeypatch):
     fake_interrupt = MagicMock(return_value="add one")
     monkeypatch.setattr(order_support_agent, "interrupt", fake_interrupt)
     state = _base_state("hello")
-    state["messages"] = [AIMessage(content="Anything else?")]
+    prior_message = AIMessage(content="Anything else?")
+    state["messages"] = [prior_message]
 
     result = await_customer(state)
 
     fake_interrupt.assert_called_once_with("Anything else?")
-    assert len(result["messages"]) == 1
-    assert isinstance(result["messages"][0], RemoveMessage)
-    assert result["messages"][0].id == REMOVE_ALL_MESSAGES
+    assert len(result["messages"]) == 2
+    assert result["messages"][0] is prior_message
+    assert isinstance(result["messages"][1], HumanMessage)
+    assert result["messages"][1].content == "add one"
     assert result["user_query"] == "add one"
 
 
@@ -328,6 +345,32 @@ def test_await_customer_does_not_interrupt_when_confirmed(monkeypatch):
 
     fake_interrupt.assert_not_called()
     assert result["order_confirmed"] is True
+
+
+# call_model rebuilds the cart-summary SystemMessage from state["menu_items"] on every
+# call, not just the first turn's, now that messages persists across turns. (regression)
+def test_call_model_refreshes_cart_summary_on_later_turns(monkeypatch):
+    final_response = AIMessage(content="Anything else?")
+    bound = MagicMock()
+    bound.invoke.return_value = final_response
+    fake_llm = MagicMock()
+    fake_llm.bind_tools.return_value = bound
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
+
+    state = _base_state("Add a spring roll too")
+    state["messages"] = [
+        HumanMessage(content="Add a kung pao chicken"),
+        AIMessage(content="Added! Anything else?"),
+    ]
+    state["menu_items"] = {"Kung Pao Chicken": 1}
+
+    call_model(state)
+
+    sent_messages = bound.invoke.call_args[0][0]
+    system_messages = [m for m in sent_messages if isinstance(m, SystemMessage)]
+    assert any(
+        "Kung Pao Chicken" in m.content and "1" in m.content for m in system_messages
+    )
 
 
 # An LLM call failure in call_model raises rather than returning partial state. (error)
@@ -349,3 +392,121 @@ def test_call_model_llm_failure_propagates_rather_than_returning_partial_state(
 # model can look up an exact total instead of computing one itself. (base)
 def test_get_cart_total_is_registered_on_order_tools():
     assert get_cart_total in _ORDER_TOOLS
+
+
+# With 3 or fewer completed turns, condensation is skipped even over the token
+# threshold, since there is nothing older than the retained turns to condense. (edge)
+def test_call_model_skips_condensation_with_three_or_fewer_turns(monkeypatch):
+    final_response = AIMessage(content="Sure thing!")
+    fake_llm = MagicMock()
+    fake_llm.get_num_tokens_from_messages.return_value = (
+        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
+    )
+    fake_llm.bind_tools.return_value.invoke.return_value = final_response
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
+
+    conversation = _conversation(3)
+    state = _base_state("turn 4 query")
+    state["messages"] = conversation
+
+    result = call_model(state)
+
+    fake_llm.invoke.assert_not_called()
+    assert result["order_conversation_summary"] is None
+    assert result["messages"] == conversation + [final_response]
+
+
+# With more than 3 turns but the token count at/under threshold, condensation is
+# skipped and messages/summary are left unchanged. (edge)
+def test_call_model_skips_condensation_when_at_or_under_threshold(monkeypatch):
+    final_response = AIMessage(content="Sure thing!")
+    fake_llm = MagicMock()
+    fake_llm.get_num_tokens_from_messages.return_value = (
+        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD
+    )
+    fake_llm.bind_tools.return_value.invoke.return_value = final_response
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
+
+    conversation = _conversation(4)
+    state = _base_state("turn 5 query")
+    state["messages"] = conversation
+
+    result = call_model(state)
+
+    fake_llm.invoke.assert_not_called()
+    assert result["order_conversation_summary"] is None
+    assert result["messages"] == conversation + [final_response]
+
+
+# With more than 3 turns and the token count over threshold, condensation folds
+# every turn older than the last 3 into order_conversation_summary and removes
+# those messages from state["messages"], while the last 3 turns remain intact. (base)
+def test_call_model_condenses_older_turns_when_over_threshold(monkeypatch):
+    final_response = AIMessage(content="Sure thing!")
+    summary_response = AIMessage(content="Customer added kung pao chicken.")
+    fake_llm = MagicMock()
+    fake_llm.get_num_tokens_from_messages.return_value = (
+        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
+    )
+    fake_llm.invoke.return_value = summary_response
+    fake_llm.bind_tools.return_value.invoke.return_value = final_response
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
+
+    conversation = _conversation(4)
+    state = _base_state("turn 5 query")
+    state["messages"] = conversation
+
+    result = call_model(state)
+
+    assert result["order_conversation_summary"] == "Customer added kung pao chicken."
+    removed_ids = {m.id for m in result["messages"] if isinstance(m, RemoveMessage)}
+    assert removed_ids == {"h1", "a1"}
+    retained = [m for m in result["messages"] if not isinstance(m, RemoveMessage)]
+    assert retained == conversation[2:] + [final_response]
+
+
+# Re-condensing later in the same conversation replaces the prior summary wholesale
+# rather than appending to it. (base)
+def test_call_model_recondenses_replacing_old_summary(monkeypatch):
+    final_response = AIMessage(content="Sure thing!")
+    new_summary_response = AIMessage(content="Only the new summary text.")
+    fake_llm = MagicMock()
+    fake_llm.get_num_tokens_from_messages.return_value = (
+        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
+    )
+    fake_llm.invoke.return_value = new_summary_response
+    fake_llm.bind_tools.return_value.invoke.return_value = final_response
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
+
+    conversation = _conversation(4)
+    state = _base_state("turn 5 query")
+    state["messages"] = conversation
+    state["order_conversation_summary"] = "The old summary text."
+
+    result = call_model(state)
+
+    assert result["order_conversation_summary"] == "Only the new summary text."
+    assert "old summary" not in result["order_conversation_summary"].lower()
+
+
+# When the condensation model call itself raises, call_model still returns a normal
+# reply for that turn and leaves messages/order_conversation_summary unchanged;
+# no exception propagates out of call_model. (error)
+def test_call_model_condensation_failure_is_silent(monkeypatch):
+    final_response = AIMessage(content="Sure thing!")
+    fake_llm = MagicMock()
+    fake_llm.get_num_tokens_from_messages.return_value = (
+        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
+    )
+    fake_llm.invoke.side_effect = RuntimeError("condensation model unavailable")
+    fake_llm.bind_tools.return_value.invoke.return_value = final_response
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
+
+    conversation = _conversation(4)
+    state = _base_state("turn 5 query")
+    state["messages"] = conversation
+
+    result = call_model(state)
+
+    assert result["order_conversation_summary"] is None
+    assert result["messages"] == conversation + [final_response]

@@ -116,6 +116,7 @@ def test_qualifying_refund_conversation_creates_pending_request(monkeypatch, tmp
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -163,6 +164,7 @@ def _run_denial_conversation(monkeypatch, tmp_path, order_id, process_args):
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
     return graph.invoke(initial_state, config)
@@ -277,6 +279,7 @@ def test_complaint_only_conversation_creates_no_refund_request(monkeypatch, tmp_
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)

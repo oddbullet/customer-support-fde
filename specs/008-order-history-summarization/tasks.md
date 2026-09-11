@@ -32,7 +32,7 @@ Single project — `src/customer_support_fde/`, `tests/` at repository root, per
 
 **Purpose**: Confirm the feature needs no new project setup.
 
-- [ ] T001 Verify `ChatOpenAI(...).get_num_tokens_from_messages` is available on the installed
+- [X] T001 Verify `ChatOpenAI(...).get_num_tokens_from_messages` is available on the installed
       `langchain-openai` version with `python -c "from langchain_openai import ChatOpenAI;
       print(hasattr(ChatOpenAI(model='x'), 'get_num_tokens_from_messages'))"` — expect `True`.
       No new dependency is added (research.md Decision 5); no file changes.
@@ -52,7 +52,7 @@ every existing test fixture that constructs a full `SupportState` literal (addin
 
 > Write these first; they must fail against the current (pre-change) code.
 
-- [ ] T002 In `tests/unit/test_order_support_agent.py`, rewrite
+- [X] T002 In `tests/unit/test_order_support_agent.py`, rewrite
       `test_await_customer_interrupts_when_not_confirmed` to assert that on resume,
       `await_customer` appends the reply as a new `HumanMessage` to the existing
       `state["messages"]` (not `RemoveMessage(id=REMOVE_ALL_MESSAGES)`) — start the test with a
@@ -60,7 +60,7 @@ every existing test fixture that constructs a full `SupportState` literal (addin
       both the prior message and the new `HumanMessage`, in that order. Comment tag:
       `(regression)` — supersedes the old wipe-every-turn assertion
       (contracts/order-support-agent.md `await_customer`).
-- [ ] T003 In `tests/unit/test_order_support_agent.py`, add a test asserting `call_model`
+- [X] T003 In `tests/unit/test_order_support_agent.py`, add a test asserting `call_model`
       renders an up-to-date cart-summary `SystemMessage` from `state["menu_items"]` on a call
       where `state["messages"]` already contains prior turns (not just the first, empty-list
       call) — i.e., the cart summary must still refresh every turn, not just once. Comment tag:
@@ -69,33 +69,33 @@ every existing test fixture that constructs a full `SupportState` literal (addin
 
 ### Implementation for Foundational work
 
-- [ ] T004 In `src/customer_support_fde/state.py`, add `order_conversation_summary: str | None`
+- [X] T004 In `src/customer_support_fde/state.py`, add `order_conversation_summary: str | None`
       to the `SupportState` `TypedDict`, with an initial value of `None` (data-model.md
       "`SupportState` addition" table).
-- [ ] T005 In `src/customer_support_fde/cli.py`'s `run()`, seed
+- [X] T005 In `src/customer_support_fde/cli.py`'s `run()`, seed
       `"order_conversation_summary": None` in the initial state dict passed to `graph.invoke`,
       alongside the existing 15 keys.
-- [ ] T006 In `tests/unit/test_order_support_agent.py`'s `_base_state`, add
+- [X] T006 In `tests/unit/test_order_support_agent.py`'s `_base_state`, add
       `"order_conversation_summary": None` to the returned dict.
-- [ ] T007 [P] In `tests/unit/test_refund_agent.py`'s `_base_state` (or equivalent state
+- [X] T007 [P] In `tests/unit/test_refund_agent.py`'s `_base_state` (or equivalent state
       factory), add `"order_conversation_summary": None` to the returned dict.
-- [ ] T008 [P] In `tests/integration/test_order_support_trajectory.py`, add
+- [X] T008 [P] In `tests/integration/test_order_support_trajectory.py`, add
       `"order_conversation_summary": None` to every initial-state literal in the file.
-- [ ] T009 [P] In `tests/integration/test_refund_trajectory.py`, add
+- [X] T009 [P] In `tests/integration/test_refund_trajectory.py`, add
       `"order_conversation_summary": None` to every initial-state literal in the file.
-- [ ] T010 [P] In `tests/integration/test_router_trajectory.py`, add
+- [X] T010 [P] In `tests/integration/test_router_trajectory.py`, add
       `"order_conversation_summary": None` to every initial-state literal in the file.
-- [ ] T011 [P] In `tests/unit/test_cart_summary_and_ticket_nodes.py`, add
+- [X] T011 [P] In `tests/unit/test_cart_summary_and_ticket_nodes.py`, add
       `"order_conversation_summary": None` to every state literal in the file.
-- [ ] T012 [P] In `tests/unit/test_cli.py`'s `test_run_seeds_initial_state_with_refund_keys`,
+- [X] T012 [P] In `tests/unit/test_cli.py`'s `test_run_seeds_initial_state_with_refund_keys`,
       add `assert state["order_conversation_summary"] is None` alongside the existing
       refund-key assertions.
-- [ ] T013 In `src/customer_support_fde/nodes/order_support_agent.py`, rewrite `await_customer`
+- [X] T013 In `src/customer_support_fde/nodes/order_support_agent.py`, rewrite `await_customer`
       so that on resume it appends `HumanMessage(content=str(answer))` to the existing
       `state["messages"]` (via `state["messages"] + [HumanMessage(...)]`) instead of returning
       `RemoveMessage(id=REMOVE_ALL_MESSAGES)`; keep updating `state["user_query"]` for CLI
       display/JSON output (contracts/order-support-agent.md `await_customer`; depends on T002).
-- [ ] T014 In `src/customer_support_fde/nodes/order_support_agent.py`, replace `_seed_messages`
+- [X] T014 In `src/customer_support_fde/nodes/order_support_agent.py`, replace `_seed_messages`
       with a `_build_context_messages(state)` helper returning a fresh, ephemeral list:
       `SystemMessage(SYSTEM_PROMPT)`, then `SystemMessage(cart_summary)` if
       `_render_cart_summary(state["menu_items"])` is non-empty, then
@@ -133,24 +133,24 @@ Dependencies" below.
 > Write these first; they must fail against the current (pre-change) code. All five live in
 > `tests/unit/test_order_support_agent.py`, so none are marked `[P]` (same file).
 
-- [ ] T015 [US2] Test: with 3 or fewer `HumanMessage`-started turns in `state["messages"]` and
+- [X] T015 [US2] Test: with 3 or fewer `HumanMessage`-started turns in `state["messages"]` and
       a token count over `ORDER_HISTORY_TOKEN_THRESHOLD` (mock `get_num_tokens_from_messages`
       to return a value over threshold), `call_model`'s guard leaves `state["messages"]` and
       `state["order_conversation_summary"]` unchanged (FR-007). Comment tag: `(edge)`.
-- [ ] T016 [US2] Test: with more than 3 turns and a token count at/under
+- [X] T016 [US2] Test: with more than 3 turns and a token count at/under
       `ORDER_HISTORY_TOKEN_THRESHOLD`, the guard leaves `state["messages"]` and
       `state["order_conversation_summary"]` unchanged (FR-003). Comment tag: `(edge)`.
-- [ ] T017 [US2] Test: with more than 3 turns and a token count over
+- [X] T017 [US2] Test: with more than 3 turns and a token count over
       `ORDER_HISTORY_TOKEN_THRESHOLD`, the guard removes every message before the 3rd-from-last
       `HumanMessage` from `state["messages"]` (via `RemoveMessage`) and sets
       `order_conversation_summary` to the (mocked) condensation model's response, while the
       last 3 turns remain unchanged in `state["messages"]` (FR-003, FR-004, FR-005). Comment
       tag: `(base)`.
-- [ ] T018 [US2] Test: triggering condensation a second time with a pre-existing
+- [X] T018 [US2] Test: triggering condensation a second time with a pre-existing
       `order_conversation_summary` replaces it wholesale with the (mocked) model's new response
       — assert the old summary text is gone and only the new text is present, not a
       concatenation of both (FR-006). Comment tag: `(base)`.
-- [ ] T019 [US2] Test: when the mocked condensation model call raises an exception,
+- [X] T019 [US2] Test: when the mocked condensation model call raises an exception,
       `call_model` still returns a normal reply for that turn (the reply-generating call still
       runs and its `AIMessage` is appended), `state["messages"]`/`order_conversation_summary`
       are otherwise unchanged from before the guard ran, and no exception propagates out of
@@ -161,16 +161,16 @@ Dependencies" below.
 All in `src/customer_support_fde/nodes/order_support_agent.py`; listed in dependency order, no
 `[P]` (same file).
 
-- [ ] T020 [US2] Add module constant `ORDER_HISTORY_TOKEN_THRESHOLD = 20_000` (data-model.md
+- [X] T020 [US2] Add module constant `ORDER_HISTORY_TOKEN_THRESHOLD = 20_000` (data-model.md
       "Token Threshold"; depends on T015-T019 existing and failing).
-- [ ] T021 [US2] At the top of `call_model`, before building context or calling the model:
+- [X] T021 [US2] At the top of `call_model`, before building context or calling the model:
       find the indices of every `HumanMessage` in `state["messages"]`; if there are 3 or fewer,
       skip the rest of the guard (FR-007). Otherwise measure
       `llm.get_num_tokens_from_messages(_build_context_messages(state) + state["messages"])`
       (a plain `ChatOpenAI` from `_build_llm()`, no tools bound) against
       `ORDER_HISTORY_TOKEN_THRESHOLD`; if at or under, skip the rest of the guard (FR-003)
       (depends on T020).
-- [ ] T022 [US2] Complete the guard: when triggered, compute `cutoff` as the index of the
+- [X] T022 [US2] Complete the guard: when triggered, compute `cutoff` as the index of the
       3rd-from-last `HumanMessage` and `older_messages = state["messages"][:cutoff]`. Call the
       model (no tools bound) with `state["order_conversation_summary"]` (if not `None`) plus
       `older_messages`, wrapped in a narrow `try/except Exception` scoped to only this call.
@@ -204,14 +204,14 @@ to have actually happened.
 
 Both in `tests/integration/test_order_support_trajectory.py`; listed in sequence (same file).
 
-- [ ] T023 [US1] Replace `test_messages_do_not_accumulate_across_turns` with a test that
+- [X] T023 [US1] Replace `test_messages_do_not_accumulate_across_turns` with a test that
       monkeypatches `order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD` to a small value, drives
       enough turns through the compiled graph to cross it, and asserts: (a)
       `state["order_conversation_summary"]` is populated (not `None`), and (b)
       `state["messages"]` no longer contains the messages from the earliest turns (FR-001,
       FR-003). Comment tag: `(regression)` — supersedes the old wipe-every-turn assertion this
       test previously guarded.
-- [ ] T024 [US1] Add a test driving a conversation (same monkeypatched-threshold approach as
+- [X] T024 [US1] Add a test driving a conversation (same monkeypatched-threshold approach as
       T023) where the customer states a dislike/allergy in an early turn, continues chatting
       past the threshold, and asserts the agent's subsequent tool calls/replies still avoid or
       flag that ingredient — i.e., the preference survives condensation (spec.md User Story 1,
@@ -219,7 +219,7 @@ Both in `tests/integration/test_order_support_trajectory.py`; listed in sequence
 
 ### Implementation for User Story 1
 
-- [ ] T025 [US1] If T024 does not already pass using the condensation prompt built in T022,
+- [X] T025 [US1] If T024 does not already pass using the condensation prompt built in T022,
       strengthen that prompt in `src/customer_support_fde/nodes/order_support_agent.py` to more
       explicitly instruct the model to preserve customer-stated preferences, dislikes,
       allergies, and decisions verbatim rather than paraphrasing them away (FR-004; depends on
@@ -232,12 +232,12 @@ memory across a long conversation — is proven end-to-end.
 
 ## Phase 5: Polish & Cross-Cutting Concerns
 
-- [ ] T026 [P] Run `uv run pytest tests/unit tests/integration -v` for full-suite confirmation,
+- [X] T026 [P] Run `uv run pytest tests/unit tests/integration -v` for full-suite confirmation,
       including that the refund and router flows are unregressed (quickstart.md §1-2).
-- [ ] T027 Execute the manual scenario in `specs/008-order-history-summarization/quickstart.md`
+- [X] T027 Execute the manual scenario in `specs/008-order-history-summarization/quickstart.md`
       §3 (a live conversation with `ORDER_HISTORY_TOKEN_THRESHOLD` lowered) to confirm
       condensation is silent and preference retention is observable outside the test suite.
-- [ ] T028 [P] Bump `version` in `pyproject.toml` from `"0.3.0"` to `"0.4.0"` (plan.md
+- [X] T028 [P] Bump `version` in `pyproject.toml` from `"0.3.0"` to `"0.4.0"` (plan.md
       Constitution Check — MINOR, backward-compatible feature addition).
 
 ---

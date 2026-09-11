@@ -2,7 +2,6 @@ import os
 
 from langchain_core.messages import AnyMessage, HumanMessage, RemoveMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 
@@ -43,6 +42,18 @@ _ORDER_TOOLS = [
 
 order_tools = ToolNode(_ORDER_TOOLS)
 
+ORDER_HISTORY_TOKEN_THRESHOLD = 20_000
+
+_CONDENSATION_INSTRUCTIONS = """\
+Summarize the order-support conversation that follows into a concise summary \
+for your own future reference. You MUST preserve every customer-stated \
+preference, dislike, allergy, and decision (such as items added, removed, or \
+confirmed) verbatim rather than paraphrasing them away. If the customer \
+restated a preference or changed their mind, keep only their most recent \
+statement, not the outdated one. Reply with only the summary text, no \
+greeting or meta-commentary.
+"""
+
 
 def _build_llm() -> ChatOpenAI:
     return ChatOpenAI(
@@ -59,21 +70,57 @@ def _render_cart_summary(menu_items: dict[str, int]) -> str | None:
     return "Current cart:\n" + "\n".join(lines)
 
 
-def _seed_messages(state: SupportState) -> list[AnyMessage]:
-    seeded: list[AnyMessage] = [SystemMessage(content=SYSTEM_PROMPT)]
+def _build_context_messages(state: SupportState) -> list[AnyMessage]:
+    context: list[AnyMessage] = [SystemMessage(content=SYSTEM_PROMPT)]
     cart_summary = _render_cart_summary(state["menu_items"])
     if cart_summary:
-        seeded.append(SystemMessage(content=cart_summary))
-    seeded.append(HumanMessage(content=state["user_query"]))
-    return seeded
+        context.append(SystemMessage(content=cart_summary))
+    summary = state.get("order_conversation_summary")
+    if summary is not None:
+        context.append(
+            SystemMessage(content=f"Summary of earlier conversation:\n{summary}")
+        )
+    return context
 
 
 def call_model(state: SupportState) -> SupportState:
-    messages = state["messages"] if state["messages"] else _seed_messages(state)
+    messages = (
+        state["messages"] if state["messages"] else [HumanMessage(content=state["user_query"])]
+    )
 
-    ai_message = _build_llm().bind_tools(_ORDER_TOOLS).invoke(messages)
+    llm = _build_llm()
+    removals: list[AnyMessage] = []
 
-    return {**state, "messages": messages + [ai_message]}
+    human_indices = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
+    if len(human_indices) > 3:
+        token_count = llm.get_num_tokens_from_messages(
+            _build_context_messages(state) + messages
+        )
+        if token_count > ORDER_HISTORY_TOKEN_THRESHOLD:
+            cutoff = human_indices[-3]
+            older_messages = messages[:cutoff]
+            try:
+                condense_input: list[AnyMessage] = [
+                    SystemMessage(content=_CONDENSATION_INSTRUCTIONS)
+                ]
+                previous_summary = state.get("order_conversation_summary")
+                if previous_summary is not None:
+                    condense_input.append(
+                        SystemMessage(content=f"Previous summary:\n{previous_summary}")
+                    )
+                condense_input.extend(older_messages)
+                new_summary = llm.invoke(condense_input).content
+            except Exception:
+                pass
+            else:
+                state = {**state, "order_conversation_summary": new_summary}
+                removals = [RemoveMessage(id=m.id) for m in older_messages]
+                messages = messages[cutoff:]
+
+    context = _build_context_messages(state)
+    ai_message = llm.bind_tools(_ORDER_TOOLS).invoke(context + messages)
+
+    return {**state, "messages": removals + messages + [ai_message]}
 
 
 def await_customer(state: SupportState) -> SupportState:
@@ -84,6 +131,6 @@ def await_customer(state: SupportState) -> SupportState:
     answer = interrupt(last_message.content)
     return {
         **state,
-        "messages": [RemoveMessage(id=REMOVE_ALL_MESSAGES)],
+        "messages": state["messages"] + [HumanMessage(content=str(answer))],
         "user_query": str(answer),
     }
