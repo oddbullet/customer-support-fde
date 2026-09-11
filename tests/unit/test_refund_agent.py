@@ -23,6 +23,7 @@ def _base_state(**overrides) -> dict:
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
     state.update(overrides)
     return state

@@ -2,7 +2,7 @@ import sqlite3
 import uuid
 from unittest.mock import MagicMock
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
@@ -46,6 +46,9 @@ def _fake_order_llm(responses: list[AIMessage]) -> MagicMock:
     bound.invoke.side_effect = responses
     llm = MagicMock()
     llm.bind_tools.return_value = bound
+    # These scripted conversations are far shorter than the real 20,000-token
+    # threshold; a fixed low count keeps the condensation guard a no-op here.
+    llm.get_num_tokens_from_messages.return_value = 0
     return llm
 
 
@@ -94,6 +97,7 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -153,6 +157,7 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -222,6 +227,7 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -254,8 +260,12 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
     }
 
 
-# Guards that per-turn message reset in await_customer keeps message count roughly constant. (regression)
-def test_messages_do_not_accumulate_across_turns(monkeypatch):
+# Conversation history persists across turns and, once it grows past the token
+# threshold, is condensed into a running summary instead of either being wiped
+# every turn (the old contract) or growing without bound. (regression) —
+# supersedes the old wipe-every-turn assertion this test previously guarded.
+def test_condenses_conversation_history_past_the_threshold(monkeypatch):
+    monkeypatch.setattr(order_support_agent, "ORDER_HISTORY_TOKEN_THRESHOLD", 1)
     monkeypatch.setattr(
         router_agent,
         "_build_llm",
@@ -264,34 +274,26 @@ def test_messages_do_not_accumulate_across_turns(monkeypatch):
         ),
     )
 
-    def _add_call(item_name: str, call_id: str) -> AIMessage:
-        return AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "add_items_to_cart",
-                    "args": {"names": [item_name]},
-                    "id": call_id,
-                }
-            ],
-        )
-
-    order_llm = _fake_order_llm(
-        [
-            _add_call("Kung Pao Chicken", "call_1"),
-            AIMessage(content="Added! Anything else?"),
-            _add_call("Spring Rolls", "call_2"),
-            AIMessage(content="Added! Anything else?"),
-            _add_call("Mapo Tofu", "call_3"),
-            AIMessage(content="Added! Anything else?"),
-        ]
+    bound = MagicMock()
+    bound.invoke.side_effect = [
+        AIMessage(content="Got it. Anything else?"),
+        AIMessage(content="Sure thing. Anything else?"),
+        AIMessage(content="Noted. Anything else?"),
+        AIMessage(content="Okay. Anything else?"),
+        AIMessage(content="Sure. Anything else?"),
+    ]
+    order_llm = MagicMock()
+    order_llm.bind_tools.return_value = bound
+    order_llm.get_num_tokens_from_messages.return_value = 1_000
+    order_llm.invoke.return_value = AIMessage(
+        content="Running summary of the earliest turns."
     )
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
 
     graph = build_graph(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = {
-        "user_query": "Add a kung pao chicken",
+        "user_query": "Turn 1 message",
         "destination": "order_support",
         "sentiment": None,
         "messages": [],
@@ -306,22 +308,88 @@ def test_messages_do_not_accumulate_across_turns(monkeypatch):
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
-    graph.invoke(initial_state, config)
-    messages_after_turn_1 = graph.get_state(config).values["messages"]
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+    first_human_message = graph.get_state(config).values["messages"][0]
 
-    graph.invoke(Command(resume="Also add spring rolls"), config)
-    graph.invoke(Command(resume="Also add mapo tofu"), config)
-    messages_after_turn_3 = graph.get_state(config).values["messages"]
+    for reply in ["Turn 2 message", "Turn 3 message", "Turn 4 message", "Turn 5 message"]:
+        result = graph.invoke(Command(resume=reply), config)
+        assert "__interrupt__" in result
 
-    # Each turn's message exchange is roughly constant-sized (system prompt +
-    # optional cart summary + human message + one tool-call round + final
-    # reply). If the per-turn reset in `await_customer` stopped actually
-    # clearing checkpointed state (e.g. reverted to a bare `[]`, a no-op
-    # under the `add_messages` reducer), this would instead grow by a full
-    # turn's worth of messages with every additional turn.
-    assert len(messages_after_turn_3) <= len(messages_after_turn_1) + 2
+    final_state = graph.get_state(config).values
+    assert final_state["order_conversation_summary"] is not None
+    assert first_human_message not in final_state["messages"]
+
+
+# A dislike/allergy stated early in a long conversation is preserved in
+# order_conversation_summary once older turns are condensed out, and later
+# model calls still receive that summary in their context. (base)
+def test_preference_stated_early_survives_condensation(monkeypatch):
+    monkeypatch.setattr(order_support_agent, "ORDER_HISTORY_TOKEN_THRESHOLD", 1)
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+
+    bound = MagicMock()
+    bound.invoke.side_effect = [
+        AIMessage(content="Noted, no peanuts. Anything else?"),
+        AIMessage(content="Sure. Anything else?"),
+        AIMessage(content="Sure. Anything else?"),
+        AIMessage(content="Sure. Anything else?"),
+        AIMessage(content="Recommending Mapo Tofu, no peanuts involved."),
+    ]
+    order_llm = MagicMock()
+    order_llm.bind_tools.return_value = bound
+    order_llm.get_num_tokens_from_messages.return_value = 1_000
+    order_llm.invoke.return_value = AIMessage(
+        content="Customer is allergic to peanuts; avoid peanuts in all recommendations."
+    )
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "I'm allergic to peanuts, what do you recommend?",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+        "order_conversation_summary": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    for reply in ["What else is good?", "Tell me more", "Anything spicy?"]:
+        result = graph.invoke(Command(resume=reply), config)
+        assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="What do you recommend for me?"), config)
+    assert "__interrupt__" in result
+
+    final_state = graph.get_state(config).values
+    assert "peanuts" in final_state["order_conversation_summary"].lower()
+
+    last_call_messages = bound.invoke.call_args_list[-1][0][0]
+    system_messages = [m for m in last_call_messages if isinstance(m, SystemMessage)]
+    assert any("peanuts" in m.content.lower() for m in system_messages)
 
 
 # A full multi-turn conversation confirms the order and produces the expected ticket and graph trajectory. (base)
@@ -372,6 +440,7 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -487,6 +556,7 @@ def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -546,6 +616,7 @@ def test_price_change_mid_conversation_does_not_affect_confirmed_order(
         "refund_request": None,
         "complaint_ids": {},
         "refund_ticket": None,
+        "order_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
