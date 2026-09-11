@@ -91,6 +91,7 @@ def get_menu(state: Annotated[dict, InjectedState]) -> str:
 
 
 @tool
+
 def get_menu_item(name: str, state: Annotated[dict, InjectedState]) -> str:
     """Look up details for one menu item by name (fuzzy-matched against the menu).
 
