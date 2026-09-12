@@ -314,8 +314,9 @@ def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatc
     assert state["menu_items"] == {"Kung Pao Chicken": 2}
 
 
-# await_customer appends the resumed reply as a new HumanMessage onto the existing
-# transcript instead of wiping it (supersedes the old per-turn reset contract). (regression)
+# await_customer's standard path: while the order isn't confirmed yet, it interrupts and
+# appends the resumed reply as a new HumanMessage onto the existing transcript instead of
+# wiping it (a prior bug reset the transcript each turn; this also guards that). (base)
 def test_await_customer_interrupts_when_not_confirmed(monkeypatch):
     fake_interrupt = MagicMock(return_value="add one")
     monkeypatch.setattr(order_support_agent, "interrupt", fake_interrupt)

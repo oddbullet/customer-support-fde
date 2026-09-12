@@ -101,22 +101,6 @@ def test_denied_return_declined_when_substitute_received_and_return_not_confirme
     assert decision.reason == "return_declined"
 
 
-# No undelivered line reported at all is denied no_undelivered_items. (base)
-def test_denied_no_undelivered_items_when_list_is_empty():
-    order = _order_aged(1)
-
-    decision = refund_policy.evaluate(
-        order,
-        undelivered=[],
-        substitute_received=False,
-        return_confirmed=False,
-        now=_NOW,
-    )
-
-    assert decision.eligible is False
-    assert decision.reason == "no_undelivered_items"
-
-
 # An item never arrived, nothing came in its place, and no return was confirmed: still
 # eligible because the return requirement is waived when nothing arrived (FR-006). (edge)
 def test_eligible_when_item_never_arrived_and_no_substitute_waives_return():

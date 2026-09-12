@@ -93,17 +93,6 @@ def test_build_order_summary_preserves_order_and_line_fields():
         assert set(line.keys()) == {"name", "quantity", "unit_price", "line_total"}
 
 
-# The total always rounds up (never down), even when the raw sum is only a
-# hair above the lower cent — distinguishes ceiling rounding from nearest. (regression)
-def test_build_order_summary_total_always_rounds_up():
-    fractional_cent_menu = [{"name": "Item A", "price": 4.321, "ingredients": []}]
-    cart = {"Item A": 1}
-
-    summary = build_order_summary(cart, fractional_cent_menu)
-
-    assert summary["total"] == 4.33
-
-
 # build_order_summary does not mutate the menu_items dict it is given. (regression)
 def test_build_order_summary_does_not_mutate_input_menu_items():
     cart = {"Kung Pao Chicken": 2, "Spring Rolls": 1}

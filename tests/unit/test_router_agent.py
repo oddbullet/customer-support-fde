@@ -59,8 +59,11 @@ def test_refund_query_carries_negative_sentiment(monkeypatch):
     assert result["user_query"] == query
 
 
-# Regardless of which of the three sentiment values the LLM returns, it passes through unchanged. (edge)
-@pytest.mark.parametrize("sentiment", ["positive", "neutral", "negative"])
+# Regardless of which of the three sentiment values the LLM returns, it passes through unchanged.
+# "negative" is covered by test_refund_query_carries_negative_sentiment above with a
+# stronger (exact-equality) assertion, so only the two values not covered elsewhere are
+# parametrized here. (edge)
+@pytest.mark.parametrize("sentiment", ["positive", "neutral"])
 def test_refund_sentiment_is_always_one_of_the_three_fixed_categories(
     monkeypatch, sentiment
 ):
