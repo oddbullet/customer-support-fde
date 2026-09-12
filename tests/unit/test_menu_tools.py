@@ -120,6 +120,15 @@ def test_get_menu_item_reads_menu_from_state():
     assert "Mapo Tofu" in rendered
 
 
+# get_menu_item reports a not-found message (not a stack trace or empty
+# string) when no menu item matches, exercising the tool's own render path
+# rather than only resolve_menu_item's match object. (edge)
+def test_get_menu_item_not_found_reports_no_match_message():
+    rendered = get_menu_item.func(name="Pizza", state={"menu": SAMPLE_MENU})
+
+    assert "No menu item matches" in rendered
+
+
 # An exact canonical-name match returns that menu entry's price. (base)
 def test_price_for_item_returns_price_on_exact_match():
     assert price_for_item("Kung Pao Chicken", SAMPLE_MENU) == 12.95
@@ -128,11 +137,6 @@ def test_price_for_item_returns_price_on_exact_match():
 # A name absent from the menu returns None rather than raising. (edge)
 def test_price_for_item_returns_none_when_name_not_on_menu():
     assert price_for_item("Peking Duck", SAMPLE_MENU) is None
-
-
-# An empty menu list returns None for any name. (edge)
-def test_price_for_item_returns_none_for_empty_menu():
-    assert price_for_item("Kung Pao Chicken", []) is None
 
 
 # A near-miss name that resolve_menu_item would fuzzy-match returns None

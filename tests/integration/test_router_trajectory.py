@@ -130,14 +130,11 @@ def test_refund_style_request_routes_through_refund_agent(monkeypatch):
     assert result["score"] is True
 
 
-# An unclear/ambiguous request pauses at clarify_intent, then resumes to the destination the customer's answer picks. (edge)
-@pytest.mark.parametrize(
-    "query",
-    [
-        "hello",
-        "the food I ordered was cold, and also what's in the mapo tofu?",
-    ],
-)
+# An unclear/ambiguous request pauses at clarify_intent, then resumes to the destination the customer's answer picks.
+# Only one query is parametrized here (not also the query text) because router_agent is
+# mocked to return "unclear" regardless of query content, and clarify_intent never
+# inspects user_query either — so the query string has no effect on the trajectory being
+# asserted; varying it would just re-run the identical code path. (edge)
 @pytest.mark.parametrize(
     "answer,expected_segment",
     [
@@ -147,7 +144,7 @@ def test_refund_style_request_routes_through_refund_agent(monkeypatch):
     ],
 )
 def test_ambiguous_or_mixed_signal_request_resolved_via_clarify_intent(
-    monkeypatch, query, answer, expected_segment
+    monkeypatch, answer, expected_segment
 ):
     monkeypatch.setattr(
         router_agent,
@@ -160,7 +157,9 @@ def test_ambiguous_or_mixed_signal_request_resolved_via_clarify_intent(
         _mock_refund_reply(monkeypatch)
     graph = build_graph(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    initial_state = _new_order_support_initial_state(query)
+    initial_state = _new_order_support_initial_state(
+        "the food I ordered was cold, and also what's in the mapo tofu?"
+    )
 
     first_result = graph.invoke(initial_state, config)
     assert "__interrupt__" in first_result

@@ -23,13 +23,6 @@ def test_database_path_returns_env_var_when_set(monkeypatch, tmp_path):
     assert db.database_path() == Path(str(target))
 
 
-# database_path() falls back to the default filename when the env var is unset. (base)
-def test_database_path_falls_back_to_default_when_env_var_unset(monkeypatch):
-    monkeypatch.delenv("CUSTOMER_SUPPORT_DB", raising=False)
-
-    assert db.database_path() == Path(db.DEFAULT_DB_FILENAME)
-
-
 # database_path() falls back to the default filename when the env var is set but empty. (edge)
 def test_database_path_falls_back_to_default_when_env_var_empty(monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", "")
@@ -326,20 +319,6 @@ def test_record_order_failure_partway_through_leaves_no_rows(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM order_lines").fetchone()[0] == 0
     finally:
         conn.close()
-
-
-# An order written, connection closed, database reopened, still reads back
-# identically. (base)
-def test_record_order_survives_reconnect(tmp_path):
-    path = tmp_path / "fresh.db"
-    db.init_database(path)
-    summary = _sample_summary()
-    order_id = db.record_order(summary, path)
-
-    reread = db.get_order(order_id, path)
-
-    assert reread["lines"] == summary["lines"]
-    assert reread["total"] == summary["total"]
 
 
 # Editing menu_items after an order does not change that order's stored

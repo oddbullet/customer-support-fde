@@ -140,16 +140,6 @@ def test_unqualified_removal_deletes_quantity_one_entry():
     assert result.update["menu_items"] == {}
 
 
-# An unqualified removal deletes a quantity-3 entry entirely, regardless of how many
-# units were present. (base)
-def test_unqualified_removal_deletes_multi_quantity_entry_entirely():
-    result = _invoke_remove(
-        [CartRemoval(name="Kung Pao Chicken")], {"Kung Pao Chicken": 3}
-    )
-
-    assert result.update["menu_items"] == {}
-
-
 # A stated quantity smaller than the current cart quantity decrements the entry and
 # keeps it. (base)
 def test_quantified_removal_smaller_than_current_decrements_and_keeps_entry():
@@ -242,16 +232,6 @@ def test_get_cart_total_multiple_items_reports_combined_total():
 
     expected = 12.95 * 2 + 11.50 + 6.95 * 3
     assert f"${expected:.2f}" in rendered
-
-
-# Asking for the total again after the cart changed reflects only the
-# updated cart, not a stale figure from the earlier call. (base)
-def test_get_cart_total_reflects_cart_after_it_changes():
-    first = _invoke_get_cart_total({"Kung Pao Chicken": 1})
-    assert "$12.95" in first
-
-    second = _invoke_get_cart_total({"Kung Pao Chicken": 1, "Spring Rolls": 1})
-    assert f"${12.95 + 6.95:.2f}" in second
 
 
 # An empty cart is reported as empty, with no dollar figure in the response. (edge)

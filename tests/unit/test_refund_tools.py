@@ -85,6 +85,16 @@ def test_conclude_refund_conversation_sets_refund_resolved_true():
     assert result.update["messages"][0].content
 
 
+# Calling again on a state that's already resolved is still idempotent: it
+# reports refund_resolved: True rather than erroring or toggling it off. (edge)
+def test_conclude_refund_conversation_idempotent_when_already_resolved():
+    result = conclude_refund_conversation.func(
+        state={"refund_resolved": True}, tool_call_id="call_1"
+    )
+
+    assert result.update["refund_resolved"] is True
+
+
 def _order_with_lines(refund_db, hours_old=1) -> dict:
     order_id = seed_order(
         refund_db,

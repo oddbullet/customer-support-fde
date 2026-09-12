@@ -52,6 +52,18 @@ def test_refund_agent_seeds_system_prompt_and_query_when_messages_empty(monkeypa
     assert isinstance(seeded[-1], AIMessage)
 
 
+# When state["sentiment"] is None, refund_agent omits the sentiment reading system
+# message entirely rather than seeding a null/placeholder line. (edge)
+def test_refund_agent_omits_sentiment_message_when_sentiment_is_none(monkeypatch):
+    _patch_llm(monkeypatch, [AIMessage(content="Sure, can you give me the order id?")])
+    state = _base_state(sentiment=None)
+
+    result = refund_agent(state)
+
+    system_messages = [m for m in result["messages"] if isinstance(m, SystemMessage)]
+    assert len(system_messages) == 1
+
+
 # On a later turn (messages already populated), refund_agent reuses the existing
 # transcript rather than re-seeding a new system prompt. (base)
 def test_refund_agent_reuses_existing_transcript_on_later_turns(monkeypatch):
