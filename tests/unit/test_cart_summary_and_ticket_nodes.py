@@ -42,6 +42,7 @@ def _base_state() -> dict:
         "order_summary": None,
         "order_id": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
 
@@ -296,6 +297,7 @@ def _refund_base_state() -> dict:
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
 

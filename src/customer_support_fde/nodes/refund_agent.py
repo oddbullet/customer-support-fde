@@ -1,6 +1,12 @@
 import os
 
-from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    RemoveMessage,
+    SystemMessage,
+)
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
@@ -56,6 +62,21 @@ _REFUND_TOOLS = [
 
 refund_tools = ToolNode(_REFUND_TOOLS)
 
+REFUND_HISTORY_TOKEN_THRESHOLD = 20_000
+
+_CONDENSATION_INSTRUCTIONS = """\
+Summarize the refund conversation that follows into a concise summary for \
+your own future reference. For each order discussed, you MUST preserve: the \
+order identified, the facts gathered toward a policy decision (which dishes \
+were missing, whether a substitute arrived, and any return commitment given \
+or declined), the customer's complaint description, and any policy decision \
+already reached. If the conversation discussed more than one order, keep \
+each order's facts and outcome distinct rather than merging them together. \
+If the customer restated a fact, keep only their most recent statement, not \
+the outdated one. Reply with only the summary text, no greeting or \
+meta-commentary.
+"""
+
 
 def _build_llm() -> ChatOpenAI:
     return ChatOpenAI(
@@ -65,23 +86,68 @@ def _build_llm() -> ChatOpenAI:
     )
 
 
-def _seed_messages(state: SupportState) -> list[AnyMessage]:
-    seeded: list[AnyMessage] = [SystemMessage(content=SYSTEM_PROMPT)]
+def _estimate_token_count(messages: list[AnyMessage]) -> int:
+    # get_num_tokens_from_messages() raises NotImplementedError for OpenRouter-style
+    # "vendor/model" names regardless of the underlying model, so estimate from the
+    # last real reply's provider-reported prompt size instead, falling back to a
+    # rough per-character estimate before any usage data exists.
+    for message in reversed(messages):
+        if isinstance(message, AIMessage) and message.usage_metadata:
+            return message.usage_metadata.get("input_tokens", 0)
+    return sum(len(str(message.content)) for message in messages) // 4
+
+
+def _build_context_messages(state: SupportState) -> list[AnyMessage]:
+    context: list[AnyMessage] = [SystemMessage(content=SYSTEM_PROMPT)]
     sentiment = state.get("sentiment")
     if sentiment is not None:
-        seeded.append(
+        context.append(
             SystemMessage(content=f"Customer sentiment reading: {sentiment}.")
         )
-    seeded.append(HumanMessage(content=state["user_query"]))
-    return seeded
+    summary = state.get("refund_conversation_summary")
+    if summary is not None:
+        context.append(
+            SystemMessage(content=f"Summary of earlier conversation:\n{summary}")
+        )
+    return context
 
 
 def refund_agent(state: SupportState) -> SupportState:
-    messages = state["messages"] if state["messages"] else _seed_messages(state)
+    messages = (
+        state["messages"] if state["messages"] else [HumanMessage(content=state["user_query"])]
+    )
 
-    ai_message = _build_llm().bind_tools(_REFUND_TOOLS).invoke(messages)
+    llm = _build_llm()
+    removals: list[AnyMessage] = []
 
-    return {**state, "messages": messages + [ai_message]}
+    human_indices = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
+    if len(human_indices) > 3:
+        token_count = _estimate_token_count(_build_context_messages(state) + messages)
+        if token_count > REFUND_HISTORY_TOKEN_THRESHOLD:
+            cutoff = human_indices[-3]
+            older_messages = messages[:cutoff]
+            try:
+                condense_input: list[AnyMessage] = [
+                    SystemMessage(content=_CONDENSATION_INSTRUCTIONS)
+                ]
+                previous_summary = state.get("refund_conversation_summary")
+                if previous_summary is not None:
+                    condense_input.append(
+                        SystemMessage(content=f"Previous summary:\n{previous_summary}")
+                    )
+                condense_input.extend(older_messages)
+                new_summary = llm.invoke(condense_input).content
+            except Exception:
+                pass
+            else:
+                state = {**state, "refund_conversation_summary": new_summary}
+                removals = [RemoveMessage(id=m.id) for m in older_messages]
+                messages = messages[cutoff:]
+
+    context = _build_context_messages(state)
+    ai_message = llm.bind_tools(_REFUND_TOOLS).invoke(context + messages)
+
+    return {**state, "messages": removals + messages + [ai_message]}
 
 
 def refund_await_customer(state: SupportState) -> SupportState:

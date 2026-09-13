@@ -93,6 +93,7 @@ def run(argv: list[str] | None = None) -> int:
                 "complaint_ids": {},
                 "refund_ticket": None,
                 "order_conversation_summary": None,
+                "refund_conversation_summary": None,
             },
             config,
         )

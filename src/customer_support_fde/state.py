@@ -23,3 +23,4 @@ class SupportState(TypedDict):
     complaint_ids: dict[str, int]
     refund_ticket: dict | None
     order_conversation_summary: str | None
+    refund_conversation_summary: str | None

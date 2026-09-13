@@ -119,6 +119,7 @@ def test_run_seeds_initial_state_with_refund_keys(monkeypatch, tmp_path):
     assert state["complaint_ids"] == {}
     assert state["refund_ticket"] is None
     assert state["order_conversation_summary"] is None
+    assert state["refund_conversation_summary"] is None
 
 
 # _print_result prints the agent's closing message for a resolved refund conversation,
