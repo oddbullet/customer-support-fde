@@ -17,3 +17,6 @@ wheels/
 *.db
 
 tickets/*
+
+# pytest temp directory (see pyproject.toml basetemp override)
+.pytest-tmp/
