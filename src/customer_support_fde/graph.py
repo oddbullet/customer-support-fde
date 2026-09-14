@@ -15,7 +15,7 @@ from customer_support_fde.nodes.refund_agent import (
     refund_tools,
 )
 from customer_support_fde.nodes.router_agent import router_agent
-from customer_support_fde.nodes.ticket_gen_node import refund_ticket_node, ticket_gen_node
+from customer_support_fde.nodes.ticket_gen_node import ticket_gen_node
 from customer_support_fde.state import SupportState
 
 
@@ -44,7 +44,6 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_node("refund_agent", refund_agent)
     graph.add_node("refund_tools", refund_tools)
     graph.add_node("refund_await_customer", refund_await_customer)
-    graph.add_node("refund_ticket_node", refund_ticket_node)
 
     graph.set_entry_point("router_agent")
     graph.add_conditional_edges(
@@ -87,8 +86,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_conditional_edges(
         "refund_await_customer",
         _route_from_refund_await_customer,
-        {"continue": "refund_agent", "resolved": "refund_ticket_node"},
+        {"continue": "refund_agent", "resolved": "ticket_gen_node"},
     )
-    graph.add_edge("refund_ticket_node", END)
 
     return graph.compile(checkpointer=checkpointer)

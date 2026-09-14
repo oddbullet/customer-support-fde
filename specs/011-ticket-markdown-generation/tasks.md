@@ -34,7 +34,7 @@ Single project (per plan.md's Project Structure): `src/customer_support_fde/`, `
 
 **Purpose**: Create the new module's file so Foundational tests have something to import against.
 
-- [ ] T001 Create `src/customer_support_fde/tickets.py` as an empty module (module-level
+- [X] T001 Create `src/customer_support_fde/tickets.py` as an empty module (module-level
       docstring only) so `tests/unit/test_tickets.py` can `import` it in Phase 2.
 
 ---
@@ -48,24 +48,24 @@ graph's two separate terminal ticket nodes into one dispatching `ticket_gen_node
 
 **⚠️ CRITICAL**: No user story task may begin until this phase is complete.
 
-- [ ] T002 Write failing unit tests in `tests/unit/test_tickets.py` for `tickets.py`'s shared
+- [X] T002 Write failing unit tests in `tests/unit/test_tickets.py` for `tickets.py`'s shared
       infrastructure: `tickets_dir()` returns `Path("tickets")` by default and
       `Path(os.environ["CUSTOMER_SUPPORT_TICKETS_DIR"])` when that env var is set (base); the
       shared write path creates a missing tickets directory before writing (FR-007, base); and
       an `OSError` raised during directory creation or write is caught, logged, and results in
       the caller getting `None` back with no exception propagating (FR-011, SC-006, error).
-- [ ] T003 Implement `tickets_dir()` and a shared internal write helper
+- [X] T003 Implement `tickets_dir()` and a shared internal write helper
       (`mkdir(parents=True, exist_ok=True)` + `write_text` wrapped in `try/except OSError` that
       logs via `logging.getLogger(__name__)` and returns `None` on failure) in
       `src/customer_support_fde/tickets.py`. Depends on: T002 (must fail first, then pass).
-- [ ] T004 Update `tests/unit/test_cart_summary_and_ticket_nodes.py`'s existing
+- [X] T004 Update `tests/unit/test_cart_summary_and_ticket_nodes.py`'s existing
       `test_refund_ticket_node_produces_documented_shape` and
       `test_refund_ticket_node_handles_no_order_identified` to call the single `ticket_gen_node`
       (dropping the separate `refund_ticket_node` import) — both existing fixtures already set
       `"destination": "refund"`/`"destination": "order_support"`, so calling the unified entry
       point should produce the exact same results as before (regression). This will fail until
       T005 lands.
-- [ ] T005 In `src/customer_support_fde/nodes/ticket_gen_node.py`, rename today's `ticket_gen_node`
+- [X] T005 In `src/customer_support_fde/nodes/ticket_gen_node.py`, rename today's `ticket_gen_node`
       body to `_order_ticket_node` and today's `refund_ticket_node` body to `_refund_ticket_node`,
       then add a public dispatcher:
       ```python
@@ -95,14 +95,14 @@ ticket (ordered items + total, nothing else) to the tickets folder.
 
 ### Tests for User Story 1
 
-- [ ] T006 [P] [US1] Write failing unit tests in `tests/unit/test_tickets.py` for
+- [X] T006 [P] [US1] Write failing unit tests in `tests/unit/test_tickets.py` for
       `write_order_ticket`: given a non-empty `order_ticket["lines"]`, it writes
       `tickets/order-<order_id>.md` containing every line's name/quantity/unit price/line total
       and the total, and returns that path (FR-001, FR-002, base); given empty `lines`, it
       writes nothing and returns `None` (FR-003, SC-002, edge); a second call for the same
       `order_id` replaces the first file — exactly one `order-<id>.md` remains (FR-008, SC-005,
       edge).
-- [ ] T007 [P] [US1] Write failing unit tests in
+- [X] T007 [P] [US1] Write failing unit tests in
       `tests/unit/test_cart_summary_and_ticket_nodes.py` for `ticket_gen_node`'s new
       file-writing side effect on the order branch (using
       `monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))`): a state with a
@@ -112,13 +112,13 @@ ticket (ordered items + total, nothing else) to the tickets folder.
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Implement `_render_order_ticket(order_ticket)` (plain f-string/markdown, per
+- [X] T008 [US1] Implement `_render_order_ticket(order_ticket)` (plain f-string/markdown, per
       `data-model.md` § Order Ticket File: items with name/quantity/unit price/line total, then
       the total — no other content, no generated-at timestamp) and `write_order_ticket(order_ticket)`
       (gates on non-empty `lines`, builds the `order-<order_id>.md` path, delegates to the
       Phase 2 write helper) in `src/customer_support_fde/tickets.py`. Depends on: T006 (must
       fail first, then pass).
-- [ ] T009 [US1] In `_order_ticket_node`
+- [X] T009 [US1] In `_order_ticket_node`
       (`src/customer_support_fde/nodes/ticket_gen_node.py`), add a call to
       `tickets.write_order_ticket(order_ticket)` after building the `order_ticket` dict, before
       returning state (`contracts/tickets-module.md`). Depends on: T008, T007 (must fail first,
@@ -141,7 +141,7 @@ Decision 4) — it adds explicit coverage for the negative case rather than new 
 
 ### Tests for User Story 2
 
-- [ ] T010 [P] [US2] Write failing* unit tests in
+- [X] T010 [P] [US2] Write failing* unit tests in
       `tests/unit/test_cart_summary_and_ticket_nodes.py` proving `ticket_gen_node` writes no
       ticket file (`monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))`,
       then assert `list(tmp_path.iterdir())` is empty) for: a support-only conversation where
@@ -170,7 +170,7 @@ complaint, sentiment, order ID, and the correct refund-created status (spec.md U
 
 ### Tests for User Story 3
 
-- [ ] T011 [P] [US3] Write failing unit tests in
+- [X] T011 [P] [US3] Write failing unit tests in
       `tests/unit/test_cart_summary_and_ticket_nodes.py` for the refund branch's new behavior
       (mocking `_build_llm` in `nodes/ticket_gen_node.py` the same way
       `tests/unit/test_refund_agent.py` mocks `refund_agent.py`'s, via
@@ -183,7 +183,7 @@ complaint, sentiment, order ID, and the correct refund-created status (spec.md U
       `refund_ticket` dict `_refund_ticket_node` returns has `issue` set from that helper's
       return value and `refund_created` set to `state["refund_request"] is not None`
       (`data-model.md` § Refund Ticket, base), including when `issue` resolves to `None` (edge).
-- [ ] T012 [P] [US3] Write failing unit tests in `tests/unit/test_tickets.py` for
+- [X] T012 [P] [US3] Write failing unit tests in `tests/unit/test_tickets.py` for
       `write_refund_ticket`: a known `order_id` writes `tickets/refund-<order_id>.md` containing
       the issue, sentiment, order ID, and `Refund Request Created: Yes`/`No` (FR-004, FR-005,
       base); `order_id=None` writes `tickets/refund-unknown-<uuid4().hex>.md` with the order ID
@@ -194,22 +194,22 @@ complaint, sentiment, order ID, and the correct refund-created status (spec.md U
 
 ### Implementation for User Story 3
 
-- [ ] T013 [P] [US3] Implement a local `_build_llm()` (same `ChatOpenAI(base_url=..., api_key=...,
+- [X] T013 [P] [US3] Implement a local `_build_llm()` (same `ChatOpenAI(base_url=..., api_key=...,
       model=...)` shape `refund_agent.py`/`router_agent.py` already use) and
       `_extract_refund_issue(state)` (builds context from `refund_conversation_summary` +
       `messages`, returns `None` on nothing-to-summarize/model-says-none/LLM-exception per
       `contracts/refund-issue-extraction.md`, logging on the exception path) in
       `src/customer_support_fde/nodes/ticket_gen_node.py`. Depends on: T011 (must fail first).
-- [ ] T014 [US3] Update `_refund_ticket_node`
+- [X] T014 [US3] Update `_refund_ticket_node`
       (`src/customer_support_fde/nodes/ticket_gen_node.py`) to call `_extract_refund_issue(state)`
       and set `issue` and `refund_created` (`state["refund_request"] is not None`) on the
       `refund_ticket` dict it returns. Depends on: T013; makes the second half of T011 pass.
-- [ ] T015 [P] [US3] Implement `_render_refund_ticket(refund_ticket)` (per `data-model.md` §
+- [X] T015 [P] [US3] Implement `_render_refund_ticket(refund_ticket)` (per `data-model.md` §
       Refund Ticket File, no generated-at timestamp) and `write_refund_ticket(refund_ticket)` (unknown-id
       fallback naming per `research.md` Decision 3, unconditional write, delegates to the
       Phase 2 write helper) in `src/customer_support_fde/tickets.py`. Depends on: T012 (must
       fail first, then pass).
-- [ ] T016 [US3] In `_refund_ticket_node`
+- [X] T016 [US3] In `_refund_ticket_node`
       (`src/customer_support_fde/nodes/ticket_gen_node.py`), add a call to
       `tickets.write_refund_ticket(refund_ticket)` after building the `refund_ticket` dict,
       before returning state. Depends on: T014, T015.
@@ -223,13 +223,13 @@ no-ticket case, and refund tickets (both outcomes) all behave per spec.md.
 
 **Purpose**: End-to-end confirmation and release hygiene across all three stories.
 
-- [ ] T017 [P] Execute `quickstart.md` scenarios A–G against the CLI
+- [X] T017 [P] Execute `quickstart.md` scenarios A–G against the CLI
       (`src/customer_support_fde/cli.py`) with `CUSTOMER_SUPPORT_TICKETS_DIR` pointed at a
       scratch folder, and confirm each resulting ticket file's content matches its scenario.
       Depends on: T009, T010, T016 (all story implementations complete).
-- [ ] T018 [P] Bump the version in `pyproject.toml` (MINOR — e.g. `0.5.0` → `0.6.0`) per the
+- [X] T018 [P] Bump the version in `pyproject.toml` (MINOR — e.g. `0.5.0` → `0.6.0`) per the
       constitution's Principle IV, since this is a backward-compatible feature addition.
-- [ ] T019 Run `uv run pytest` (full suite) and confirm everything passes, including suites this
+- [X] T019 Run `uv run pytest` (full suite) and confirm everything passes, including suites this
       feature doesn't touch at all — `test_refund_tools.py`, `test_refund_agent.py`,
       `test_cli.py`, `test_router_agent.py`, `test_menu_tools.py`, `test_db.py`, and both
       `tests/integration/*_trajectory.py` suites — none of which this feature modifies, so a
