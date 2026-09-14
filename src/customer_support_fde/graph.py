@@ -2,6 +2,9 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import tools_condition
 
+from customer_support_fde.nodes.account_identification_node import (
+    account_identification_node,
+)
 from customer_support_fde.nodes.cart_summary_node import cart_summary_node
 from customer_support_fde.nodes.clarify_intent import clarify_intent
 from customer_support_fde.nodes.order_support_agent import (
@@ -36,6 +39,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
 
     graph.add_node("router_agent", router_agent)
     graph.add_node("clarify_intent", clarify_intent)
+    graph.add_node("account_identification_node", account_identification_node)
     graph.add_node("call_model", call_model)
     graph.add_node("order_tools", order_tools)
     graph.add_node("await_customer", await_customer)
@@ -50,7 +54,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
         "router_agent",
         _route_from_destination,
         {
-            "order_support": "call_model",
+            "order_support": "account_identification_node",
             "refund": "refund_agent",
             "unclear": "clarify_intent",
         },
@@ -59,10 +63,11 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
         "clarify_intent",
         _route_from_destination,
         {
-            "order_support": "call_model",
+            "order_support": "account_identification_node",
             "refund": "refund_agent",
         },
     )
+    graph.add_edge("account_identification_node", "call_model")
     graph.add_conditional_edges(
         "call_model",
         tools_condition,

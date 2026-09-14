@@ -40,5 +40,6 @@ inserts new ones without deleting anything. The database path defaults to `custo
 the working directory, overridable via `CUSTOMER_SUPPORT_DB`.
 
 Re-run `--init-db` on an existing database too: it also creates the `refund_requests`,
-`refund_request_lines`, and `complaints` tables used by the refund agent, and is safe to run
-against a database that already has orders in it.
+`refund_request_lines`, `complaints`, and `accounts` tables used by the refund agent and the
+customer account identification node, and is safe to run against a database that already has
+orders in it.

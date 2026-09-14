@@ -67,6 +67,8 @@ def _base_state(user_query: str) -> dict:
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
 
@@ -556,3 +558,28 @@ def test_estimate_token_count_falls_back_to_character_heuristic_without_usage_me
     expected = sum(len(str(m.content)) for m in conversation) // 4
     assert estimate == expected
     assert estimate > 0
+
+
+# When state["account_preferences"] is a non-None string, the context includes a
+# SystemMessage whose content contains that text. (base)
+def test_build_context_messages_includes_account_preferences_when_present():
+    state = _base_state("What's on the menu?")
+    state["account_preferences"] = "Loves spicy food, allergic to peanuts."
+
+    context = order_support_agent._build_context_messages(state)
+
+    system_messages = [m for m in context if isinstance(m, SystemMessage)]
+    assert any(
+        "Loves spicy food, allergic to peanuts." in m.content for m in system_messages
+    )
+
+
+# When state["account_preferences"] is None, no such SystemMessage is present. (edge)
+def test_build_context_messages_omits_account_preferences_when_none():
+    state = _base_state("What's on the menu?")
+    state["account_preferences"] = None
+
+    context = order_support_agent._build_context_messages(state)
+
+    system_messages = [m for m in context if isinstance(m, SystemMessage)]
+    assert not any("preferences" in m.content.lower() for m in system_messages)
