@@ -15,3 +15,5 @@ wheels/
 
 # Local SQLite database (order data, not checked in)
 *.db
+
+tickets/*
