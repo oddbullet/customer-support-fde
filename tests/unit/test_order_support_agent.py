@@ -66,20 +66,29 @@ def _base_state(user_query: str) -> dict:
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
 
-def _turn(i: int) -> list:
+def _turn(i: int, tokens: int | None = None) -> list:
+    usage_metadata = None
+    if tokens is not None:
+        usage_metadata = {
+            "input_tokens": tokens,
+            "output_tokens": 10,
+            "total_tokens": tokens + 10,
+        }
     return [
         HumanMessage(content=f"turn {i} query", id=f"h{i}"),
-        AIMessage(content=f"turn {i} reply", id=f"a{i}"),
+        AIMessage(content=f"turn {i} reply", id=f"a{i}", usage_metadata=usage_metadata),
     ]
 
 
-def _conversation(num_turns: int) -> list:
+def _conversation(num_turns: int, last_turn_tokens: int | None = None) -> list:
     messages: list = []
     for i in range(1, num_turns + 1):
-        messages.extend(_turn(i))
+        tokens = last_turn_tokens if i == num_turns else None
+        messages.extend(_turn(i, tokens))
     return messages
 
 
@@ -400,13 +409,12 @@ def test_get_cart_total_is_registered_on_order_tools():
 def test_call_model_skips_condensation_with_three_or_fewer_turns(monkeypatch):
     final_response = AIMessage(content="Sure thing!")
     fake_llm = MagicMock()
-    fake_llm.get_num_tokens_from_messages.return_value = (
-        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
-    )
     fake_llm.bind_tools.return_value.invoke.return_value = final_response
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
 
-    conversation = _conversation(3)
+    conversation = _conversation(
+        3, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
+    )
     state = _base_state("turn 4 query")
     state["messages"] = conversation
 
@@ -422,13 +430,12 @@ def test_call_model_skips_condensation_with_three_or_fewer_turns(monkeypatch):
 def test_call_model_skips_condensation_when_at_or_under_threshold(monkeypatch):
     final_response = AIMessage(content="Sure thing!")
     fake_llm = MagicMock()
-    fake_llm.get_num_tokens_from_messages.return_value = (
-        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD
-    )
     fake_llm.bind_tools.return_value.invoke.return_value = final_response
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
 
-    conversation = _conversation(4)
+    conversation = _conversation(
+        4, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD
+    )
     state = _base_state("turn 5 query")
     state["messages"] = conversation
 
@@ -446,14 +453,13 @@ def test_call_model_condenses_older_turns_when_over_threshold(monkeypatch):
     final_response = AIMessage(content="Sure thing!")
     summary_response = AIMessage(content="Customer added kung pao chicken.")
     fake_llm = MagicMock()
-    fake_llm.get_num_tokens_from_messages.return_value = (
-        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
-    )
     fake_llm.invoke.return_value = summary_response
     fake_llm.bind_tools.return_value.invoke.return_value = final_response
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
 
-    conversation = _conversation(4)
+    conversation = _conversation(
+        4, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
+    )
     state = _base_state("turn 5 query")
     state["messages"] = conversation
 
@@ -472,14 +478,13 @@ def test_call_model_recondenses_replacing_old_summary(monkeypatch):
     final_response = AIMessage(content="Sure thing!")
     new_summary_response = AIMessage(content="Only the new summary text.")
     fake_llm = MagicMock()
-    fake_llm.get_num_tokens_from_messages.return_value = (
-        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
-    )
     fake_llm.invoke.return_value = new_summary_response
     fake_llm.bind_tools.return_value.invoke.return_value = final_response
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
 
-    conversation = _conversation(4)
+    conversation = _conversation(
+        4, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
+    )
     state = _base_state("turn 5 query")
     state["messages"] = conversation
     state["order_conversation_summary"] = "The old summary text."
@@ -496,14 +501,13 @@ def test_call_model_recondenses_replacing_old_summary(monkeypatch):
 def test_call_model_condensation_failure_is_silent(monkeypatch):
     final_response = AIMessage(content="Sure thing!")
     fake_llm = MagicMock()
-    fake_llm.get_num_tokens_from_messages.return_value = (
-        order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
-    )
     fake_llm.invoke.side_effect = RuntimeError("condensation model unavailable")
     fake_llm.bind_tools.return_value.invoke.return_value = final_response
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
 
-    conversation = _conversation(4)
+    conversation = _conversation(
+        4, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
+    )
     state = _base_state("turn 5 query")
     state["messages"] = conversation
 
@@ -511,3 +515,44 @@ def test_call_model_condensation_failure_is_silent(monkeypatch):
 
     assert result["order_conversation_summary"] is None
     assert result["messages"] == conversation + [final_response]
+
+
+# The token-count estimate never calls get_num_tokens_from_messages() on the LLM
+# client, since that raises NotImplementedError for OpenRouter-style "vendor/model"
+# names (e.g. "openai/gpt-4o-mini") regardless of which model actually handles the
+# call. (regression) — guards the fix for that crash.
+def test_call_model_never_calls_get_num_tokens_from_messages(monkeypatch):
+    final_response = AIMessage(content="Sure thing!")
+    fake_llm = MagicMock()
+    fake_llm.bind_tools.return_value.invoke.return_value = final_response
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
+
+    conversation = _conversation(4)
+    state = _base_state("turn 5 query")
+    state["messages"] = conversation
+
+    call_model(state)
+
+    fake_llm.get_num_tokens_from_messages.assert_not_called()
+
+
+# When the last AIMessage carries provider-reported usage_metadata, the token
+# estimate uses its input_tokens directly rather than falling back to a
+# character-count heuristic. (base)
+def test_estimate_token_count_uses_usage_metadata_when_present():
+    conversation = _conversation(4, last_turn_tokens=12_345)
+
+    assert order_support_agent._estimate_token_count(conversation) == 12_345
+
+
+# When no message carries usage_metadata (e.g. no reply has been generated yet),
+# the token estimate falls back to a rough per-character heuristic instead of
+# raising or returning zero for a non-empty conversation. (edge)
+def test_estimate_token_count_falls_back_to_character_heuristic_without_usage_metadata():
+    conversation = _conversation(4)
+
+    estimate = order_support_agent._estimate_token_count(conversation)
+
+    expected = sum(len(str(m.content)) for m in conversation) // 4
+    assert estimate == expected
+    assert estimate > 0

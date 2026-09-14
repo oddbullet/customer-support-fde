@@ -47,8 +47,9 @@ def _fake_order_llm(responses: list[AIMessage]) -> MagicMock:
     llm = MagicMock()
     llm.bind_tools.return_value = bound
     # These scripted conversations are far shorter than the real 20,000-token
-    # threshold; a fixed low count keeps the condensation guard a no-op here.
-    llm.get_num_tokens_from_messages.return_value = 0
+    # threshold; with no usage_metadata on the responses, the token estimate falls
+    # back to a per-character heuristic that stays well under it, keeping the
+    # condensation guard a no-op here.
     return llm
 
 
@@ -98,6 +99,7 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -158,6 +160,7 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -228,6 +231,7 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -284,7 +288,6 @@ def test_condenses_conversation_history_past_the_threshold(monkeypatch):
     ]
     order_llm = MagicMock()
     order_llm.bind_tools.return_value = bound
-    order_llm.get_num_tokens_from_messages.return_value = 1_000
     order_llm.invoke.return_value = AIMessage(
         content="Running summary of the earliest turns."
     )
@@ -309,6 +312,7 @@ def test_condenses_conversation_history_past_the_threshold(monkeypatch):
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -347,7 +351,6 @@ def test_preference_stated_early_survives_condensation(monkeypatch):
     ]
     order_llm = MagicMock()
     order_llm.bind_tools.return_value = bound
-    order_llm.get_num_tokens_from_messages.return_value = 1_000
     order_llm.invoke.return_value = AIMessage(
         content="Customer is allergic to peanuts; avoid peanuts in all recommendations."
     )
@@ -372,6 +375,7 @@ def test_preference_stated_early_survives_condensation(monkeypatch):
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -441,6 +445,7 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -557,6 +562,7 @@ def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -617,6 +623,7 @@ def test_price_change_mid_conversation_does_not_affect_confirmed_order(
         "complaint_ids": {},
         "refund_ticket": None,
         "order_conversation_summary": None,
+        "refund_conversation_summary": None,
     }
 
     result = graph.invoke(initial_state, config)

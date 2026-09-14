@@ -1,6 +1,12 @@
 import os
 
-from langchain_core.messages import AnyMessage, HumanMessage, RemoveMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    RemoveMessage,
+    SystemMessage,
+)
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
@@ -70,6 +76,17 @@ def _render_cart_summary(menu_items: dict[str, int]) -> str | None:
     return "Current cart:\n" + "\n".join(lines)
 
 
+def _estimate_token_count(messages: list[AnyMessage]) -> int:
+    # get_num_tokens_from_messages() raises NotImplementedError for OpenRouter-style
+    # "vendor/model" names regardless of the underlying model, so estimate from the
+    # last real reply's provider-reported prompt size instead, falling back to a
+    # rough per-character estimate before any usage data exists.
+    for message in reversed(messages):
+        if isinstance(message, AIMessage) and message.usage_metadata:
+            return message.usage_metadata.get("input_tokens", 0)
+    return sum(len(str(message.content)) for message in messages) // 4
+
+
 def _build_context_messages(state: SupportState) -> list[AnyMessage]:
     context: list[AnyMessage] = [SystemMessage(content=SYSTEM_PROMPT)]
     cart_summary = _render_cart_summary(state["menu_items"])
@@ -93,9 +110,7 @@ def call_model(state: SupportState) -> SupportState:
 
     human_indices = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
     if len(human_indices) > 3:
-        token_count = llm.get_num_tokens_from_messages(
-            _build_context_messages(state) + messages
-        )
+        token_count = _estimate_token_count(_build_context_messages(state) + messages)
         if token_count > ORDER_HISTORY_TOKEN_THRESHOLD:
             cutoff = human_indices[-3]
             older_messages = messages[:cutoff]
