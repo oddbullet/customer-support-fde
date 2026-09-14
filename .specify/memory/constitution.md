@@ -1,9 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: 1.1.0 → 1.2.0
+- Version change: 1.2.0 → 1.2.1
 - Modified principles:
-  - I. Test-First (NON-NEGOTIABLE) — added requirement that every test case carry a one-line
-    comment stating what it verifies and its test category (base/edge/error/regression/etc.)
+  - IV. Observability & Versioning — swapped required observability tool from LangSmith to
+    Arize Phoenix (OpenInference/OpenTelemetry-based tracing); no change to the underlying
+    requirement that every agent run be traceable without local reproduction.
 - Added sections: none
 - Removed sections: none
 - Deferred TODOs: none
@@ -45,15 +46,15 @@ Rationale: this project is an early-stage scaffold; premature structure slows ev
 subsequent change more than it helps.
 
 ### IV. Observability & Versioning
-Agent runs, tool calls, and errors MUST be logged and traced via LangSmith rather than raw
-console/stdout output — every agent invocation MUST produce a LangSmith trace sufficient to
+Agent runs, tool calls, and errors MUST be logged and traced via Arize Phoenix rather than raw
+console/stdout output — every agent invocation MUST produce a Phoenix trace sufficient to
 debug a failure without reproducing it locally. CLI error output MAY still go to stderr for
 immediate operator feedback, but MUST NOT be the sole record of agent behavior. The project
 MUST follow semantic versioning (MAJOR.MINOR.PATCH): MAJOR for breaking behavior/API changes,
 MINOR for backward-compatible feature additions, PATCH for fixes and clarifications. Breaking
 changes MUST be called out explicitly in the change description.
 Rationale: agent behavior (prompts, tool calls, intermediate reasoning) is not adequately
-captured by flat console logs; centralized tracing in LangSmith is required to debug,
+captured by flat console logs; centralized tracing in Arize Phoenix is required to debug,
 evaluate, and audit agent runs, and disciplined versioning keeps consumers of the package
 safe from silent breakage.
 
@@ -61,9 +62,9 @@ safe from silent breakage.
 
 The project targets Python >=3.14 and is packaged with the `uv_build` backend (see
 `pyproject.toml`). New dependencies MUST be added deliberately and only when the standard
-library or an existing dependency cannot reasonably satisfy the need. LangSmith (and its
-client SDK) is a required dependency for agent observability per Principle IV; beyond it,
-dependencies MUST NOT be added casually.
+library or an existing dependency cannot reasonably satisfy the need. Arize Phoenix (via
+`arize-phoenix-otel` and OpenInference instrumentation) is a required dependency for agent
+observability per Principle IV; beyond it, dependencies MUST NOT be added casually.
 
 ## Development Workflow
 
@@ -85,4 +86,4 @@ any complexity that conflicts with Principle III MUST be justified in writing in
 Runtime development guidance beyond this constitution belongs in `CLAUDE.md` or equivalent
 agent guidance files, not here.
 
-**Version**: 1.2.0 | **Ratified**: 2026-09-09 | **Last Amended**: 2026-09-10
+**Version**: 1.2.1 | **Ratified**: 2026-09-09 | **Last Amended**: 2026-09-14

@@ -8,10 +8,12 @@ from langgraph.types import Command
 
 from customer_support_fde import db
 from customer_support_fde.graph import build_graph
+from customer_support_fde.tracing import setup_tracing
 
 from dotenv import load_dotenv
 
 load_dotenv()
+setup_tracing()
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:

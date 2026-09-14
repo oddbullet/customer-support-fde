@@ -22,7 +22,7 @@ This project is still in development. A .env fil is set with an Openrouter API k
 
 # Tech Stack
 - LangGraph
-- LangSmith
+- Arize Phoenix
 - PyTest
 - Python
 - SQLite
