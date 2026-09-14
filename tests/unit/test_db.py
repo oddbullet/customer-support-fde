@@ -57,7 +57,7 @@ def test_init_database_creates_tables_and_seeds_menu(tmp_path):
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             ).fetchall()
         }
-        assert {"menu_items", "orders", "order_lines"} <= tables
+        assert {"menu_items", "orders", "order_lines", "accounts"} <= tables
         seeded = conn.execute("SELECT COUNT(*) FROM menu_items").fetchone()[0]
         assert seeded == count
     finally:
@@ -399,6 +399,102 @@ def test_get_order_returns_none_for_unrecognizable_id(tmp_path):
     db.init_database(path)
 
     assert db.get_order("NOT-A-REAL-ID", path) is None
+
+
+# The _new_id/_normalize_id/_format_id refactor leaves order-id behavior unchanged:
+# _new_order_id still returns 8-char ID_ALPHABET strings, and format/normalize still
+# round-trip exactly as before. (regression)
+def test_id_helper_refactor_preserves_order_id_behavior():
+    order_id = db._new_order_id()
+    assert len(order_id) == db.ID_LENGTH
+    assert set(order_id) <= set(db.ID_ALPHABET)
+    assert db.normalize_order_id(db.format_order_id("K7QP3M9X")) == "K7QP3M9X"
+    assert db.format_order_id("K7QP3M9X") == "K7QP-3M9X"
+
+
+# _new_account_number returns an 8-char ID_ALPHABET string, same scheme as order ids. (base)
+def test_generated_account_numbers_use_only_the_documented_alphabet():
+    forbidden = set("ILOU")
+    for _ in range(200):
+        account_number = db._new_account_number()
+        assert len(account_number) == db.ID_LENGTH
+        assert set(account_number) <= set(db.ID_ALPHABET)
+        assert not (set(account_number) & forbidden)
+
+
+# format_account_number hyphenates mid-code and normalize_account_number inverts it. (base)
+def test_format_and_normalize_account_number_round_trip():
+    assert db.format_account_number("K7QP3M9X") == "K7QP-3M9X"
+    assert db.normalize_account_number("K7QP-3M9X") == "K7QP3M9X"
+
+
+# normalize_account_number folds lowercase, hyphens, whitespace, and confusables
+# the same way normalize_order_id does. (edge)
+def test_normalize_account_number_folds_confusable_input():
+    assert db.normalize_account_number("  k7qp-3m9x  ") == "K7QP3M9X"
+    assert db.normalize_account_number("k7qp 3m9x") == "K7QP3M9X"
+    assert db.normalize_account_number("k7Op-3M9X") == "K70P3M9X"
+    assert db.normalize_account_number("IL0O") == "1100"
+
+
+# get_account returns None for an unknown account number. (edge)
+def test_get_account_returns_none_for_unknown_number(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+
+    assert db.get_account("NOTAREAL1", path) is None
+
+
+# create_account then get_account round-trips with preferences None and a populated
+# created_at. (base)
+def test_create_account_then_get_account_round_trips(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+
+    account_number = db.create_account(path)
+    account = db.get_account(account_number, path)
+
+    assert account["account_number"] == account_number
+    assert account["preferences"] is None
+    assert account["created_at"]
+
+
+# get_account resolves a lowercase/dashed/confusable number form. (edge)
+def test_get_account_resolves_forgiving_number_forms(tmp_path, monkeypatch):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    monkeypatch.setattr(db, "_new_account_number", lambda: "K7QP3M9X")
+
+    account_number = db.create_account(path)
+
+    assert db.get_account("k7qp-3m9x", path)["account_number"] == account_number
+    assert db.get_account(" K7QP 3M9X ", path)["account_number"] == account_number
+
+
+# A forced account-number collision is retried onto a fresh number and the account
+# still saves. (error)
+def test_create_account_retries_past_a_forced_number_collision(tmp_path, monkeypatch):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    colliding_number = "AAAAAAAA"
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(
+            "INSERT INTO accounts (account_number, preferences, created_at) "
+            "VALUES (?, ?, ?)",
+            (colliding_number, None, "2026-01-01T00:00:00.000Z"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    numbers = iter([colliding_number, "BBBBBBBB"])
+    monkeypatch.setattr(db, "_new_account_number", lambda: next(numbers))
+
+    account_number = db.create_account(path)
+
+    assert account_number == "BBBBBBBB"
+    assert db.get_account(account_number, path) is not None
 
 
 # init_database creates the three refund/complaint tables alongside the existing ones. (base)

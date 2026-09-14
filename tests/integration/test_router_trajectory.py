@@ -56,6 +56,8 @@ def _new_order_support_initial_state(query: str) -> dict:
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
 
@@ -65,7 +67,8 @@ def _run_and_extract_trajectory(graph, initial_state):
     return extract_outputs(graph, config)
 
 
-# An order/menu-style request routes through router_agent to call_model and pauses for the customer. (base)
+# An order/menu-style request routes through router_agent to the account menu, then
+# (continuing without an account) to call_model and pauses for the customer. (base)
 def test_order_support_style_request_reaches_call_model_and_pauses(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -76,23 +79,23 @@ def test_order_support_style_request_reaches_call_model_and_pauses(monkeypatch):
     )
     _mock_order_support_reply(monkeypatch)
     graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     initial_state = _new_order_support_initial_state(
         "What's in the kung pao chicken, does it have peanuts?"
     )
 
-    actual = _run_and_extract_trajectory(graph, initial_state)
+    first_result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in first_result
+
+    graph.invoke(Command(resume="2"), config)
+    actual = extract_outputs(graph, config)
 
     result = graph_trajectory_strict_match(
         outputs=actual,
         reference_outputs={
             "steps": [
-                [
-                    "__start__",
-                    "router_agent",
-                    "call_model",
-                    "await_customer",
-                    "__interrupt__",
-                ]
+                ["__start__", "router_agent", "account_identification_node", "__interrupt__"],
+                ["call_model", "await_customer", "__interrupt__"],
             ],
         },
     )
@@ -165,17 +168,21 @@ def test_ambiguous_or_mixed_signal_request_resolved_via_clarify_intent(
     first_result = graph.invoke(initial_state, config)
     assert "__interrupt__" in first_result
 
-    graph.invoke(Command(resume=answer), config)
+    second_result = graph.invoke(Command(resume=answer), config)
+
+    steps = [["__start__", "router_agent", "clarify_intent", "__interrupt__"]]
+    if answer in ("1", "2"):
+        assert "__interrupt__" in second_result
+        graph.invoke(Command(resume="2"), config)
+        steps.append(["account_identification_node", "__interrupt__"])
+        steps.append(expected_segment)
+    else:
+        steps.append(expected_segment)
     actual = extract_outputs(graph, config)
 
     result = graph_trajectory_strict_match(
         outputs=actual,
-        reference_outputs={
-            "steps": [
-                ["__start__", "router_agent", "clarify_intent", "__interrupt__"],
-                expected_segment,
-            ],
-        },
+        reference_outputs={"steps": steps},
     )
     assert result["score"] is True
 

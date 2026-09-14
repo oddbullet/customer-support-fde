@@ -85,6 +85,17 @@ CREATE TABLE IF NOT EXISTS complaints (
 
 -- Backs the FR-011 duplicate check and the FR-024 per-order retrieval path.
 CREATE INDEX IF NOT EXISTS idx_complaints_order_id ON complaints (order_id);
+
+-- A customer account: its number, and a single free-text paragraph of stored preferences
+-- (likes, dislikes, and allergies together). preferences is NULL until a future feature (the
+-- planned conversation-summarization agent) populates it — this feature only creates and looks
+-- up accounts, per spec.md Assumptions. Not a foreign key target: an account is independent of
+-- any specific order (a single account may be used across many separate orders/conversations).
+CREATE TABLE IF NOT EXISTS accounts (
+    account_number TEXT PRIMARY KEY,
+    preferences    TEXT,
+    created_at     TEXT NOT NULL
+);
 """
 
 MenuItem = dict[str, object]
@@ -185,18 +196,42 @@ def load_menu(path: Path | str | None = None) -> list[MenuItem]:
         conn.close()
 
 
-def _new_order_id() -> str:
+def _new_id() -> str:
     return "".join(secrets.choice(ID_ALPHABET) for _ in range(ID_LENGTH))
 
 
-def format_order_id(order_id: str) -> str:
+def _format_id(id_: str) -> str:
     midpoint = ID_LENGTH // 2
-    return f"{order_id[:midpoint]}-{order_id[midpoint:]}"
+    return f"{id_[:midpoint]}-{id_[midpoint:]}"
+
+
+def _normalize_id(raw: str) -> str:
+    stripped = raw.strip().upper().replace("-", "").replace(" ", "")
+    return stripped.translate(_CONFUSION_TRANSLATION)
+
+
+def _new_order_id() -> str:
+    return _new_id()
+
+
+def format_order_id(order_id: str) -> str:
+    return _format_id(order_id)
 
 
 def normalize_order_id(raw: str) -> str:
-    stripped = raw.strip().upper().replace("-", "").replace(" ", "")
-    return stripped.translate(_CONFUSION_TRANSLATION)
+    return _normalize_id(raw)
+
+
+def _new_account_number() -> str:
+    return _new_id()
+
+
+def format_account_number(account_number: str) -> str:
+    return _format_id(account_number)
+
+
+def normalize_account_number(raw: str) -> str:
+    return _normalize_id(raw)
 
 
 def record_order(summary: dict, path: Path | str | None = None) -> str:
@@ -289,6 +324,65 @@ def get_order(order_id: str, path: Path | str | None = None) -> dict | None:
                 }
                 for name, quantity, unit_price, line_total in line_rows
             ],
+        }
+    finally:
+        conn.close()
+
+
+def create_account(path: Path | str | None = None) -> str:
+    resolved = _resolve_path(path)
+    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    last_error: sqlite3.Error | None = None
+    for _ in range(_MAX_ID_ATTEMPTS):
+        account_number = _new_account_number()
+        conn = _connect(resolved)
+        try:
+            try:
+                with conn:
+                    conn.execute(
+                        "INSERT INTO accounts (account_number, preferences, created_at) "
+                        "VALUES (?, NULL, ?)",
+                        (account_number, created_at),
+                    )
+                return account_number
+            except sqlite3.IntegrityError as exc:
+                if "UNIQUE constraint failed: accounts.account_number" in str(exc):
+                    last_error = exc
+                    continue
+                raise OrderStoreError(
+                    f"Failed to create account in database at '{resolved}': {exc}"
+                ) from exc
+            except sqlite3.Error as exc:
+                raise OrderStoreError(
+                    f"Failed to create account in database at '{resolved}': {exc}"
+                ) from exc
+        finally:
+            conn.close()
+
+    raise OrderStoreError(
+        f"Failed to create account in database at '{resolved}': "
+        f"exhausted {_MAX_ID_ATTEMPTS} account number attempts"
+    ) from last_error
+
+
+def get_account(account_number: str, path: Path | str | None = None) -> dict | None:
+    resolved = _resolve_path(path)
+    normalized = normalize_account_number(account_number)
+
+    conn = _connect(resolved)
+    try:
+        row = conn.execute(
+            "SELECT account_number, preferences, created_at FROM accounts "
+            "WHERE account_number = ?",
+            (normalized,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "account_number": row[0],
+            "preferences": row[1],
+            "created_at": row[2],
         }
     finally:
         conn.close()

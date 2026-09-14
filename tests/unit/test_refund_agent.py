@@ -30,6 +30,8 @@ def _base_state(**overrides) -> dict:
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
     state.update(overrides)
     return state

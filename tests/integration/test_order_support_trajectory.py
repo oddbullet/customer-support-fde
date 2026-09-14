@@ -100,6 +100,8 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -161,9 +163,14 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
     result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="2"), config)
     assert "__interrupt__" in result
 
     result = graph.invoke(Command(resume="Also add spring rolls"), config)
@@ -232,9 +239,14 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
     result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="2"), config)
     assert "__interrupt__" in result
 
     result = graph.invoke(Command(resume="Also add spring rolls"), config)
@@ -313,9 +325,14 @@ def test_condenses_conversation_history_past_the_threshold(monkeypatch):
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
     result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="2"), config)
     assert "__interrupt__" in result
     first_human_message = graph.get_state(config).values["messages"][0]
 
@@ -376,9 +393,14 @@ def test_preference_stated_early_survives_condensation(monkeypatch):
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
     result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="2"), config)
     assert "__interrupt__" in result
 
     for reply in ["What else is good?", "Tell me more", "Anything spicy?"]:
@@ -394,6 +416,202 @@ def test_preference_stated_early_survives_condensation(monkeypatch):
     last_call_messages = bound.invoke.call_args_list[-1][0][0]
     system_messages = [m for m in last_call_messages if isinstance(m, SystemMessage)]
     assert any("peanuts" in m.content.lower() for m in system_messages)
+
+
+# A returning customer who identifies a seeded account reaches the order/support agent
+# with that account's stored preferences injected into the model's context. (base)
+def test_returning_customer_account_preferences_reach_order_agent_context(
+    monkeypatch, tmp_path
+):
+    db_path = _use_tmp_db(monkeypatch, tmp_path)
+    account_number = db.create_account(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE accounts SET preferences = ? WHERE account_number = ?",
+            ("Loves spicy food, allergic to peanuts.", account_number),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+    order_llm = _fake_order_llm([AIMessage(content="Sure, how can I help?")])
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "What do you recommend?",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+        "order_conversation_summary": None,
+        "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="1"), config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume=account_number), config)
+    assert "__interrupt__" in result
+
+    bound = order_llm.bind_tools.return_value
+    last_call_messages = bound.invoke.call_args_list[-1][0][0]
+    system_messages = [m for m in last_call_messages if isinstance(m, SystemMessage)]
+    assert any(
+        "Loves spicy food, allergic to peanuts." in m.content for m in system_messages
+    )
+
+
+# Signing up shows the customer a formatted account number that a later, separate
+# conversation can look up successfully with no preferences recorded yet. (base)
+def test_sign_up_account_number_is_retrievable_in_a_later_conversation(
+    monkeypatch, tmp_path
+):
+    _use_tmp_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+    monkeypatch.setattr(
+        order_support_agent,
+        "_build_llm",
+        lambda: _fake_order_llm([AIMessage(content="Sure, how can I help?")]),
+    )
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "I'd like to sign up",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+        "order_conversation_summary": None,
+        "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="3"), config)
+    assert "__interrupt__" in result
+    sign_up_message = result["__interrupt__"][0].value
+    assert "-" in sign_up_message
+    formatted_number = next(
+        token.strip(".") for token in sign_up_message.split() if "-" in token
+    )
+    assert formatted_number in sign_up_message
+
+    result = graph.invoke(Command(resume="ok"), config)
+    assert "__interrupt__" in result
+
+    other_config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    other_result = graph.invoke(initial_state, other_config)
+    assert "__interrupt__" in other_result
+
+    other_result = graph.invoke(Command(resume="1"), other_config)
+    assert "__interrupt__" in other_result
+
+    other_result = graph.invoke(Command(resume=formatted_number), other_config)
+    assert "__interrupt__" in other_result
+
+    found_state = graph.get_state(other_config).values
+    assert found_state["account_preferences"] is None
+    assert found_state["account_number"] == db.normalize_account_number(
+        formatted_number
+    )
+
+
+# Continuing without an account reaches call_model within the same invoke cycle with
+# both account fields None, and no account-preferences SystemMessage in context. (base)
+def test_continue_without_account_reaches_call_model_with_no_account_state(monkeypatch):
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+    order_llm = _fake_order_llm([AIMessage(content="Sure, how can I help?")])
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "hi",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+        "order_conversation_summary": None,
+        "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="2"), config)
+    assert "__interrupt__" in result
+
+    final_state = graph.get_state(config).values
+    assert final_state["account_number"] is None
+    assert final_state["account_preferences"] is None
+
+    bound = order_llm.bind_tools.return_value
+    last_call_messages = bound.invoke.call_args_list[-1][0][0]
+    system_messages = [m for m in last_call_messages if isinstance(m, SystemMessage)]
+    assert not any("preferences" in m.content.lower() for m in system_messages)
 
 
 # A full multi-turn conversation confirms the order and produces the expected ticket and graph trajectory. (base)
@@ -446,9 +664,14 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
     result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="2"), config)
     assert "__interrupt__" in result
 
     result = graph.invoke(Command(resume="Also add spring rolls"), config)
@@ -491,6 +714,10 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
             [
                 "__start__",
                 "router_agent",
+                "account_identification_node",
+                "__interrupt__",
+            ],
+            [
                 "call_model",
                 "order_tools",
                 "call_model",
@@ -563,6 +790,8 @@ def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -624,9 +853,14 @@ def test_price_change_mid_conversation_does_not_affect_confirmed_order(
         "refund_ticket": None,
         "order_conversation_summary": None,
         "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
     }
 
     result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="2"), config)
     assert "__interrupt__" in result
 
     conn = sqlite3.connect(db_path)

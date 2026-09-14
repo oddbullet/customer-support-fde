@@ -24,3 +24,5 @@ class SupportState(TypedDict):
     refund_ticket: dict | None
     order_conversation_summary: str | None
     refund_conversation_summary: str | None
+    account_number: str | None
+    account_preferences: str | None

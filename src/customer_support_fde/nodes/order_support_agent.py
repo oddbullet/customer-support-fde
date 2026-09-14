@@ -97,6 +97,11 @@ def _build_context_messages(state: SupportState) -> list[AnyMessage]:
         context.append(
             SystemMessage(content=f"Summary of earlier conversation:\n{summary}")
         )
+    preferences = state.get("account_preferences")
+    if preferences is not None:
+        context.append(
+            SystemMessage(content=f"Customer's stored preferences: {preferences}")
+        )
     return context
 
 

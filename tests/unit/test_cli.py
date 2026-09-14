@@ -79,7 +79,7 @@ def test_cli_run_calls_load_menu_exactly_once_across_an_interrupt(
         ]
     )
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
-    monkeypatch.setattr("sys.stdin", io.StringIO("that's all\n"))
+    monkeypatch.setattr("sys.stdin", io.StringIO("2\nthat's all\n"))
 
     exit_code = cli.run(["Add a kung pao chicken"])
 
@@ -120,6 +120,8 @@ def test_run_seeds_initial_state_with_refund_keys(monkeypatch, tmp_path):
     assert state["refund_ticket"] is None
     assert state["order_conversation_summary"] is None
     assert state["refund_conversation_summary"] is None
+    assert state["account_number"] is None
+    assert state["account_preferences"] is None
 
 
 # _print_result prints the agent's closing message for a resolved refund conversation,
