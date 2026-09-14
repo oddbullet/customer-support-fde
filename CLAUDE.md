@@ -1,7 +1,7 @@
 # Project Overview
 An agentic customer support system for a Chinese restaurant that assists customers with menu questions, ingredient and allergy inquiries, order placement, and refund requests.
 
-This project is still in development.
+This project is still in development. A .env fil is set with an Openrouter API key using deepseek/deepseek-v4-flash-0731.
 
 # Plan Architecture
 - Router Agent:
