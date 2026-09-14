@@ -1,13 +1,17 @@
+import logging
+from unittest.mock import MagicMock
+
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from customer_support_fde import db
+from customer_support_fde.nodes import ticket_gen_node as ticket_gen_node_module
 from customer_support_fde.nodes.cart_summary_node import (
     build_order_summary,
     cart_summary_node,
     render_order_summary,
 )
-from customer_support_fde.nodes.ticket_gen_node import refund_ticket_node, ticket_gen_node
+from customer_support_fde.nodes.ticket_gen_node import ticket_gen_node
 from customer_support_fde.tools.menu_tools import cart_total
 
 SAMPLE_MENU = [
@@ -279,6 +283,58 @@ def test_ticket_gen_node_defaults_when_order_summary_missing():
     assert result["order_ticket"]["total"] is None
 
 
+# A confirmed order with a non-empty order_summary produces a ticket file on
+# disk under the configured tickets directory. (base)
+def test_ticket_gen_node_writes_order_ticket_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
+    state = _base_state()
+    state["order_summary"] = build_order_summary(state["menu_items"], SAMPLE_MENU)
+    state["order_id"] = "K7QP3M9X"
+
+    ticket_gen_node(state)
+
+    assert (tmp_path / "order-K7QP3M9X.md").exists()
+
+
+# A state with no order_summary (nothing to summarize) writes no ticket file. (edge)
+def test_ticket_gen_node_writes_no_file_when_order_summary_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
+    state = _base_state()
+    state["order_summary"] = None
+
+    ticket_gen_node(state)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+# A support-only conversation (order_summary never built) writes no ticket
+# file — proves FR-003 for the "never ordered" case specifically. (edge)
+def test_ticket_gen_node_writes_no_file_for_support_only_conversation(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
+    state = _base_state()
+    state["menu_items"] = {}
+    state["order_summary"] = None
+
+    ticket_gen_node(state)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+# A cart that was started but never confirmed into an order_summary writes no
+# ticket file — proves FR-003 for the abandoned-cart edge case. (edge)
+def test_ticket_gen_node_writes_no_file_for_abandoned_cart(monkeypatch, tmp_path):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
+    state = _base_state()
+    state["menu_items"] = {"Kung Pao Chicken": 1}
+    state["order_summary"] = None
+
+    ticket_gen_node(state)
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def _refund_base_state() -> dict:
     return {
         "user_query": "I got the wrong dish",
@@ -308,7 +364,7 @@ def test_refund_ticket_node_produces_documented_shape():
     state["refund_request"] = {"id": 1, "amount": 10.0}
     state["complaint_ids"] = {"K7QP3M9X": 5}
 
-    result = refund_ticket_node(state)
+    result = ticket_gen_node(state)
 
     assert result["refund_ticket"] == {
         "order_id": "K7QP3M9X",
@@ -317,6 +373,8 @@ def test_refund_ticket_node_produces_documented_shape():
         "decision": "eligible",
         "refund_request": state["refund_request"],
         "complaint_ids": [5],
+        "issue": None,
+        "refund_created": True,
     }
 
 
@@ -324,10 +382,103 @@ def test_refund_ticket_node_produces_documented_shape():
 def test_refund_ticket_node_handles_no_order_identified():
     state = _refund_base_state()
 
-    result = refund_ticket_node(state)
+    result = ticket_gen_node(state)
 
     assert result["refund_ticket"]["order_id"] is None
     assert result["refund_ticket"]["order"] is None
     assert result["refund_ticket"]["refund_request"] is None
     assert result["refund_ticket"]["complaint_ids"] == []
     assert result["refund_ticket"]["decision"] is None
+
+
+def _patch_ticket_gen_llm(monkeypatch, reply_content):
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = AIMessage(content=reply_content)
+    monkeypatch.setattr(ticket_gen_node_module, "_build_llm", lambda: fake_llm)
+    return fake_llm
+
+
+# _extract_refund_issue returns the model's stripped reply when there is a
+# conversation to summarize. (base)
+def test_extract_refund_issue_returns_stripped_model_reply(monkeypatch):
+    _patch_ticket_gen_llm(monkeypatch, "  Customer received the wrong dish.  ")
+    state = _refund_base_state()
+    state["messages"] = [HumanMessage(content="I got the wrong dish")]
+
+    result = ticket_gen_node_module._extract_refund_issue(state)
+
+    assert result == "Customer received the wrong dish."
+
+
+# _extract_refund_issue returns None without invoking the model when both
+# refund_conversation_summary and messages are empty/absent. (edge)
+def test_extract_refund_issue_returns_none_without_invoking_model_when_nothing_to_summarize(
+    monkeypatch,
+):
+    fake_llm = _patch_ticket_gen_llm(monkeypatch, "irrelevant")
+    state = _refund_base_state()
+    state["messages"] = []
+    state["refund_conversation_summary"] = None
+
+    result = ticket_gen_node_module._extract_refund_issue(state)
+
+    assert result is None
+    fake_llm.invoke.assert_not_called()
+
+
+# _extract_refund_issue returns None when the model's reply is "None"
+# (case-insensitive), its explicit signal that no issue was raised. (edge)
+def test_extract_refund_issue_returns_none_when_model_says_none(monkeypatch):
+    _patch_ticket_gen_llm(monkeypatch, "  NoNe  ")
+    state = _refund_base_state()
+    state["messages"] = [HumanMessage(content="just checking my order status")]
+
+    result = ticket_gen_node_module._extract_refund_issue(state)
+
+    assert result is None
+
+
+# _extract_refund_issue returns None and logs a WARNING when the LLM call
+# raises, never letting the exception propagate. (error)
+def test_extract_refund_issue_returns_none_and_logs_warning_on_llm_failure(
+    monkeypatch, caplog
+):
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = RuntimeError("model unavailable")
+    monkeypatch.setattr(ticket_gen_node_module, "_build_llm", lambda: fake_llm)
+    state = _refund_base_state()
+    state["messages"] = [HumanMessage(content="I got the wrong dish")]
+
+    with caplog.at_level(logging.WARNING):
+        result = ticket_gen_node_module._extract_refund_issue(state)
+
+    assert result is None
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
+# ticket_gen_node's refund branch sets issue from _extract_refund_issue's
+# return value and refund_created from whether a refund_request exists. (base)
+def test_ticket_gen_node_refund_branch_sets_issue_and_refund_created(monkeypatch):
+    _patch_ticket_gen_llm(monkeypatch, "Customer received the wrong dish.")
+    state = _refund_base_state()
+    state["order_lookup"] = {"order_id": "K7QP3M9X", "total": 22.0, "lines": []}
+    state["refund_request"] = {"id": 1, "amount": 10.0}
+    state["messages"] = [HumanMessage(content="I got the wrong dish")]
+
+    result = ticket_gen_node(state)
+
+    assert result["refund_ticket"]["issue"] == "Customer received the wrong dish."
+    assert result["refund_ticket"]["refund_created"] is True
+
+
+# When _extract_refund_issue resolves to None, the refund_ticket's issue is
+# None and refund_created is False when no refund_request exists. (edge)
+def test_ticket_gen_node_refund_branch_handles_no_issue_and_no_refund(monkeypatch):
+    _patch_ticket_gen_llm(monkeypatch, "None")
+    state = _refund_base_state()
+    state["messages"] = [HumanMessage(content="just checking in")]
+
+    result = ticket_gen_node(state)
+
+    assert result["refund_ticket"]["issue"] is None
+    assert result["refund_ticket"]["refund_created"] is False

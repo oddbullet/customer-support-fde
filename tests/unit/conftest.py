@@ -14,6 +14,11 @@ def refund_db(tmp_path) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def _isolate_tickets_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path / "tickets"))
+
+
 def seed_order(db_path: Path, lines: list[dict], age_hours: float = 0) -> str:
     total = sum(line["line_total"] for line in lines)
     order_id = db.record_order({"lines": lines, "total": total}, db_path)
