@@ -10,7 +10,7 @@ from agentevals.graph_trajectory.strict import graph_trajectory_strict_match
 
 from customer_support_fde import db
 from customer_support_fde.graph import build_graph
-from customer_support_fde.nodes import order_support_agent, router_agent
+from customer_support_fde.nodes import memory_gen_node, order_support_agent, router_agent
 from customer_support_fde.nodes.cart_summary_node import render_order_summary
 from customer_support_fde.nodes.router_agent import RouterDecision
 
@@ -737,6 +737,7 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
                 "call_model",
                 "await_customer",
                 "cart_summary",
+                "memory_gen_node",
                 "ticket_gen_node",
             ],
         ]
@@ -880,3 +881,242 @@ def test_price_change_mid_conversation_does_not_affect_confirmed_order(
     assert final_state["order_summary"]["total"] == 12.95
     stored = db.get_order(final_state["order_id"], db_path)
     assert stored["lines"][0]["unit_price"] == 12.95
+
+
+# An account-holding customer's stated preferences are captured into their
+# account record once their order is confirmed, running alongside ticket
+# generation with no interrupt left pending. (base, US1)
+def test_account_holder_preferences_are_saved_on_order_confirmation(
+    monkeypatch, tmp_path
+):
+    db_path = _use_tmp_db(monkeypatch, tmp_path)
+    account_number = db.create_account(db_path)
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+
+    def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
+        return AIMessage(
+            content="", tool_calls=[{"name": name, "args": args, "id": call_id}]
+        )
+
+    order_llm = _fake_order_llm(
+        [
+            _tool_call(
+                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+            ),
+            AIMessage(content="Added! Anything else?"),
+            _tool_call("mark_order_confirmed", {}, "call_2"),
+            AIMessage(content="Great, your order is confirmed!"),
+        ]
+    )
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
+
+    fixed_preferences = "Allergies: peanuts. Likes: spicy food."
+    fake_memory_llm = MagicMock()
+    fake_memory_llm.invoke.return_value = AIMessage(content=fixed_preferences)
+    monkeypatch.setattr(memory_gen_node, "_build_llm", lambda: fake_memory_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "I'm allergic to peanuts and love spicy food",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+        "order_conversation_summary": None,
+        "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="1"), config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume=account_number), config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="That's all, I'm done"), config)
+    assert "__interrupt__" not in result
+
+    assert db.get_account(account_number, db_path)["preferences"] == (
+        fixed_preferences
+    )
+
+
+# A guest who states a clear allergy during ordering never has any preference
+# data extracted or stored — no accounts row is created and none exists to
+# check against. (base, US2, FR-002, SC-002)
+def test_guest_conversation_writes_no_preference_data(monkeypatch, tmp_path):
+    db_path = _use_tmp_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+
+    def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
+        return AIMessage(
+            content="", tool_calls=[{"name": name, "args": args, "id": call_id}]
+        )
+
+    order_llm = _fake_order_llm(
+        [
+            _tool_call(
+                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+            ),
+            AIMessage(content="Added! Anything else?"),
+            _tool_call("mark_order_confirmed", {}, "call_2"),
+            AIMessage(content="Great, your order is confirmed!"),
+        ]
+    )
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
+
+    fake_memory_llm = MagicMock()
+    fake_memory_llm.invoke.side_effect = AssertionError(
+        "memory_gen_node must not call the LLM for a guest"
+    )
+    monkeypatch.setattr(memory_gen_node, "_build_llm", lambda: fake_memory_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "I'm allergic to peanuts",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+        "order_conversation_summary": None,
+        "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="2"), config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="That's all, I'm done"), config)
+    assert "__interrupt__" not in result
+
+    conn = sqlite3.connect(db_path)
+    try:
+        account_count = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+    finally:
+        conn.close()
+    assert account_count == 0
+
+
+# A failure in memory_gen_node's branch never affects order ticket delivery —
+# the two branches are independent, so the ticket is produced with the same
+# contents regardless of the memory-capture outcome. (base, US3, FR-007, FR-008,
+# SC-003)
+def test_memory_gen_node_failure_does_not_affect_ticket_delivery(monkeypatch, tmp_path):
+    db_path = _use_tmp_db(monkeypatch, tmp_path)
+    account_number = db.create_account(db_path)
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+
+    def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
+        return AIMessage(
+            content="", tool_calls=[{"name": name, "args": args, "id": call_id}]
+        )
+
+    order_llm = _fake_order_llm(
+        [
+            _tool_call(
+                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+            ),
+            AIMessage(content="Added! Anything else?"),
+            _tool_call("mark_order_confirmed", {}, "call_2"),
+            AIMessage(content="Great, your order is confirmed!"),
+        ]
+    )
+    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
+
+    def _raise_build_llm():
+        raise RuntimeError("model unavailable")
+
+    monkeypatch.setattr(memory_gen_node, "_build_llm", _raise_build_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "I'm allergic to peanuts",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+        "order_conversation_summary": None,
+        "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="1"), config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume=account_number), config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="That's all, I'm done"), config)
+    assert "__interrupt__" not in result
+
+    final_state = graph.get_state(config).values
+    assert final_state["order_ticket"] == {
+        "order_id": final_state["order_id"],
+        "items": {"Kung Pao Chicken": 1},
+        "lines": final_state["order_summary"]["lines"],
+        "total": final_state["order_summary"]["total"],
+    }
+    assert db.get_account(account_number, db_path)["preferences"] is None

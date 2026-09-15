@@ -797,3 +797,77 @@ def test_record_complaint_sqlite_error_surfaces_as_order_store_error(tmp_path):
 
     with pytest.raises(db.OrderStoreError):
         db.record_complaint(description="test", order_id="NOTAREAL1", path=path)
+
+
+# update_account_preferences sets the preferences column for an existing account
+# and returns None. (base)
+def test_update_account_preferences_sets_column_and_returns_none(tmp_path):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    account_number = db.create_account(path)
+
+    result = db.update_account_preferences(
+        account_number, "Allergies: peanuts.", path
+    )
+
+    assert result is None
+    assert db.get_account(account_number, path)["preferences"] == (
+        "Allergies: peanuts."
+    )
+
+
+# update_account_preferences resolves a differently-cased/spaced/confusable
+# account number via the same normalization get_account uses. (edge)
+def test_update_account_preferences_resolves_forgiving_number_forms(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    monkeypatch.setattr(db, "_new_account_number", lambda: "K7QP3M9X")
+    account_number = db.create_account(path)
+
+    db.update_account_preferences(" k7qp-3m9x ", "Loves spicy food.", path)
+
+    assert db.get_account(account_number, path)["preferences"] == (
+        "Loves spicy food."
+    )
+
+
+# update_account_preferences on an account number matching no row raises
+# OrderStoreError. (error)
+def test_update_account_preferences_unknown_number_raises_order_store_error(
+    tmp_path,
+):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+
+    with pytest.raises(db.OrderStoreError):
+        db.update_account_preferences("NOTAREAL1", "Loves spicy food.", path)
+
+
+# A forced sqlite3.Error during update_account_preferences raises
+# OrderStoreError wrapping it. (error)
+def test_update_account_preferences_sqlite_error_surfaces_as_order_store_error(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "fresh.db"
+    db.init_database(path)
+    account_number = db.create_account(path)
+
+    class _FakeConnection:
+        def execute(self, *args, **kwargs):
+            raise sqlite3.Error("disk I/O error")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(db, "_connect", lambda *args, **kwargs: _FakeConnection())
+
+    with pytest.raises(db.OrderStoreError):
+        db.update_account_preferences(account_number, "Loves spicy food.", path)

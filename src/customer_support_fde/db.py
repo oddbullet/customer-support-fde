@@ -388,6 +388,35 @@ def get_account(account_number: str, path: Path | str | None = None) -> dict | N
         conn.close()
 
 
+def update_account_preferences(
+    account_number: str,
+    preferences: str,
+    path: Path | str | None = None,
+) -> None:
+    resolved = _resolve_path(path)
+    normalized = normalize_account_number(account_number)
+
+    conn = _connect(resolved)
+    try:
+        try:
+            with conn:
+                cursor = conn.execute(
+                    "UPDATE accounts SET preferences = ? WHERE account_number = ?",
+                    (preferences, normalized),
+                )
+            if cursor.rowcount == 0:
+                raise OrderStoreError(
+                    f"No account '{normalized}' found in database at '{resolved}'."
+                )
+        except sqlite3.Error as exc:
+            raise OrderStoreError(
+                f"Failed to update account preferences in database at "
+                f"'{resolved}': {exc}"
+            ) from exc
+    finally:
+        conn.close()
+
+
 def record_refund_request(
     order_id: str,
     lines: list[dict],

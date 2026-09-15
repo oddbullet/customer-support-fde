@@ -7,6 +7,7 @@ from customer_support_fde.nodes.account_identification_node import (
 )
 from customer_support_fde.nodes.cart_summary_node import cart_summary_node
 from customer_support_fde.nodes.clarify_intent import clarify_intent
+from customer_support_fde.nodes.memory_gen_node import memory_gen_node
 from customer_support_fde.nodes.order_support_agent import (
     await_customer,
     call_model,
@@ -45,6 +46,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_node("await_customer", await_customer)
     graph.add_node("cart_summary", cart_summary_node)
     graph.add_node("ticket_gen_node", ticket_gen_node)
+    graph.add_node("memory_gen_node", memory_gen_node)
     graph.add_node("refund_agent", refund_agent)
     graph.add_node("refund_tools", refund_tools)
     graph.add_node("refund_await_customer", refund_await_customer)
@@ -81,6 +83,8 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     )
     graph.add_edge("cart_summary", "ticket_gen_node")
     graph.add_edge("ticket_gen_node", END)
+    graph.add_edge("cart_summary", "memory_gen_node")
+    graph.add_edge("memory_gen_node", END)
 
     graph.add_conditional_edges(
         "refund_agent",
