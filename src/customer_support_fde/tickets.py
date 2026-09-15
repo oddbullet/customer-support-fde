@@ -53,10 +53,10 @@ def _render_refund_ticket(refund_ticket: dict) -> str:
     refund_created = "Yes" if refund_ticket["refund_created"] else "No"
     return (
         "# Refund Ticket\n\n"
-        f"**Order ID: {order_id if order_id is not None else 'Unknown'}**\n\n"
-        f"**Issue: {issue if issue is not None else 'Not recorded'}**\n\n"
-        f"**Customer Sentiment: {sentiment if sentiment is not None else 'unavailable'}**\n\n"
-        f"**Refund Request Created: {refund_created}**\n"
+        f"**Order ID:** {order_id if order_id is not None else 'Unknown'}\n\n"
+        f"**Issue:** {issue if issue is not None else 'Not recorded'}\n\n"
+        f"**Customer Sentiment:** {sentiment if sentiment is not None else 'unavailable'}\n\n"
+        f"**Refund Request Created:** {refund_created}\n"
     )
 
 
