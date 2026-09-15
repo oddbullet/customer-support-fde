@@ -263,6 +263,30 @@ LABELED_SAMPLES = [
         "3",
         "refund",
     ),
+    (
+        "My order arrived 45 minutes late and the food was cold",
+        RouterDecision(destination="refund", sentiment="negative"),
+        None,
+        "refund",
+    ),
+    (
+        "The spring rolls I got were missing from my bag",
+        RouterDecision(destination="refund", sentiment="negative"),
+        None,
+        "refund",
+    ),
+    (
+        "This is the second time my order has been wrong",
+        RouterDecision(destination="refund", sentiment="negative"),
+        None,
+        "refund",
+    ),
+    (
+        "The dish had peanuts in it even though I asked for none — can I get a refund?",
+        RouterDecision(destination="refund", sentiment="negative"),
+        None,
+        "refund",
+    ),
 ]
 
 

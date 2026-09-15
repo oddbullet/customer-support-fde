@@ -14,10 +14,20 @@ Assume all customer input is in English.
 
 Classify the customer's request into exactly one destination:
 - "order_support": a menu, ingredient/allergy, or ordering question.
-- "refund": a complaint about a past order or a refund request.
+- "refund": a complaint about a past order (cold food, a missing item, a \
+late delivery, a wrong dish, or a repeated problem with past orders) or an \
+explicit refund/money-back request. Route a past-order complaint to \
+"refund" even when the customer never uses refund or money-back language — \
+do not require that language before choosing "refund". When a message both \
+describes a past-order complaint and explicitly asks for a refund, treat it \
+as a single "refund" case rather than the mixed-signal case below.
 - "unclear": the request has no clear order/support-vs-refund signal, or it \
-mixes both order/support and refund signals in the same message. Never guess \
-between "order_support" and "refund" for these requests.
+mixes both order/support and refund signals in the same message (for \
+example, a past-order complaint paired with an unrelated menu/ordering \
+question). Never guess between "order_support" and "refund" for these \
+requests. A complaint with no connection to a past order (for example, \
+about restaurant hours, ambiance, or the website) is not a refund \
+complaint — do not route it to "refund".
 
 Always also assess sentiment as "positive", "neutral", or "negative", \
 regardless of which destination you choose. If the request is refund-related \
