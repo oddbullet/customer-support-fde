@@ -45,6 +45,6 @@ customer-support-fde "my last order was cold, and also does the mapo tofu have p
 
 ## Validation checklist (maps to spec Success Criteria)
 
-- [ ] SC-001: Running a representative set of complaint-only messages (no refund/money-back language) through the integration tests yields the `refund` destination at least 90% of the time.
-- [ ] SC-002: Every sample combining a past-order complaint with an explicit refund ask resolves directly to `refund` with no clarifying question triggered.
-- [ ] SC-003: Every message routed to `refund` via complaint recognition arrives with a sentiment assessment attached (never `None`).
+- [x] SC-001: Running a representative set of complaint-only messages (no refund/money-back language) through the integration tests yields the `refund` destination at least 90% of the time. Verified via `test_labeled_sample_set_routes_to_the_expected_destination_at_least_90_percent`, which now includes 3 complaint-only entries alongside the existing samples, all resolving to `refund`.
+- [x] SC-002: Every sample combining a past-order complaint with an explicit refund ask resolves directly to `refund` with no clarifying question triggered. Verified via `test_complaint_plus_refund_ask_query_routes_directly_to_refund` (unit) and the `LABELED_SAMPLES` entry for the peanut-allergy refund-ask query (integration) — none hit `clarify_intent`.
+- [x] SC-003: Every message routed to `refund` via complaint recognition arrives with a sentiment assessment attached (never `None`). Verified via `test_complaint_only_query_routes_to_refund_with_sentiment` and `test_complaint_plus_refund_ask_query_routes_directly_to_refund`, both asserting `result["sentiment"] is not None`.

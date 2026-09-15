@@ -29,7 +29,7 @@ Single project (per plan.md): `src/customer_support_fde/`, `tests/unit/`, `tests
 
 **Purpose**: Establish a known-good baseline before making any change.
 
-- [ ] T001 Run `pytest tests/unit/test_router_agent.py tests/integration/test_router_trajectory.py -v` from repo root and confirm all existing tests pass before any change in this feature is made (baseline for the red/green cycles below).
+- [X] T001 Run `pytest tests/unit/test_router_agent.py tests/integration/test_router_trajectory.py -v` from repo root and confirm all existing tests pass before any change in this feature is made (baseline for the red/green cycles below).
 
 ---
 
@@ -49,13 +49,13 @@ Single project (per plan.md): `src/customer_support_fde/`, `tests/unit/`, `tests
 
 > **Write these tests FIRST. Run them and confirm they FAIL against the current `SYSTEM_PROMPT` before touching `router_agent.py`.**
 
-- [ ] T002 [US1] In `tests/unit/test_router_agent.py`, add an assertion (or assertions) on `router_agent.SYSTEM_PROMPT` confirming it explicitly instructs: (a) a customer message describing dissatisfaction with a past order (e.g., cold, late, missing, or wrong item) classifies to `"refund"` without requiring refund/money-back language (FR-001, FR-002); (b) a complaint with no connection to a past order (e.g., about hours, ambiance, or the website) does NOT classify to `"refund"` (FR-006). Tag the test `(base)`/`(edge)` per the constitution's per-test comment convention. Run it and confirm it fails against the current prompt text.
-- [ ] T003 [US1] In `tests/unit/test_router_agent.py`, add mocked-`RouterDecision` plumbing test case(s) for complaint-only queries — e.g. `"My order arrived 45 minutes late and the food was cold"`, `"The spring rolls I got were missing from my bag"` — mirroring spec.md User Story 1 Acceptance Scenarios 1–3: assert `result["destination"] == "refund"` and `result["sentiment"] is not None`. Follow the existing `test_refund_query_carries_negative_sentiment` pattern. Tag `(base)`.
+- [X] T002 [US1] In `tests/unit/test_router_agent.py`, add an assertion (or assertions) on `router_agent.SYSTEM_PROMPT` confirming it explicitly instructs: (a) a customer message describing dissatisfaction with a past order (e.g., cold, late, missing, or wrong item) classifies to `"refund"` without requiring refund/money-back language (FR-001, FR-002); (b) a complaint with no connection to a past order (e.g., about hours, ambiance, or the website) does NOT classify to `"refund"` (FR-006). Tag the test `(base)`/`(edge)` per the constitution's per-test comment convention. Run it and confirm it fails against the current prompt text.
+- [X] T003 [US1] In `tests/unit/test_router_agent.py`, add mocked-`RouterDecision` plumbing test case(s) for complaint-only queries — e.g. `"My order arrived 45 minutes late and the food was cold"`, `"The spring rolls I got were missing from my bag"` — mirroring spec.md User Story 1 Acceptance Scenarios 1–3: assert `result["destination"] == "refund"` and `result["sentiment"] is not None`. Follow the existing `test_refund_query_carries_negative_sentiment` pattern. Tag `(base)`.
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] Update `SYSTEM_PROMPT` in `src/customer_support_fde/nodes/router_agent.py` to add the complaint-recognition guidance asserted in T002: past-order dissatisfaction (cold/late/missing/wrong item, repeated problems) classifies as `"refund"` without needing refund/money-back language, while complaints unrelated to a past order do not. Do not change `RouterDecision`, `router_agent()`'s signature, or any control flow — this is a prompt-text-only change.
-- [ ] T005 [US1] Run `pytest tests/unit/test_router_agent.py -v` and confirm T002 and T003 now pass, and that all pre-existing tests in this file still pass (no regression to the order/support, explicit-refund, unclear, or error-propagation cases).
+- [X] T004 [US1] Update `SYSTEM_PROMPT` in `src/customer_support_fde/nodes/router_agent.py` to add the complaint-recognition guidance asserted in T002: past-order dissatisfaction (cold/late/missing/wrong item, repeated problems) classifies as `"refund"` without needing refund/money-back language, while complaints unrelated to a past order do not. Do not change `RouterDecision`, `router_agent()`'s signature, or any control flow — this is a prompt-text-only change.
+- [X] T005 [US1] Run `pytest tests/unit/test_router_agent.py -v` and confirm T002 and T003 now pass, and that all pre-existing tests in this file still pass (no regression to the order/support, explicit-refund, unclear, or error-propagation cases).
 
 **Checkpoint**: User Story 1 is fully functional and independently testable — complaint-only messages reach the refund destination.
 
@@ -71,13 +71,13 @@ Single project (per plan.md): `src/customer_support_fde/`, `tests/unit/`, `tests
 
 > **Write these tests FIRST. Run them and confirm they FAIL before extending the prompt further.**
 
-- [ ] T006 [US2] In `tests/unit/test_router_agent.py`, add an assertion on `router_agent.SYSTEM_PROMPT` confirming it explicitly instructs that a message combining a past-order complaint with an explicit refund ask is a single `"refund"` case — not the mixed-signal case reserved for messages that combine order/support intent with refund/complaint intent (FR-003). Tag `(base)`. Run it and confirm it fails against the prompt as it stands after T004.
-- [ ] T007 [US2] In `tests/unit/test_router_agent.py`, add mocked-`RouterDecision` plumbing test case(s) for combined complaint+refund-ask queries — e.g. `"My order arrived cold and an hour late, I want my money back"`, `"The dish had peanuts in it even though I asked for none — can I get a refund?"` — mirroring spec.md User Story 2 Acceptance Scenarios 1–2: assert `result["destination"] == "refund"` (never `"unclear"`) with sentiment attached. Tag `(base)`.
+- [X] T006 [US2] In `tests/unit/test_router_agent.py`, add an assertion on `router_agent.SYSTEM_PROMPT` confirming it explicitly instructs that a message combining a past-order complaint with an explicit refund ask is a single `"refund"` case — not the mixed-signal case reserved for messages that combine order/support intent with refund/complaint intent (FR-003). Tag `(base)`. Run it and confirm it fails against the prompt as it stands after T004.
+- [X] T007 [US2] In `tests/unit/test_router_agent.py`, add mocked-`RouterDecision` plumbing test case(s) for combined complaint+refund-ask queries — e.g. `"My order arrived cold and an hour late, I want my money back"`, `"The dish had peanuts in it even though I asked for none — can I get a refund?"` — mirroring spec.md User Story 2 Acceptance Scenarios 1–2: assert `result["destination"] == "refund"` (never `"unclear"`) with sentiment attached. Tag `(base)`.
 
 ### Implementation for User Story 2
 
-- [ ] T008 [US2] Extend `SYSTEM_PROMPT` in `src/customer_support_fde/nodes/router_agent.py` (building on T004's edit) to add the guidance asserted in T006: a past-order complaint combined with an explicit refund request resolves directly to `"refund"`, and is distinct from the "mixes order/support and refund signals" case that stays `"unclear"`.
-- [ ] T009 [US2] Run `pytest tests/unit/test_router_agent.py -v` and confirm T006 and T007 now pass, and that the pre-existing `test_ambiguous_or_mixed_signal_query_stays_unclear_and_keeps_sentiment` case (including the "cold food + mapo tofu question" mixed-signal query) still passes unchanged — confirming FR-005 (mixed order/support-and-refund signals still trigger the clarifying question) was not broken by this feature.
+- [X] T008 [US2] Extend `SYSTEM_PROMPT` in `src/customer_support_fde/nodes/router_agent.py` (building on T004's edit) to add the guidance asserted in T006: a past-order complaint combined with an explicit refund request resolves directly to `"refund"`, and is distinct from the "mixes order/support and refund signals" case that stays `"unclear"`.
+- [X] T009 [US2] Run `pytest tests/unit/test_router_agent.py -v` and confirm T006 and T007 now pass, and that the pre-existing `test_ambiguous_or_mixed_signal_query_stays_unclear_and_keeps_sentiment` case (including the "cold food + mapo tofu question" mixed-signal query) still passes unchanged — confirming FR-005 (mixed order/support-and-refund signals still trigger the clarifying question) was not broken by this feature.
 
 **Checkpoint**: User Stories 1 and 2 both work independently — complaint-only and complaint+refund-ask messages both reach the refund destination, and genuine mixed-signal messages still do not.
 
@@ -91,11 +91,11 @@ Single project (per plan.md): `src/customer_support_fde/`, `tests/unit/`, `tests
 
 ### Tests for User Story 3
 
-- [ ] T010 [US3] In `tests/integration/test_router_trajectory.py`, add complaint-only and complaint+refund-ask entries to `LABELED_SAMPLES` (matching the queries used in T003 and T007, each paired with a mocked `RouterDecision(destination="refund", ...)` and expected destination `"refund"`), mirroring spec.md User Story 1/2 Acceptance Scenarios and the spec's Edge Cases. Tag the change with the file's existing `(base)` convention for this test.
+- [X] T010 [US3] In `tests/integration/test_router_trajectory.py`, add complaint-only and complaint+refund-ask entries to `LABELED_SAMPLES` (matching the queries used in T003 and T007, each paired with a mocked `RouterDecision(destination="refund", ...)` and expected destination `"refund"`), mirroring spec.md User Story 1/2 Acceptance Scenarios and the spec's Edge Cases. Tag the change with the file's existing `(base)` convention for this test.
 
 ### Implementation for User Story 3
 
-- [ ] T011 [US3] Run `pytest tests/integration/test_router_trajectory.py -v` and confirm `test_labeled_sample_set_routes_to_the_expected_destination_at_least_90_percent` still passes (accuracy ≥ 90%) with the new entries included, and that `test_refund_style_request_routes_through_refund_agent` and the mixed-signal parametrized test still pass unchanged (no regression to graph wiring).
+- [X] T011 [US3] Run `pytest tests/integration/test_router_trajectory.py -v` and confirm `test_labeled_sample_set_routes_to_the_expected_destination_at_least_90_percent` still passes (accuracy ≥ 90%) with the new entries included, and that `test_refund_style_request_routes_through_refund_agent` and the mixed-signal parametrized test still pass unchanged (no regression to graph wiring).
 
 **Checkpoint**: All three user stories are independently functional and verifiable — the feature is complete per spec.md.
 
@@ -105,9 +105,9 @@ Single project (per plan.md): `src/customer_support_fde/`, `tests/unit/`, `tests
 
 **Purpose**: Final validation and release bookkeeping across all stories.
 
-- [ ] T012 [P] Run the full test suite (`pytest`) from repo root and confirm no regressions anywhere in the project (order/support agent, refund agent, ticket generation, cart summary, memory/account nodes — all unrelated to this feature and must remain green).
-- [ ] T013 [P] Bump the package version in `pyproject.toml` from `0.8.0` to `0.8.1` per Constitution Principle IV (PATCH: this is a routing-behavior clarification/fix to already-shipped logic, not a new feature surface or breaking change).
-- [ ] T014 Work through `specs/014-complaint-routing-refund/quickstart.md`'s "Validation checklist" (SC-001, SC-002, SC-003) using the automated test commands, and check off each item.
+- [X] T012 [P] Run the full test suite (`pytest`) from repo root and confirm no regressions anywhere in the project (order/support agent, refund agent, ticket generation, cart summary, memory/account nodes — all unrelated to this feature and must remain green).
+- [X] T013 [P] Bump the package version in `pyproject.toml` from `0.8.0` to `0.8.1` per Constitution Principle IV (PATCH: this is a routing-behavior clarification/fix to already-shipped logic, not a new feature surface or breaking change).
+- [X] T014 Work through `specs/014-complaint-routing-refund/quickstart.md`'s "Validation checklist" (SC-001, SC-002, SC-003) using the automated test commands, and check off each item.
 
 ---
 
