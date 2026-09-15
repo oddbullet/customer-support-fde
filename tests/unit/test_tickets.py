@@ -158,7 +158,7 @@ def test_write_refund_ticket_known_order_id(monkeypatch, tmp_path):
     assert "Customer received the wrong dish." in content
     assert "negative" in content
     assert "K7QP3M9X" in content
-    assert "Refund Request Created: Yes" in content
+    assert "**Refund Request Created:** Yes" in content
 
 
 # write_refund_ticket denotes no refund created for a denied/no-refund case. (base)
@@ -168,7 +168,7 @@ def test_write_refund_ticket_no_refund_created(monkeypatch, tmp_path):
 
     path = tickets.write_refund_ticket(refund_ticket)
 
-    assert "Refund Request Created: No" in path.read_text()
+    assert "**Refund Request Created:** No" in path.read_text()
 
 
 # write_refund_ticket falls back to a random-suffixed filename and renders
@@ -194,6 +194,51 @@ def test_write_refund_ticket_renders_missing_sentiment_and_issue(monkeypatch, tm
 
     assert "unavailable" in content
     assert "Not recorded" in content
+    assert "**Issue:** Not recorded" in content
+    assert "**Customer Sentiment:** unavailable" in content
+
+
+# write_refund_ticket bolds only the field label, leaving the value as
+# plain text after it, for every field (order id, issue, sentiment,
+# refund-created status). (regression)
+def test_write_refund_ticket_bolds_only_labels(monkeypatch, tmp_path):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
+    refund_ticket = _refund_ticket()
+
+    path = tickets.write_refund_ticket(refund_ticket)
+    content = path.read_text()
+
+    assert "**Order ID:** K7QP3M9X" in content
+    assert "**Issue:** Customer received the wrong dish." in content
+    assert "**Customer Sentiment:** negative" in content
+    assert "**Refund Request Created:** Yes" in content
+
+
+# write_refund_ticket never wraps an entire field line (label and value
+# together) in bold markdown - only the label is bold. (regression)
+def test_write_refund_ticket_does_not_bold_entire_field_line(monkeypatch, tmp_path):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
+    refund_ticket = _refund_ticket()
+
+    path = tickets.write_refund_ticket(refund_ticket)
+    content = path.read_text()
+
+    assert "**Order ID: K7QP3M9X**" not in content
+    assert "**Issue: Customer received the wrong dish.**" not in content
+    assert "**Customer Sentiment: negative**" not in content
+    assert "**Refund Request Created: Yes**" not in content
+
+
+# write_refund_ticket leaves the document header unaffected by the
+# label/value bolding fix. (regression)
+def test_write_refund_ticket_header_unchanged(monkeypatch, tmp_path):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
+    refund_ticket = _refund_ticket()
+
+    path = tickets.write_refund_ticket(refund_ticket)
+    content = path.read_text()
+
+    assert content.startswith("# Refund Ticket\n")
 
 
 # A second write for the same known order_id replaces the first file. (edge)
@@ -205,4 +250,4 @@ def test_write_refund_ticket_repeat_write_replaces_file(monkeypatch, tmp_path):
 
     matching = list(tmp_path.glob("refund-K7QP3M9X.md"))
     assert len(matching) == 1
-    assert "Refund Request Created: No" in matching[0].read_text()
+    assert "**Refund Request Created:** No" in matching[0].read_text()

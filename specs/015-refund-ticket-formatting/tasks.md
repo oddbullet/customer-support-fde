@@ -34,7 +34,7 @@ Single project layout (existing): `src/customer_support_fde/tickets.py`,
 
 **Purpose**: Confirm a clean, known-good starting point before touching `tickets.py`.
 
-- [ ] T001 At the repository root, run `uv run pytest tests/unit/test_tickets.py -v` and
+- [X] T001 At the repository root, run `uv run pytest tests/unit/test_tickets.py -v` and
       confirm all existing tests pass before any change, establishing the baseline this fix
       must not regress.
 
@@ -64,41 +64,41 @@ verify the produced markdown has bold labels with plain values, per
 
 > **NOTE: Write these tests FIRST in `tests/unit/test_tickets.py`, run them, and confirm they FAIL before touching `tickets.py`.**
 
-- [ ] T002 [P] [US1] In `tests/unit/test_tickets.py`, add a failing test asserting
+- [X] T002 [P] [US1] In `tests/unit/test_tickets.py`, add a failing test asserting
       `_render_refund_ticket` (or the content written by `write_refund_ticket`) renders each
       of the four fields as `**Order ID:** K7QP3M9X`, `**Issue:** <issue text>`,
       `**Customer Sentiment:** <sentiment>`, and `**Refund Request Created:** Yes`/`No` — bold
       label with trailing colon inside the bold span, one space, then a plain-text value — for
       a fully-populated refund ticket dict (FR-001, FR-002). Tag it `(regression)` since it
       guards against the reported all-bold bug.
-- [ ] T003 [P] [US1] In `tests/unit/test_tickets.py`, add a failing test asserting the
+- [X] T003 [P] [US1] In `tests/unit/test_tickets.py`, add a failing test asserting the
       rendered content does **not** contain any of the old all-bold field shapes (e.g.
       `**Order ID: K7QP3M9X**`, `**Issue: ` immediately followed later by `**` closing the
       whole line) — i.e. no field line has its value inside the bold span (FR-001, SC-001).
       Tag it `(regression)`.
-- [ ] T004 [P] [US1] In `tests/unit/test_tickets.py`, add a failing test asserting the
+- [X] T004 [P] [US1] In `tests/unit/test_tickets.py`, add a failing test asserting the
       `# Refund Ticket` header line is emitted exactly as `# Refund Ticket` (unchanged,
       unaffected by the label/value styling change) (FR-003). Tag it `(regression)`.
-- [ ] T005 [US1] In `tests/unit/test_tickets.py`, extend
+- [X] T005 [US1] In `tests/unit/test_tickets.py`, extend
       `test_write_refund_ticket_unknown_order_id` and
       `test_write_refund_ticket_renders_missing_sentiment_and_issue` (or add new assertions
       alongside them) to confirm the fallback values (`Unknown`, `Not recorded`, `unavailable`)
       still appear as plain text immediately after their bold labels, not inside the bold span
       (edge case from spec.md). Tag additions `(edge)`.
-- [ ] T006 [US1] Run `uv run pytest tests/unit/test_tickets.py -v` and confirm the new/extended
+- [X] T006 [US1] Run `uv run pytest tests/unit/test_tickets.py -v` and confirm the new/extended
       tests from T002-T005 FAIL against the current implementation (red), while the pre-existing
       tests still pass unmodified.
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] In `src/customer_support_fde/tickets.py`, modify `_render_refund_ticket` so
+- [X] T007 [US1] In `src/customer_support_fde/tickets.py`, modify `_render_refund_ticket` so
       each of the four field lines uses the format `**<Label>:** <value>` (bold label with
       trailing colon, one space, plain-text value) instead of wrapping the entire line
       (`**<Label>: <value>**`) in bold. Do not change: the `# Refund Ticket` header line, the
       set of fields, their order, the blank-line spacing between fields, the fallback values
       (`Unknown`, `Not recorded`, `unavailable`), or any other function in the file (FR-001
       through FR-004; scope confirmed in research.md).
-- [ ] T008 [US1] Run `uv run pytest tests/unit/test_tickets.py -v` and confirm every test
+- [X] T008 [US1] Run `uv run pytest tests/unit/test_tickets.py -v` and confirm every test
       (T002-T005's new/extended tests plus all pre-existing tests) now passes (green).
 
 **Checkpoint**: User Story 1 — and the entire feature — is complete, independently verified, and
@@ -110,14 +110,14 @@ matches [quickstart.md](./quickstart.md)'s expected output shape.
 
 **Purpose**: Confirm the fix is fully unregressed and versioned per the constitution.
 
-- [ ] T009 In `pyproject.toml`, bump `version` from `0.8.1` to `0.8.2` (PATCH) per Constitution
+- [X] T009 In `pyproject.toml`, bump `version` from `0.8.1` to `0.8.2` (PATCH) per Constitution
       Principle IV, since this is a backward-compatible bug fix with no API/behavior contract
       change beyond the markdown styling.
-- [ ] T010 [P] Follow [quickstart.md](./quickstart.md) section 2 (manual inspection): generate a
+- [X] T010 [P] Follow [quickstart.md](./quickstart.md) section 2 (manual inspection): generate a
       refund ticket for order `N0690YR9` with `refund_created=False` and confirm
       `tickets/refund-N0690YR9.md` matches the expected bold-label/plain-value shape shown
       there, replacing the previously all-bold file described in the original bug report.
-- [ ] T011 [P] Run `uv run pytest` (full suite) at the repository root and confirm no
+- [X] T011 [P] Run `uv run pytest` (full suite) at the repository root and confirm no
       regressions outside `test_tickets.py` — in particular `tests/unit/test_tickets.py -k
       order_ticket` (per quickstart.md section 3) and any refund-agent/ticket-node tests that
       exercise `write_refund_ticket`.
