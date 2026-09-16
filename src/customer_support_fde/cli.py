@@ -6,7 +6,7 @@ import uuid
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
-from customer_support_fde import db
+from customer_support_fde import db, interactive
 from customer_support_fde.graph import build_graph
 from customer_support_fde.tracing import setup_tracing
 
@@ -70,6 +70,9 @@ def run(argv: list[str] | None = None) -> int:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
         return 0
+
+    if args.query is None and sys.stdin.isatty() and sys.stdout.isatty():
+        return interactive.run_interactive()
 
     query = _read_query(args)
 

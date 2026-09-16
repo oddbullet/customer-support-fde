@@ -35,9 +35,9 @@ Single project (per plan.md's Structure Decision): `src/customer_support_fde/`, 
 **Purpose**: Create the two new files this feature adds, so subsequent tasks have somewhere to
 write.
 
-- [ ] T001 Create the new module file `src/customer_support_fde/interactive.py` (empty; target
+- [X] T001 Create the new module file `src/customer_support_fde/interactive.py` (empty; target
       for all interactive-mode logic per plan.md's Project Structure)
-- [ ] T002 [P] Create the new test file `tests/unit/test_interactive.py` (empty; target for all
+- [X] T002 [P] Create the new test file `tests/unit/test_interactive.py` (empty; target for all
       interactive-mode tests)
 
 ---
@@ -50,31 +50,31 @@ phase is complete.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T003 [P] Write failing tests in `tests/unit/test_cli.py` asserting `cli.run()` with no
+- [X] T003 [P] Write failing tests in `tests/unit/test_cli.py` asserting `cli.run()` with no
       query argument calls `interactive.run_interactive()` when `sys.stdin.isatty()` and
       `sys.stdout.isatty()` are both `True`, and falls through unchanged to the existing
       single-line-stdin read (`_read_query`) when either is `False` — one test per branch,
       each tagged `(base)` for the tty-dispatch case and `(regression)` for the non-tty case
       (protects the piped-stdin contract documented in
       `specs/001-router-agent/contracts/cli-route.md`)
-- [ ] T004 Implement the `isatty()`-based dispatch branch in `src/customer_support_fde/cli.py`
+- [X] T004 Implement the `isatty()`-based dispatch branch in `src/customer_support_fde/cli.py`
       per `research.md`'s "Dispatch on `sys.stdin.isatty()`" decision — no query argument +
       both stdin and stdout are a tty → call `interactive.run_interactive()` (a stub returning
       `0` is sufficient for now); otherwise fall through to the existing `_read_query` path
       unchanged. Depends on T003 (make it pass without changing its assertions).
-- [ ] T005 [P] Write a failing test in `tests/unit/test_interactive.py` asserting the `Console`
+- [X] T005 [P] Write a failing test in `tests/unit/test_interactive.py` asserting the `Console`
       produced by `interactive.py`'s console factory emits output with no raw ANSI escape
       sequences when stdout is not a tty (tag: `(edge)`, FR-009)
-- [ ] T006 Implement a shared `Console` factory in `src/customer_support_fde/interactive.py` —
+- [X] T006 Implement a shared `Console` factory in `src/customer_support_fde/interactive.py` —
       one `rich.console.Console` instance constructed once and reused by every interactive-mode
       render call in this module. Depends on T005 (make it pass).
-- [ ] T007 [P] Write a failing test in `tests/unit/test_interactive.py` asserting
+- [X] T007 [P] Write a failing test in `tests/unit/test_interactive.py` asserting
       `_run_conversation(console, graph, query)` generates a distinct `thread_id` on each call
       (two calls → two different ids) and, given a mocked graph whose `invoke` first returns an
       `__interrupt__` payload and then a resolved state on resume, drives that
       interrupt/`Command(resume=...)` cycle through to the resolved `SupportState` — matching
       `cli.run()`'s existing interrupt-handling loop (tag: `(base)`)
-- [ ] T008 Implement `_run_conversation(console, graph, query)` in
+- [X] T008 Implement `_run_conversation(console, graph, query)` in
       `src/customer_support_fde/interactive.py` per `data-model.md`'s Conversation entity: a
       fresh `uuid.uuid4()` `thread_id` per call, the same initial `SupportState` seed shape
       `cli.run()` already uses, and the same `__interrupt__` / `Command(resume=...)` loop
@@ -101,7 +101,7 @@ processing, and prints a result (spec.md User Story 1, all 3 acceptance scenario
 
 > **Write these tests FIRST — confirm they FAIL before implementation**
 
-- [ ] T009 [P] [US1] Write failing tests in `tests/unit/test_interactive.py`:
+- [X] T009 [P] [US1] Write failing tests in `tests/unit/test_interactive.py`:
       `run_interactive()` prints a welcome/intro message before the first prompt is shown
       (tag: `(base)`, FR-002); a submitted question is passed through to `_run_conversation`
       and its result is printed (tag: `(base)`, FR-001 / acceptance scenario 2); the call to
@@ -110,12 +110,12 @@ processing, and prints a result (spec.md User Story 1, all 3 acceptance scenario
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Implement `run_interactive()` in `src/customer_support_fde/interactive.py`:
+- [X] T010 [US1] Implement `run_interactive()` in `src/customer_support_fde/interactive.py`:
       print the welcome banner (FR-002), read one line at a styled prompt, call
       `_run_conversation` (T008) wrapped in `console.status("Thinking...", spinner="dots")` per
       `research.md`, and print the final result in plain text (mirroring today's
       `cli._print_result` non-JSON formatting). Depends on T006, T008, T009.
-- [ ] T011 [US1] Point `cli.py`'s dispatch branch (T004) at the real
+- [X] T011 [US1] Point `cli.py`'s dispatch branch (T004) at the real
       `interactive.run_interactive()`, replacing the T004 stub. Depends on T010.
 
 **Checkpoint**: User Story 1 is independently functional — a no-argument run in a real terminal
@@ -137,7 +137,7 @@ alone (spec.md User Story 2, all 3 acceptance scenarios).
 
 > **Write these tests FIRST — confirm they FAIL before implementation**
 
-- [ ] T012 [P] [US2] Write failing tests in `tests/unit/test_interactive.py`: a human turn
+- [X] T012 [P] [US2] Write failing tests in `tests/unit/test_interactive.py`: a human turn
       renders with a distinct color style and the text label `"You:"` (tag: `(base)`, FR-003);
       an AI turn renders with a distinct color style and the text label `"Assistant:"`
       (tag: `(base)`, FR-003); a multi-line AI response keeps the label/style applied
@@ -149,13 +149,13 @@ alone (spec.md User Story 2, all 3 acceptance scenarios).
 
 ### Implementation for User Story 2
 
-- [ ] T013 [P] [US2] Implement `_print_turn(console, speaker, content)` in
+- [X] T013 [P] [US2] Implement `_print_turn(console, speaker, content)` in
       `src/customer_support_fde/interactive.py`, applying the color+label convention (e.g. bold
       cyan `"You:"` / bold green `"Assistant:"`) per FR-003 and
       `contracts/cli-interactive.md`'s labeling contract. Depends on T012.
-- [ ] T014 [US2] Replace `run_interactive()`'s plain question-echo and result-print calls
+- [X] T014 [US2] Replace `run_interactive()`'s plain question-echo and result-print calls
       (added in T010) with `_print_turn` calls labeled `"human"`/`"ai"`. Depends on T013.
-- [ ] T015 [US2] Route `_run_conversation`'s (T008) interrupt-question print and
+- [X] T015 [US2] Route `_run_conversation`'s (T008) interrupt-question print and
       resume-answer echo through `_print_turn` as well, so a mid-conversation confirmation
       exchange (e.g. order confirmation) is labeled identically to the rest of the transcript
       (FR-004, FR-008). Depends on T013.
@@ -179,7 +179,7 @@ program terminates cleanly (spec.md User Story 3, all 3 acceptance scenarios).
 
 > **Write these tests FIRST — confirm they FAIL before implementation**
 
-- [ ] T016 [P] [US3] Write failing tests in `tests/unit/test_interactive.py`: after a
+- [X] T016 [P] [US3] Write failing tests in `tests/unit/test_interactive.py`: after a
       conversation resolves, the console is cleared and a new prompt is shown, allowing a
       second, independent conversation to run (tag: `(base)`, FR-005, acceptance scenario 1);
       typing `/exit` (case-insensitive) at a new-conversation prompt ends the session with a
@@ -194,14 +194,14 @@ program terminates cleanly (spec.md User Story 3, all 3 acceptance scenarios).
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Wrap `run_interactive()`'s single-conversation flow (T010) in an outer loop in
+- [X] T017 [US3] Wrap `run_interactive()`'s single-conversation flow (T010) in an outer loop in
       `src/customer_support_fde/interactive.py`: after `_run_conversation` resolves or is
       cancelled, call `console.clear()` and loop back to the prompt; recognize the literal
       `/exit` (case-insensitive) at the prompt as ending the loop. Depends on T010, T016.
-- [ ] T018 [US3] Add `KeyboardInterrupt` handling around the prompt and conversation call in
+- [X] T018 [US3] Add `KeyboardInterrupt` handling around the prompt and conversation call in
       `run_interactive()`'s loop, printing a closing message and returning exit code `0` on
       Ctrl+C exactly as `/exit` does. Depends on T017.
-- [ ] T019 [US3] Add mid-conversation error handling in `run_interactive()`'s loop: catch
+- [X] T019 [US3] Add mid-conversation error handling in `run_interactive()`'s loop: catch
       exceptions raised by `_run_conversation`, print them as a distinctly styled error line
       (not `"You:"`/`"Assistant:"`), and continue the loop to a fresh prompt rather than
       exiting the process (FR-010). Depends on T017.
@@ -215,14 +215,14 @@ program terminates cleanly (spec.md User Story 3, all 3 acceptance scenarios).
 
 **Purpose**: Regression-proof the untouched paths, finish housekeeping, validate end to end.
 
-- [ ] T020 [P] Add regression tests to `tests/unit/test_cli.py` proving the existing
+- [X] T020 [P] Add regression tests to `tests/unit/test_cli.py` proving the existing
       query-argument invocation, `--json` output, and piped-stdin (non-tty) behavior are
       byte-for-byte unchanged after this feature (tag: `(regression)`, SC-004)
-- [ ] T021 [P] Bump the version in `pyproject.toml` from `0.8.2` to `0.9.0` per Constitution
+- [X] T021 [P] Bump the version in `pyproject.toml` from `0.8.2` to `0.9.0` per Constitution
       Principle IV (MINOR — backward-compatible feature addition)
-- [ ] T022 Manually run `specs/016-interactive-cli-mode/quickstart.md` steps 1-8 against a real
+- [X] T022 Manually run `specs/016-interactive-cli-mode/quickstart.md` steps 1-8 against a real
       terminal to validate the full demo flow end to end
-- [ ] T023 Run the full test suite (`uv run pytest`) and confirm zero regressions (SC-004)
+- [X] T023 Run the full test suite (`uv run pytest`) and confirm zero regressions (SC-004)
 
 ---
 
