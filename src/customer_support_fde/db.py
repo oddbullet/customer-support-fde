@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import secrets
@@ -109,6 +110,10 @@ class OrderStoreError(RuntimeError):
     pass
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
 def database_path() -> Path:
     env_value = os.environ.get("CUSTOMER_SUPPORT_DB")
     if env_value:
@@ -136,10 +141,18 @@ def _connect(path: Path, *, create: bool = False) -> sqlite3.Connection:
     return conn
 
 
+@contextlib.contextmanager
+def _connection(path: Path, *, create: bool = False):
+    conn = _connect(path, create=create)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 def init_database(path: Path | str | None = None) -> int:
     resolved = _resolve_path(path)
-    conn = _connect(resolved, create=True)
-    try:
+    with _connection(resolved, create=True) as conn:
         conn.executescript(_SCHEMA)
 
         menu_json = (
@@ -163,14 +176,11 @@ def init_database(path: Path | str | None = None) -> int:
                 )
 
         return len(dishes)
-    finally:
-        conn.close()
 
 
 def load_menu(path: Path | str | None = None) -> list[MenuItem]:
     resolved = _resolve_path(path)
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         try:
             rows = conn.execute(
                 "SELECT name, price, ingredients FROM menu_items ORDER BY name"
@@ -192,8 +202,6 @@ def load_menu(path: Path | str | None = None) -> list[MenuItem]:
                 ) from exc
             menu.append({"name": name, "price": price, "ingredients": ingredients})
         return menu
-    finally:
-        conn.close()
 
 
 def _new_id() -> str:
@@ -208,6 +216,39 @@ def _format_id(id_: str) -> str:
 def _normalize_id(raw: str) -> str:
     stripped = raw.strip().upper().replace("-", "").replace(" ", "")
     return stripped.translate(_CONFUSION_TRANSLATION)
+
+
+def _insert_with_new_id(
+    resolved: Path,
+    id_generator,
+    insert,
+    unique_error_substring: str,
+    action_description: str,
+) -> str:
+    last_error: sqlite3.Error | None = None
+    for _ in range(_MAX_ID_ATTEMPTS):
+        new_id = id_generator()
+        with _connection(resolved) as conn:
+            try:
+                with conn:
+                    insert(conn, new_id)
+                return new_id
+            except sqlite3.IntegrityError as exc:
+                if unique_error_substring in str(exc):
+                    last_error = exc
+                    continue
+                raise OrderStoreError(
+                    f"Failed to {action_description} in database at '{resolved}': {exc}"
+                ) from exc
+            except sqlite3.Error as exc:
+                raise OrderStoreError(
+                    f"Failed to {action_description} in database at '{resolved}': {exc}"
+                ) from exc
+
+    raise OrderStoreError(
+        f"Failed to {action_description} in database at '{resolved}': "
+        f"exhausted {_MAX_ID_ATTEMPTS} attempts generating a unique id"
+    ) from last_error
 
 
 def _new_order_id() -> str:
@@ -240,61 +281,43 @@ def record_order(summary: dict, path: Path | str | None = None) -> str:
         raise ValueError("Cannot record an order with no lines.")
 
     resolved = _resolve_path(path)
-    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    created_at = _now_iso()
 
-    last_error: sqlite3.Error | None = None
-    for _ in range(_MAX_ID_ATTEMPTS):
-        order_id = _new_order_id()
-        conn = _connect(resolved)
-        try:
-            try:
-                with conn:
-                    conn.execute(
-                        "INSERT INTO orders (id, total, created_at) VALUES (?, ?, ?)",
-                        (order_id, summary["total"], created_at),
-                    )
-                    for line in lines:
-                        conn.execute(
-                            """
-                            INSERT INTO order_lines
-                                (order_id, name, quantity, unit_price, line_total)
-                            VALUES (?, ?, ?, ?, ?)
-                            """,
-                            (
-                                order_id,
-                                line["name"],
-                                line["quantity"],
-                                line["unit_price"],
-                                line["line_total"],
-                            ),
-                        )
-                return order_id
-            except sqlite3.IntegrityError as exc:
-                if "UNIQUE constraint failed: orders.id" in str(exc):
-                    last_error = exc
-                    continue
-                raise OrderStoreError(
-                    f"Failed to record order in database at '{resolved}': {exc}"
-                ) from exc
-            except sqlite3.Error as exc:
-                raise OrderStoreError(
-                    f"Failed to record order in database at '{resolved}': {exc}"
-                ) from exc
-        finally:
-            conn.close()
+    def insert(conn: sqlite3.Connection, order_id: str) -> None:
+        conn.execute(
+            "INSERT INTO orders (id, total, created_at) VALUES (?, ?, ?)",
+            (order_id, summary["total"], created_at),
+        )
+        for line in lines:
+            conn.execute(
+                """
+                INSERT INTO order_lines
+                    (order_id, name, quantity, unit_price, line_total)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    order_id,
+                    line["name"],
+                    line["quantity"],
+                    line["unit_price"],
+                    line["line_total"],
+                ),
+            )
 
-    raise OrderStoreError(
-        f"Failed to record order in database at '{resolved}': "
-        f"exhausted {_MAX_ID_ATTEMPTS} order ID attempts"
-    ) from last_error
+    return _insert_with_new_id(
+        resolved,
+        _new_order_id,
+        insert,
+        "UNIQUE constraint failed: orders.id",
+        "record order",
+    )
 
 
 def get_order(order_id: str, path: Path | str | None = None) -> dict | None:
     resolved = _resolve_path(path)
     normalized = normalize_order_id(order_id)
 
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         order_row = conn.execute(
             "SELECT id, total, created_at FROM orders WHERE id = ?", (normalized,)
         ).fetchone()
@@ -325,53 +348,33 @@ def get_order(order_id: str, path: Path | str | None = None) -> dict | None:
                 for name, quantity, unit_price, line_total in line_rows
             ],
         }
-    finally:
-        conn.close()
 
 
 def create_account(path: Path | str | None = None) -> str:
     resolved = _resolve_path(path)
-    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    created_at = _now_iso()
 
-    last_error: sqlite3.Error | None = None
-    for _ in range(_MAX_ID_ATTEMPTS):
-        account_number = _new_account_number()
-        conn = _connect(resolved)
-        try:
-            try:
-                with conn:
-                    conn.execute(
-                        "INSERT INTO accounts (account_number, preferences, created_at) "
-                        "VALUES (?, NULL, ?)",
-                        (account_number, created_at),
-                    )
-                return account_number
-            except sqlite3.IntegrityError as exc:
-                if "UNIQUE constraint failed: accounts.account_number" in str(exc):
-                    last_error = exc
-                    continue
-                raise OrderStoreError(
-                    f"Failed to create account in database at '{resolved}': {exc}"
-                ) from exc
-            except sqlite3.Error as exc:
-                raise OrderStoreError(
-                    f"Failed to create account in database at '{resolved}': {exc}"
-                ) from exc
-        finally:
-            conn.close()
+    def insert(conn: sqlite3.Connection, account_number: str) -> None:
+        conn.execute(
+            "INSERT INTO accounts (account_number, preferences, created_at) "
+            "VALUES (?, NULL, ?)",
+            (account_number, created_at),
+        )
 
-    raise OrderStoreError(
-        f"Failed to create account in database at '{resolved}': "
-        f"exhausted {_MAX_ID_ATTEMPTS} account number attempts"
-    ) from last_error
+    return _insert_with_new_id(
+        resolved,
+        _new_account_number,
+        insert,
+        "UNIQUE constraint failed: accounts.account_number",
+        "create account",
+    )
 
 
 def get_account(account_number: str, path: Path | str | None = None) -> dict | None:
     resolved = _resolve_path(path)
     normalized = normalize_account_number(account_number)
 
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         row = conn.execute(
             "SELECT account_number, preferences, created_at FROM accounts "
             "WHERE account_number = ?",
@@ -384,8 +387,6 @@ def get_account(account_number: str, path: Path | str | None = None) -> dict | N
             "preferences": row[1],
             "created_at": row[2],
         }
-    finally:
-        conn.close()
 
 
 def update_account_preferences(
@@ -396,8 +397,7 @@ def update_account_preferences(
     resolved = _resolve_path(path)
     normalized = normalize_account_number(account_number)
 
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         try:
             with conn:
                 cursor = conn.execute(
@@ -413,8 +413,6 @@ def update_account_preferences(
                 f"Failed to update account preferences in database at "
                 f"'{resolved}': {exc}"
             ) from exc
-    finally:
-        conn.close()
 
 
 def record_refund_request(
@@ -426,11 +424,10 @@ def record_refund_request(
     path: Path | str | None = None,
 ) -> int:
     resolved = _resolve_path(path)
-    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    created_at = _now_iso()
     substitute_json = json.dumps(substitute_dishes) if substitute_dishes else None
 
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         try:
             with conn:
                 cursor = conn.execute(
@@ -469,8 +466,6 @@ def record_refund_request(
             raise OrderStoreError(
                 f"Failed to record refund request in database at '{resolved}': {exc}"
             ) from exc
-    finally:
-        conn.close()
 
 
 def _row_to_refund_request(
@@ -509,8 +504,7 @@ def _row_to_refund_request(
 
 def get_refund_request_for_order(order_id: str, path: Path | str | None = None) -> dict | None:
     resolved = _resolve_path(path)
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         row = conn.execute(
             """
             SELECT id, order_id, amount, substitute_dishes, return_confirmed,
@@ -523,14 +517,11 @@ def get_refund_request_for_order(order_id: str, path: Path | str | None = None) 
         if row is None:
             return None
         return _row_to_refund_request(conn, row)
-    finally:
-        conn.close()
 
 
 def list_refund_requests(path: Path | str | None = None) -> list[dict]:
     resolved = _resolve_path(path)
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         rows = conn.execute(
             """
             SELECT id, order_id, amount, substitute_dishes, return_confirmed,
@@ -540,8 +531,6 @@ def list_refund_requests(path: Path | str | None = None) -> list[dict]:
             """
         ).fetchall()
         return [_row_to_refund_request(conn, row) for row in rows]
-    finally:
-        conn.close()
 
 
 def record_complaint(
@@ -551,10 +540,9 @@ def record_complaint(
     path: Path | str | None = None,
 ) -> int:
     resolved = _resolve_path(path)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    now = _now_iso()
 
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         try:
             with conn:
                 cursor = conn.execute(
@@ -570,8 +558,6 @@ def record_complaint(
             raise OrderStoreError(
                 f"Failed to record complaint in database at '{resolved}': {exc}"
             ) from exc
-    finally:
-        conn.close()
 
 
 def extend_complaint(
@@ -581,10 +567,9 @@ def extend_complaint(
     path: Path | str | None = None,
 ) -> None:
     resolved = _resolve_path(path)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    now = _now_iso()
 
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         try:
             with conn:
                 conn.execute(
@@ -599,14 +584,11 @@ def extend_complaint(
             raise OrderStoreError(
                 f"Failed to update complaint in database at '{resolved}': {exc}"
             ) from exc
-    finally:
-        conn.close()
 
 
 def list_complaints(path: Path | str | None = None) -> list[dict]:
     resolved = _resolve_path(path)
-    conn = _connect(resolved)
-    try:
+    with _connection(resolved) as conn:
         rows = conn.execute(
             """
             SELECT id, order_id, description, policy_reason, created_at, updated_at
@@ -616,14 +598,12 @@ def list_complaints(path: Path | str | None = None) -> list[dict]:
         ).fetchall()
         return [
             {
-                "id": row[0],
-                "order_id": row[1],
-                "description": row[2],
-                "policy_reason": row[3],
-                "created_at": row[4],
-                "updated_at": row[5],
+                "id": id_,
+                "order_id": order_id,
+                "description": description,
+                "policy_reason": policy_reason,
+                "created_at": created_at,
+                "updated_at": updated_at,
             }
-            for row in rows
+            for id_, order_id, description, policy_reason, created_at, updated_at in rows
         ]
-    finally:
-        conn.close()
