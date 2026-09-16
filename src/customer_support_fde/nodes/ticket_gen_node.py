@@ -67,7 +67,7 @@ def _order_ticket_node(state: SupportState) -> SupportState:
     summary = state.get("order_summary") or _EMPTY_SUMMARY
     order_ticket = {
         "order_id": state.get("order_id"),
-        "items": dict(state["menu_items"]),
+        "items": dict(state["cart_items"]),
         "lines": summary["lines"],
         "total": summary["total"],
     }

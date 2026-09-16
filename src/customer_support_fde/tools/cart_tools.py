@@ -35,7 +35,7 @@ def add_items_to_cart(
     Args:
         names: Menu item names to add, one entry per unit.
     """
-    cart = dict(state["menu_items"])
+    cart = dict(state["cart_items"])
     menu = state["menu"]
     summaries = []
     for name in names:
@@ -47,7 +47,7 @@ def add_items_to_cart(
 
     return Command(
         update={
-            "menu_items": cart,
+            "cart_items": cart,
             "messages": [
                 ToolMessage(content="\n".join(summaries), tool_call_id=tool_call_id)
             ],
@@ -89,7 +89,7 @@ def remove_items_from_cart(
             decrements the entry by that amount, capped at what's actually in
             the cart (deleting the entry if the cap is reached).
     """
-    cart = dict(state["menu_items"])
+    cart = dict(state["cart_items"])
     menu = state["menu"]
     summaries = []
     for removal in items:
@@ -110,7 +110,7 @@ def remove_items_from_cart(
 
     return Command(
         update={
-            "menu_items": cart,
+            "cart_items": cart,
             "messages": [
                 ToolMessage(content="\n".join(summaries), tool_call_id=tool_call_id)
             ],
@@ -126,7 +126,7 @@ def mark_order_confirmed(
     """Confirm the customer is done ordering, finalizing the current cart.
 
     """
-    if not state["menu_items"]:
+    if not state["cart_items"]:
         return Command(
             update={
                 "messages": [
@@ -158,7 +158,7 @@ def get_cart_total(state: Annotated[SupportState, InjectedState]) -> str:
         str: A message stating the exact current total, or a message saying
         the cart is empty when there's nothing in it yet.
     """
-    total = cart_total(state["menu_items"], state["menu"])
+    total = cart_total(state["cart_items"], state["menu"])
     if total is None:
         return "Your cart is empty, so there's no total yet."
     return f"Your current cart total is ${total:.2f}."

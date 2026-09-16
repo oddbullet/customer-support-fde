@@ -37,18 +37,18 @@ SAMPLE_MENU = [
 ]
 
 
-def _invoke_add(names, menu_items):
+def _invoke_add(names, cart_items):
     return add_items_to_cart.func(
         names=names,
-        state={"menu_items": menu_items, "menu": SAMPLE_MENU},
+        state={"cart_items": cart_items, "menu": SAMPLE_MENU},
         tool_call_id="call_1",
     )
 
 
-def _invoke_remove(items, menu_items):
+def _invoke_remove(items, cart_items):
     return remove_items_from_cart.func(
         items=items,
-        state={"menu_items": menu_items, "menu": SAMPLE_MENU},
+        state={"cart_items": cart_items, "menu": SAMPLE_MENU},
         tool_call_id="call_1",
     )
 
@@ -58,29 +58,29 @@ def test_found_name_added_to_empty_cart_has_quantity_one():
     result = _invoke_add(["Kung Pao Chicken"], {})
 
     assert isinstance(result, Command)
-    assert result.update["menu_items"] == {"Kung Pao Chicken": 1}
+    assert result.update["cart_items"] == {"Kung Pao Chicken": 1}
 
 
 # Duplicate names within one call each increment the same item's quantity. (edge)
 def test_adding_same_item_twice_in_one_call_increments_quantity():
     result = _invoke_add(["Kung Pao Chicken", "Kung Pao Chicken"], {})
 
-    assert result.update["menu_items"] == {"Kung Pao Chicken": 2}
+    assert result.update["cart_items"] == {"Kung Pao Chicken": 2}
 
 
 # Quantity for an item persists and accumulates across separate tool calls. (base)
 def test_adding_same_item_across_two_calls_increments_quantity():
     first = _invoke_add(["Kung Pao Chicken"], {})
-    second = _invoke_add(["Kung Pao Chicken"], first.update["menu_items"])
+    second = _invoke_add(["Kung Pao Chicken"], first.update["cart_items"])
 
-    assert second.update["menu_items"] == {"Kung Pao Chicken": 2}
+    assert second.update["cart_items"] == {"Kung Pao Chicken": 2}
 
 
 # An ambiguous (tied) name is not added, and both candidates are reported. (edge)
 def test_tie_name_leaves_cart_unchanged_but_is_reported():
     result = _invoke_add(["Beef Noodle"], {})
 
-    assert result.update["menu_items"] == {}
+    assert result.update["cart_items"] == {}
     tool_message = result.update["messages"][0]
     assert "Beef Noodle Soup" in tool_message.content
     assert "Beef Noodle Bowl" in tool_message.content
@@ -90,7 +90,7 @@ def test_tie_name_leaves_cart_unchanged_but_is_reported():
 def test_not_found_name_leaves_cart_unchanged_but_is_reported():
     result = _invoke_add(["Pizza"], {})
 
-    assert result.update["menu_items"] == {}
+    assert result.update["cart_items"] == {}
     tool_message = result.update["messages"][0]
     assert "No menu item matches" in tool_message.content
 
@@ -99,11 +99,11 @@ def test_not_found_name_leaves_cart_unchanged_but_is_reported():
 def test_batch_with_mixed_results_only_applies_found_items():
     result = _invoke_add(["Kung Pao Chicken", "Pizza", "Beef Noodle"], {})
 
-    assert result.update["menu_items"] == {"Kung Pao Chicken": 1}
+    assert result.update["cart_items"] == {"Kung Pao Chicken": 1}
 
 
 # The tool must copy the cart rather than mutate the caller's state dict in place. (regression)
-def test_never_mutates_input_menu_items_in_place():
+def test_never_mutates_input_cart_items_in_place():
     original = {"Spring Rolls": 1}
 
     _invoke_add(["Kung Pao Chicken"], original)
@@ -114,7 +114,7 @@ def test_never_mutates_input_menu_items_in_place():
 # Confirming a non-empty cart sets order_confirmed and returns a confirmation message. (base)
 def test_mark_order_confirmed_sets_true_for_non_empty_cart():
     result = mark_order_confirmed.func(
-        state={"menu_items": {"Spring Rolls": 1}}, tool_call_id="call_1"
+        state={"cart_items": {"Spring Rolls": 1}}, tool_call_id="call_1"
     )
 
     assert isinstance(result, Command)
@@ -123,7 +123,7 @@ def test_mark_order_confirmed_sets_true_for_non_empty_cart():
 
 # Confirming an empty cart does not set order_confirmed, just informs the customer. (edge)
 def test_mark_order_confirmed_omits_flag_for_empty_cart():
-    result = mark_order_confirmed.func(state={"menu_items": {}}, tool_call_id="call_1")
+    result = mark_order_confirmed.func(state={"cart_items": {}}, tool_call_id="call_1")
 
     assert "order_confirmed" not in result.update
     tool_message = result.update["messages"][0]
@@ -137,7 +137,7 @@ def test_unqualified_removal_deletes_quantity_one_entry():
     )
 
     assert isinstance(result, Command)
-    assert result.update["menu_items"] == {}
+    assert result.update["cart_items"] == {}
 
 
 # A stated quantity smaller than the current cart quantity decrements the entry and
@@ -147,7 +147,7 @@ def test_quantified_removal_smaller_than_current_decrements_and_keeps_entry():
         [CartRemoval(name="Kung Pao Chicken", quantity=1)], {"Kung Pao Chicken": 3}
     )
 
-    assert result.update["menu_items"] == {"Kung Pao Chicken": 2}
+    assert result.update["cart_items"] == {"Kung Pao Chicken": 2}
 
 
 # A stated quantity that meets or exceeds the current cart quantity deletes the entry
@@ -157,7 +157,7 @@ def test_quantified_removal_at_or_above_current_deletes_entry_and_reports_capped
         [CartRemoval(name="Kung Pao Chicken", quantity=10)], {"Kung Pao Chicken": 3}
     )
 
-    assert result.update["menu_items"] == {}
+    assert result.update["cart_items"] == {}
     tool_message = result.update["messages"][0]
     assert "3" in tool_message.content
     assert "10" not in tool_message.content
@@ -168,7 +168,7 @@ def test_quantified_removal_at_or_above_current_deletes_entry_and_reports_capped
 def test_found_but_not_in_cart_name_is_reported_as_not_in_cart():
     result = _invoke_remove([CartRemoval(name="Mapo Tofu")], {"Kung Pao Chicken": 1})
 
-    assert result.update["menu_items"] == {"Kung Pao Chicken": 1}
+    assert result.update["cart_items"] == {"Kung Pao Chicken": 1}
     tool_message = result.update["messages"][0]
     assert "isn't in your cart" in tool_message.content
 
@@ -181,7 +181,7 @@ def test_tie_and_not_found_removal_names_leave_cart_unchanged_but_are_reported()
         {"Kung Pao Chicken": 1},
     )
 
-    assert result.update["menu_items"] == {"Kung Pao Chicken": 1}
+    assert result.update["cart_items"] == {"Kung Pao Chicken": 1}
     tool_message = result.update["messages"][0]
     assert "Beef Noodle Soup" in tool_message.content
     assert "Beef Noodle Bowl" in tool_message.content
@@ -201,11 +201,11 @@ def test_batch_with_mixed_results_applies_only_found_and_in_cart_items():
         {"Kung Pao Chicken": 1, "Spring Rolls": 2},
     )
 
-    assert result.update["menu_items"] == {"Spring Rolls": 2}
+    assert result.update["cart_items"] == {"Spring Rolls": 2}
 
 
 # The tool must copy the cart rather than mutate the caller's state dict in place. (regression)
-def test_remove_never_mutates_input_menu_items_in_place():
+def test_remove_never_mutates_input_cart_items_in_place():
     original = {"Kung Pao Chicken": 1, "Spring Rolls": 2}
 
     _invoke_remove([CartRemoval(name="Kung Pao Chicken")], original)
@@ -213,8 +213,8 @@ def test_remove_never_mutates_input_menu_items_in_place():
     assert original == {"Kung Pao Chicken": 1, "Spring Rolls": 2}
 
 
-def _invoke_get_cart_total(menu_items):
-    return get_cart_total.func(state={"menu_items": menu_items, "menu": SAMPLE_MENU})
+def _invoke_get_cart_total(cart_items):
+    return get_cart_total.func(state={"cart_items": cart_items, "menu": SAMPLE_MENU})
 
 
 # A single item at quantity one reports that exact item's price as the total. (base)

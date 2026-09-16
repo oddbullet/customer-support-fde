@@ -40,7 +40,7 @@ def _base_state() -> dict:
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {"Kung Pao Chicken": 2, "Spring Rolls": 1},
+        "cart_items": {"Kung Pao Chicken": 2, "Spring Rolls": 1},
         "order_confirmed": True,
         "order_ticket": None,
         "order_summary": None,
@@ -85,7 +85,7 @@ def test_build_order_summary_single_unit_line_total_equals_unit_price():
     assert summary["lines"][0]["unit_price"] == 6.95
 
 
-# Lines preserve menu_items insertion order and carry exactly the four documented fields. (base)
+# Lines preserve cart_items insertion order and carry exactly the four documented fields. (base)
 def test_build_order_summary_preserves_order_and_line_fields():
     cart = {"Spring Rolls": 1, "Kung Pao Chicken": 2, "Hot and Sour Soup": 1}
 
@@ -100,8 +100,8 @@ def test_build_order_summary_preserves_order_and_line_fields():
         assert set(line.keys()) == {"name", "quantity", "unit_price", "line_total"}
 
 
-# build_order_summary does not mutate the menu_items dict it is given. (regression)
-def test_build_order_summary_does_not_mutate_input_menu_items():
+# build_order_summary does not mutate the cart_items dict it is given. (regression)
+def test_build_order_summary_does_not_mutate_input_cart_items():
     cart = {"Kung Pao Chicken": 2, "Spring Rolls": 1}
     original = dict(cart)
 
@@ -177,7 +177,7 @@ def test_cart_summary_node_writes_summary_and_appends_one_message(
 
     result = cart_summary_node(state)
 
-    expected_summary = build_order_summary(state["menu_items"], SAMPLE_MENU)
+    expected_summary = build_order_summary(state["cart_items"], SAMPLE_MENU)
     assert result["order_summary"] == expected_summary
     assert result["order_id"] is not None
     assert len(result["messages"]) == 1
@@ -195,7 +195,7 @@ def test_cart_summary_node_writes_summary_and_appends_one_message(
 def test_cart_summary_node_empty_cart_writes_no_order(monkeypatch, tmp_path):
     _use_tmp_db(monkeypatch, tmp_path)
     state = _base_state()
-    state["menu_items"] = {}
+    state["cart_items"] = {}
 
     result = cart_summary_node(state)
 
@@ -235,7 +235,7 @@ def test_render_order_summary_without_order_id_is_byte_identical():
 # order_ticket carries items plus the same lines/total as order_summary. (base)
 def test_ticket_gen_node_ticket_mirrors_order_summary():
     state = _base_state()
-    summary = build_order_summary(state["menu_items"], SAMPLE_MENU)
+    summary = build_order_summary(state["cart_items"], SAMPLE_MENU)
     state["order_summary"] = summary
     state["order_id"] = "K7QP3M9X"
 
@@ -247,12 +247,12 @@ def test_ticket_gen_node_ticket_mirrors_order_summary():
         "lines": summary["lines"],
         "total": summary["total"],
     }
-    for key in ("user_query", "destination", "sentiment", "menu_items", "order_confirmed"):
+    for key in ("user_query", "destination", "sentiment", "cart_items", "order_confirmed"):
         assert result[key] == state[key]
 
 
 # The ticket's priced values are copied from order_summary, not recomputed
-# from menu_items and the menu — proven with values a fresh calculation
+# from cart_items and the menu — proven with values a fresh calculation
 # could never produce. (regression)
 def test_ticket_gen_node_copies_order_summary_values_without_recomputing():
     state = _base_state()
@@ -290,7 +290,7 @@ def test_ticket_gen_node_defaults_when_order_summary_missing():
 def test_ticket_gen_node_writes_order_ticket_file(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     state = _base_state()
-    state["order_summary"] = build_order_summary(state["menu_items"], SAMPLE_MENU)
+    state["order_summary"] = build_order_summary(state["cart_items"], SAMPLE_MENU)
     state["order_id"] = "K7QP3M9X"
 
     ticket_gen_node(state)
@@ -316,7 +316,7 @@ def test_ticket_gen_node_writes_no_file_for_support_only_conversation(
 ):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     state = _base_state()
-    state["menu_items"] = {}
+    state["cart_items"] = {}
     state["order_summary"] = None
 
     ticket_gen_node(state)
@@ -329,7 +329,7 @@ def test_ticket_gen_node_writes_no_file_for_support_only_conversation(
 def test_ticket_gen_node_writes_no_file_for_abandoned_cart(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     state = _base_state()
-    state["menu_items"] = {"Kung Pao Chicken": 1}
+    state["cart_items"] = {"Kung Pao Chicken": 1}
     state["order_summary"] = None
 
     ticket_gen_node(state)
@@ -344,7 +344,7 @@ def _refund_base_state() -> dict:
         "sentiment": "negative",
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
