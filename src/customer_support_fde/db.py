@@ -13,8 +13,6 @@ ID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford base32: no I, L, O
 ID_LENGTH = 8
 _MAX_ID_ATTEMPTS = 5
 
-_CONFUSION_TRANSLATION = str.maketrans({"O": "0", "I": "1", "L": "1"})
-
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS menu_items (
     name        TEXT PRIMARY KEY,
@@ -214,8 +212,7 @@ def _format_id(id_: str) -> str:
 
 
 def _normalize_id(raw: str) -> str:
-    stripped = raw.strip().upper().replace("-", "").replace(" ", "")
-    return stripped.translate(_CONFUSION_TRANSLATION)
+    return raw.strip().upper().replace("-", "").replace(" ", "")
 
 
 def _insert_with_new_id(

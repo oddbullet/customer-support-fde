@@ -248,13 +248,10 @@ def test_format_and_normalize_order_id_round_trip():
     assert db.normalize_order_id("K7QP-3M9X") == "K7QP3M9X"
 
 
-# normalize_order_id folds lowercase, hyphens, surrounding whitespace, and
-# confusable characters O->0, I->1, L->1. (edge)
-def test_normalize_order_id_folds_confusable_input():
+# normalize_order_id folds lowercase, hyphens, and surrounding whitespace. (edge)
+def test_normalize_order_id_folds_case_and_whitespace():
     assert db.normalize_order_id("  k7qp-3m9x  ") == "K7QP3M9X"
     assert db.normalize_order_id("k7qp 3m9x") == "K7QP3M9X"
-    assert db.normalize_order_id("k7Op-3M9X") == "K70P3M9X"
-    assert db.normalize_order_id("IL0O") == "1100"
 
 
 # record_order returns an 8-char ID and get_order round-trips every line field. (base)
@@ -428,13 +425,11 @@ def test_format_and_normalize_account_number_round_trip():
     assert db.normalize_account_number("K7QP-3M9X") == "K7QP3M9X"
 
 
-# normalize_account_number folds lowercase, hyphens, whitespace, and confusables
-# the same way normalize_order_id does. (edge)
-def test_normalize_account_number_folds_confusable_input():
+# normalize_account_number folds lowercase, hyphens, and whitespace the same way
+# normalize_order_id does. (edge)
+def test_normalize_account_number_folds_case_and_whitespace():
     assert db.normalize_account_number("  k7qp-3m9x  ") == "K7QP3M9X"
     assert db.normalize_account_number("k7qp 3m9x") == "K7QP3M9X"
-    assert db.normalize_account_number("k7Op-3M9X") == "K70P3M9X"
-    assert db.normalize_account_number("IL0O") == "1100"
 
 
 # get_account returns None for an unknown account number. (edge)
