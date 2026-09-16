@@ -1,17 +1,14 @@
 import logging
-import os
 
 from langchain_core.messages import SystemMessage
-from langchain_openai import ChatOpenAI
 
 from customer_support_fde import db, tickets
+from customer_support_fde.nodes.common import build_llm as _build_llm
 from customer_support_fde.state import SupportState
 
 _EMPTY_SUMMARY = {"lines": [], "total": None}
 
 _logger = logging.getLogger(__name__)
-
-DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 _ISSUE_EXTRACTION_INSTRUCTIONS = """\
 You are summarizing a customer's refund conversation for a support ticket. \
@@ -20,14 +17,6 @@ statement of the customer's issue or complaint, in their own terms. If the \
 conversation never raised any issue or complaint, reply with exactly \
 "None" and nothing else.
 """
-
-
-def _build_llm() -> ChatOpenAI:
-    return ChatOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
-        model=os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
-    )
 
 
 def _extract_refund_issue(state: SupportState) -> str | None:
