@@ -222,7 +222,7 @@ def test_add_items_to_cart_tool_call_updates_cart_items(monkeypatch):
         tool_calls=[
             {
                 "name": "add_items_to_cart",
-                "args": {"names": ["Kung Pao Chicken"]},
+                "args": {"items": {"Kung Pao Chicken": 1}},
                 "id": "call_1",
             }
         ],
@@ -242,7 +242,7 @@ def test_add_items_to_cart_tool_call_batch_updates_cart_items(monkeypatch):
         tool_calls=[
             {
                 "name": "add_items_to_cart",
-                "args": {"names": ["Kung Pao Chicken", "Spring Rolls"]},
+                "args": {"items": {"Kung Pao Chicken": 1, "Spring Rolls": 1}},
                 "id": "call_1",
             }
         ],
@@ -266,7 +266,7 @@ def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_cart_items_unchange
         tool_calls=[
             {
                 "name": "add_items_to_cart",
-                "args": {"names": ["Pizza", "Beef Noodle"]},
+                "args": {"items": {"Pizza": 1, "Beef Noodle": 1}},
                 "id": "call_1",
             }
         ],
@@ -279,14 +279,14 @@ def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_cart_items_unchange
     assert state["cart_items"] == {}
 
 
-# A remove_items_from_cart tool call for an unqualified name deletes the entry entirely. (base)
-def test_remove_items_from_cart_tool_call_unqualified_deletes_entry(monkeypatch):
+# A remove_items_from_cart tool call with a quantity matching the cart deletes the entry entirely. (base)
+def test_remove_items_from_cart_tool_call_quantity_matching_deletes_entry(monkeypatch):
     tool_call_response = AIMessage(
         content="",
         tool_calls=[
             {
                 "name": "remove_items_from_cart",
-                "args": {"items": [{"name": "Kung Pao Chicken"}]},
+                "args": {"items": {"Kung Pao Chicken": 2}},
                 "id": "call_1",
             }
         ],
@@ -309,7 +309,7 @@ def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatc
         tool_calls=[
             {
                 "name": "remove_items_from_cart",
-                "args": {"items": [{"name": "Kung Pao Chicken", "quantity": 1}]},
+                "args": {"items": {"Kung Pao Chicken": 1}},
                 "id": "call_1",
             }
         ],

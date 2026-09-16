@@ -125,7 +125,7 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
             tool_calls=[
                 {
                     "name": "add_items_to_cart",
-                    "args": {"names": [item_name]},
+                    "args": {"items": {item_name: 1}},
                     "id": call_id,
                 }
             ],
@@ -202,14 +202,14 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
-            _tool_call("add_items_to_cart", {"names": ["Spring Rolls"]}, "call_2"),
+            _tool_call("add_items_to_cart", {"items": {"Spring Rolls": 1}}, "call_2"),
             AIMessage(content="Added! Anything else?"),
             _tool_call(
                 "remove_items_from_cart",
-                {"items": [{"name": "Kung Pao Chicken"}]},
+                {"items": {"Kung Pao Chicken": 1}},
                 "call_3",
             ),
             AIMessage(content="Removed! Anything else?"),
@@ -633,10 +633,10 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
-            _tool_call("add_items_to_cart", {"names": ["Spring Rolls"]}, "call_2"),
+            _tool_call("add_items_to_cart", {"items": {"Spring Rolls": 1}}, "call_2"),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_3"),
             AIMessage(content="Great, your order is confirmed!"),
@@ -825,7 +825,7 @@ def test_price_change_mid_conversation_does_not_affect_confirmed_order(
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_2"),
@@ -907,7 +907,7 @@ def test_account_holder_preferences_are_saved_on_order_confirmation(
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_2"),
@@ -983,7 +983,7 @@ def test_guest_conversation_writes_no_preference_data(monkeypatch, tmp_path):
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_2"),
@@ -1062,7 +1062,7 @@ def test_memory_gen_node_failure_does_not_affect_ticket_delivery(monkeypatch, tm
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_2"),
