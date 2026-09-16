@@ -6,9 +6,8 @@ from langgraph.types import Command
 from rich.console import Console
 from rich.text import Text
 
-from customer_support_fde import db
 from customer_support_fde.graph import build_graph
-from customer_support_fde.state import SupportState
+from customer_support_fde.state import SupportState, initial_state
 
 _SPEAKER_LABELS = {
     "human": "You",
@@ -26,42 +25,22 @@ def _print_turn(console: Console, speaker: str, content: str) -> None:
     console.print(Text(f"{label}:{separator}{content}"))
 
 
+def _invoke_with_status(console: Console, graph, state_or_command, config) -> SupportState:
+    with console.status("Thinking...", spinner="dots"):
+        return graph.invoke(state_or_command, config)
+
+
 def _run_conversation(console: Console, graph, query: str) -> SupportState:
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
 
-    with console.status("Thinking...", spinner="dots"):
-        result = graph.invoke(
-            {
-                "user_query": query,
-                "destination": "order_support",
-                "sentiment": None,
-                "messages": [],
-                "menu": db.load_menu(),
-                "menu_items": {},
-                "order_confirmed": False,
-                "order_ticket": None,
-                "order_summary": None,
-                "order_id": None,
-                "order_lookup": None,
-                "refund_resolved": False,
-                "refund_request": None,
-                "complaint_ids": {},
-                "refund_ticket": None,
-                "order_conversation_summary": None,
-                "refund_conversation_summary": None,
-                "account_number": None,
-                "account_preferences": None,
-            },
-            config,
-        )
+    result = _invoke_with_status(console, graph, initial_state(query), config)
 
     while "__interrupt__" in result:
         _print_turn(console, "ai", result["__interrupt__"][0].value)
         console.print("> ", end="")
         answer = sys.stdin.readline().rstrip("\n")
-        with console.status("Thinking...", spinner="dots"):
-            result = graph.invoke(Command(resume=answer), config)
+        result = _invoke_with_status(console, graph, Command(resume=answer), config)
 
     return result
 

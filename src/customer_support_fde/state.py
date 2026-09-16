@@ -3,6 +3,7 @@ from typing import Annotated, Literal, TypedDict
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 
+from customer_support_fde import db
 from customer_support_fde.tools.menu_tools import MenuItem
 
 
@@ -26,3 +27,27 @@ class SupportState(TypedDict):
     refund_conversation_summary: str | None
     account_number: str | None
     account_preferences: str | None
+
+
+def initial_state(query: str) -> SupportState:
+    return {
+        "user_query": query,
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": db.load_menu(),
+        "menu_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+        "order_conversation_summary": None,
+        "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
+    }
