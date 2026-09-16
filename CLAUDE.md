@@ -28,6 +28,10 @@ This project is still in development. A .env fil is set with an Openrouter API k
 - SQLite
 - Rich
 
+# Development
+
+Write or modified the test first before writing the actual code. Use Test Driven Development.
+
 # Setup
 The menu and confirmed orders live in a SQLite database, not `menu/menu.json` (which now only
 serves as seed data). Before running any conversation, initialize and seed the database:

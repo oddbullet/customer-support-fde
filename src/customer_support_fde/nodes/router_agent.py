@@ -1,12 +1,10 @@
-import os
 from typing import Literal
 
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ValidationError
 
+from customer_support_fde.nodes.common import build_llm
 from customer_support_fde.state import SupportState
-
-DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 SYSTEM_PROMPT = """\
 You are the routing agent for a Chinese restaurant's customer support system. \
@@ -42,11 +40,7 @@ class RouterDecision(BaseModel):
 
 
 def _build_llm() -> ChatOpenAI:
-    return ChatOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
-        model=os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
-    ).with_structured_output(RouterDecision)
+    return build_llm().with_structured_output(RouterDecision)
 
 
 def router_agent(state: SupportState) -> SupportState:

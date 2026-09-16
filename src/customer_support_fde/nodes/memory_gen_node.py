@@ -1,15 +1,12 @@
 import logging
-import os
 
 from langchain_core.messages import SystemMessage
-from langchain_openai import ChatOpenAI
 
 from customer_support_fde import db
+from customer_support_fde.nodes.common import build_llm as _build_llm
 from customer_support_fde.state import SupportState
 
 _logger = logging.getLogger(__name__)
-
-DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 _EXTRACTION_INSTRUCTIONS = """\
 You are maintaining a customer's stored food preferences for a restaurant's \
@@ -38,14 +35,6 @@ record at all: no prior preferences were supplied AND nothing new was \
 found in the conversation. Otherwise always reply with the full passage \
 (even if it ends up identical to the prior one).
 """
-
-
-def _build_llm() -> ChatOpenAI:
-    return ChatOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
-        model=os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
-    )
 
 
 def memory_gen_node(state: SupportState) -> SupportState:

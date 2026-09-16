@@ -1,6 +1,7 @@
 from langgraph.types import interrupt
 
 from customer_support_fde import db
+from customer_support_fde.nodes.common import prompt_until
 from customer_support_fde.state import SupportState
 
 PRIMARY_MENU = (
@@ -37,9 +38,7 @@ def _use_existing_account() -> SupportState:
                 "account_preferences": account["preferences"],
             }
 
-        answer = str(interrupt(RECOVERY_MENU)).strip()
-        while answer not in _MENU_ANSWERS:
-            answer = str(interrupt(RECOVERY_MENU)).strip()
+        answer = prompt_until(interrupt, RECOVERY_MENU, _MENU_ANSWERS)
 
         if answer == "1":
             continue
@@ -58,9 +57,7 @@ def _sign_up() -> SupportState:
 
 
 def account_identification_node(state: SupportState) -> SupportState:
-    answer = str(interrupt(PRIMARY_MENU)).strip()
-    while answer not in _MENU_ANSWERS:
-        answer = str(interrupt(PRIMARY_MENU)).strip()
+    answer = prompt_until(interrupt, PRIMARY_MENU, _MENU_ANSWERS)
 
     if answer == "1":
         return _use_existing_account()

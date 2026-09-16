@@ -1,5 +1,6 @@
 from langgraph.types import interrupt
 
+from customer_support_fde.nodes.common import prompt_until
 from customer_support_fde.state import SupportState
 
 QUESTION = (
@@ -12,9 +13,7 @@ _REFUND_ANSWERS = {"3"}
 
 
 def clarify_intent(state: SupportState) -> SupportState:
-    answer = str(interrupt(QUESTION)).strip()
-    while answer not in _ORDER_SUPPORT_ANSWERS and answer not in _REFUND_ANSWERS:
-        answer = str(interrupt(QUESTION)).strip()
+    answer = prompt_until(interrupt, QUESTION, _ORDER_SUPPORT_ANSWERS | _REFUND_ANSWERS)
 
     if answer in _ORDER_SUPPORT_ANSWERS:
         return {

@@ -1,16 +1,16 @@
-import os
-
 from langchain_core.messages import (
-    AIMessage,
     AnyMessage,
     HumanMessage,
     RemoveMessage,
     SystemMessage,
 )
-from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 
+from customer_support_fde.nodes.common import HISTORY_TOKEN_THRESHOLD
+from customer_support_fde.nodes.common import build_llm as _build_llm
+from customer_support_fde.nodes.common import condense_messages
+from customer_support_fde.nodes.common import estimate_token_count as _estimate_token_count
 from customer_support_fde.state import SupportState
 from customer_support_fde.tools.refund_tools import (
     conclude_refund_conversation,
@@ -18,8 +18,6 @@ from customer_support_fde.tools.refund_tools import (
     lookup_order,
     process_refund_request,
 )
-
-DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 SYSTEM_PROMPT = """\
 You are the refund and complaints agent for a Chinese restaurant. A customer \
@@ -62,7 +60,7 @@ _REFUND_TOOLS = [
 
 refund_tools = ToolNode(_REFUND_TOOLS)
 
-REFUND_HISTORY_TOKEN_THRESHOLD = 20_000
+REFUND_HISTORY_TOKEN_THRESHOLD = HISTORY_TOKEN_THRESHOLD
 
 _CONDENSATION_INSTRUCTIONS = """\
 Summarize the refund conversation that follows into a concise summary for \
@@ -76,25 +74,6 @@ If the customer restated a fact, keep only their most recent statement, not \
 the outdated one. Reply with only the summary text, no greeting or \
 meta-commentary.
 """
-
-
-def _build_llm() -> ChatOpenAI:
-    return ChatOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.environ.get("OPENROUTER_API_KEY"),
-        model=os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
-    )
-
-
-def _estimate_token_count(messages: list[AnyMessage]) -> int:
-    # get_num_tokens_from_messages() raises NotImplementedError for OpenRouter-style
-    # "vendor/model" names regardless of the underlying model, so estimate from the
-    # last real reply's provider-reported prompt size instead, falling back to a
-    # rough per-character estimate before any usage data exists.
-    for message in reversed(messages):
-        if isinstance(message, AIMessage) and message.usage_metadata:
-            return message.usage_metadata.get("input_tokens", 0)
-    return sum(len(str(message.content)) for message in messages) // 4
 
 
 def _build_context_messages(state: SupportState) -> list[AnyMessage]:
@@ -126,20 +105,13 @@ def refund_agent(state: SupportState) -> SupportState:
         if token_count > REFUND_HISTORY_TOKEN_THRESHOLD:
             cutoff = human_indices[-3]
             older_messages = messages[:cutoff]
-            try:
-                condense_input: list[AnyMessage] = [
-                    SystemMessage(content=_CONDENSATION_INSTRUCTIONS)
-                ]
-                previous_summary = state.get("refund_conversation_summary")
-                if previous_summary is not None:
-                    condense_input.append(
-                        SystemMessage(content=f"Previous summary:\n{previous_summary}")
-                    )
-                condense_input.extend(older_messages)
-                new_summary = llm.invoke(condense_input).content
-            except Exception:
-                pass
-            else:
+            new_summary = condense_messages(
+                llm,
+                older_messages,
+                _CONDENSATION_INSTRUCTIONS,
+                state.get("refund_conversation_summary"),
+            )
+            if new_summary is not None:
                 state = {**state, "refund_conversation_summary": new_summary}
                 removals = [RemoveMessage(id=m.id) for m in older_messages]
                 messages = messages[cutoff:]
