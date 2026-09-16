@@ -6,8 +6,9 @@ import uuid
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
-from customer_support_fde import db
+from customer_support_fde import db, interactive
 from customer_support_fde.graph import build_graph
+from customer_support_fde.state import initial_state
 from customer_support_fde.tracing import setup_tracing
 
 from dotenv import load_dotenv
@@ -71,36 +72,16 @@ def run(argv: list[str] | None = None) -> int:
             return 1
         return 0
 
+    if args.query is None and sys.stdin.isatty() and sys.stdout.isatty():
+        return interactive.run_interactive()
+
     query = _read_query(args)
 
     graph = build_graph(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
     try:
-        result = graph.invoke(
-            {
-                "user_query": query,
-                "destination": "order_support",
-                "sentiment": None,
-                "messages": [],
-                "menu": db.load_menu(),
-                "menu_items": {},
-                "order_confirmed": False,
-                "order_ticket": None,
-                "order_summary": None,
-                "order_id": None,
-                "order_lookup": None,
-                "refund_resolved": False,
-                "refund_request": None,
-                "complaint_ids": {},
-                "refund_ticket": None,
-                "order_conversation_summary": None,
-                "refund_conversation_summary": None,
-                "account_number": None,
-                "account_preferences": None,
-            },
-            config,
-        )
+        result = graph.invoke(initial_state(query), config)
         while "__interrupt__" in result:
             print(result["__interrupt__"][0].value)
             answer = sys.stdin.readline().rstrip("\n")

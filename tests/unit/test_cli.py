@@ -8,6 +8,11 @@ from customer_support_fde import cli, db
 from customer_support_fde.nodes import order_support_agent, refund_agent, router_agent
 from customer_support_fde.nodes.router_agent import RouterDecision
 
+
+class _TtyStringIO(io.StringIO):
+    def isatty(self):
+        return True
+
 SAMPLE_MENU = [
     {
         "name": "Kung Pao Chicken",
@@ -153,3 +158,129 @@ def test_print_result_renders_resolved_refund_conversation(capsys):
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert payload["refund_ticket"] == refund_ticket
+
+
+# cli.run() with no query argument dispatches to interactive.run_interactive() when
+# both stdin and stdout are attached to an interactive terminal. (base)
+def test_run_dispatches_to_interactive_when_stdin_and_stdout_are_tty(monkeypatch):
+    monkeypatch.setattr(cli.sys, "stdin", _TtyStringIO(""))
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: True)
+
+    fake_run_interactive = MagicMock(return_value=0)
+    monkeypatch.setattr(cli.interactive, "run_interactive", fake_run_interactive)
+
+    exit_code = cli.run([])
+
+    assert exit_code == 0
+    fake_run_interactive.assert_called_once()
+
+
+# cli.run() with no query argument falls through unchanged to the existing
+# single-line-stdin read when stdin or stdout is not a tty (piped-stdin contract). (regression)
+def test_run_falls_through_to_read_query_when_not_a_tty(monkeypatch, tmp_path):
+    path = tmp_path / "test.db"
+    db.init_database(path)
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
+
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("What's on the menu?\n"))
+    monkeypatch.setattr(cli.sys.stdout, "isatty", lambda: False)
+
+    fake_run_interactive = MagicMock(return_value=0)
+    monkeypatch.setattr(cli.interactive, "run_interactive", fake_run_interactive)
+
+    captured = {}
+    fake_graph = MagicMock()
+
+    def _fake_invoke(state, config):
+        captured["state"] = state
+        return {
+            "destination": "order_support",
+            "user_query": state["user_query"],
+            "sentiment": None,
+            "order_confirmed": False,
+            "messages": [],
+        }
+
+    fake_graph.invoke.side_effect = _fake_invoke
+    monkeypatch.setattr(cli, "build_graph", lambda checkpointer: fake_graph)
+
+    exit_code = cli.run([])
+
+    assert exit_code == 0
+    fake_run_interactive.assert_not_called()
+    assert captured["state"]["user_query"] == "What's on the menu?"
+
+
+# The query-argument invocation's non-JSON output format is byte-for-byte unchanged
+# by the interactive CLI mode feature. (regression)
+def test_run_query_argument_invocation_output_is_unchanged(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "test.db"
+    db.init_database(path)
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
+
+    fake_graph = MagicMock()
+    fake_graph.invoke.return_value = {
+        "destination": "order_support",
+        "user_query": "What's on the menu?",
+        "sentiment": None,
+        "order_confirmed": False,
+        "messages": [],
+    }
+    monkeypatch.setattr(cli, "build_graph", lambda checkpointer: fake_graph)
+
+    exit_code = cli.run(["What's on the menu?"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert captured.out == "Destination: order_support\nQuery: What's on the menu?\n"
+
+
+# The --json flag's output format is byte-for-byte unchanged by the interactive CLI
+# mode feature. (regression)
+def test_run_json_flag_output_is_unchanged(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "test.db"
+    db.init_database(path)
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
+
+    fake_graph = MagicMock()
+    fake_graph.invoke.return_value = {
+        "destination": "order_support",
+        "user_query": "What's on the menu?",
+        "sentiment": None,
+        "order_confirmed": False,
+        "messages": [],
+    }
+    monkeypatch.setattr(cli, "build_graph", lambda checkpointer: fake_graph)
+
+    exit_code = cli.run(["What's on the menu?", "--json"])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload == {"destination": "order_support", "query": "What's on the menu?"}
+
+
+# The piped-stdin (non-tty), single-conversation invocation's output format is
+# byte-for-byte unchanged by the interactive CLI mode feature. (regression)
+def test_run_piped_stdin_invocation_output_is_unchanged(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "test.db"
+    db.init_database(path)
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
+
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("What's on the menu?\n"))
+
+    fake_graph = MagicMock()
+    fake_graph.invoke.return_value = {
+        "destination": "order_support",
+        "user_query": "What's on the menu?",
+        "sentiment": None,
+        "order_confirmed": False,
+        "messages": [],
+    }
+    monkeypatch.setattr(cli, "build_graph", lambda checkpointer: fake_graph)
+
+    exit_code = cli.run([])
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert captured.out == "Destination: order_support\nQuery: What's on the menu?\n"

@@ -169,7 +169,7 @@ wheels = [
 
 [[package]]
 name = "customer-support-fde"
-version = "0.8.2"
+version = "0.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "agentevals" },
@@ -180,6 +180,7 @@ dependencies = [
     { name = "openinference-instrumentation-langchain" },
     { name = "pytest" },
     { name = "python-dotenv" },
+    { name = "rich" },
 ]
 
 [package.metadata]
@@ -192,6 +193,7 @@ requires-dist = [
     { name = "openinference-instrumentation-langchain", specifier = ">=0.1.76" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
+    { name = "rich", specifier = ">=15.0.0" },
 ]
 
 [[package]]
