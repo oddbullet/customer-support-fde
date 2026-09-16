@@ -211,8 +211,8 @@ def test_run_conversation_does_not_wrap_interrupt_input_in_thinking_status(monke
     assert read_while_status_active == [False]
 
 
-# A human turn renders with a distinct color style and the text label "You:". (base)
-def test_print_turn_renders_human_turn_with_label_and_style(capsys):
+# A human turn renders with the text label "You:". (base)
+def test_print_turn_renders_human_turn_with_label(capsys):
     console = interactive._make_console(force_terminal=False)
     interactive._print_turn(console, "human", "what's on the menu?")
 
@@ -221,8 +221,8 @@ def test_print_turn_renders_human_turn_with_label_and_style(capsys):
     assert "what's on the menu?" in captured.out
 
 
-# An AI turn renders with a distinct color style and the text label "Assistant:". (base)
-def test_print_turn_renders_ai_turn_with_label_and_style(capsys):
+# An AI turn renders with the text label "Assistant:". (base)
+def test_print_turn_renders_ai_turn_with_label(capsys):
     console = interactive._make_console(force_terminal=False)
     interactive._print_turn(console, "ai", "We have kung pao chicken.")
 
@@ -231,16 +231,14 @@ def test_print_turn_renders_ai_turn_with_label_and_style(capsys):
     assert "We have kung pao chicken." in captured.out
 
 
-# human and ai turns use visually distinct styles from each other. (base)
-def test_print_turn_uses_distinct_styles_for_human_and_ai():
-    _, human_style = interactive._SPEAKER_STYLES["human"]
-    _, ai_style = interactive._SPEAKER_STYLES["ai"]
-    assert human_style != ai_style
+# human and ai turns use visually distinct labels from each other. (base)
+def test_print_turn_uses_distinct_labels_for_human_and_ai():
+    assert interactive._SPEAKER_LABELS["human"] != interactive._SPEAKER_LABELS["ai"]
 
 
-# A multi-line AI response keeps the label/style applied consistently, not just on
+# A multi-line AI response keeps the label applied consistently, not just on
 # its first line. (edge)
-def test_print_turn_applies_style_across_a_multiline_response():
+def test_print_turn_applies_label_across_a_multiline_response():
     console = interactive._make_console(force_terminal=False)
     printed = {}
 
@@ -253,8 +251,6 @@ def test_print_turn_applies_style_across_a_multiline_response():
     interactive._print_turn(console, "ai", multiline)
 
     text = printed["renderable"]
-    _, ai_style = interactive._SPEAKER_STYLES["ai"]
-    assert text.style == ai_style
     assert "Line one." in text.plain
     assert "Line three." in text.plain
 

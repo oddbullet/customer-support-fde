@@ -10,9 +10,9 @@ from customer_support_fde import db
 from customer_support_fde.graph import build_graph
 from customer_support_fde.state import SupportState
 
-_SPEAKER_STYLES = {
-    "human": ("You", "bold cyan"),
-    "ai": ("Assistant", "bold green"),
+_SPEAKER_LABELS = {
+    "human": "You",
+    "ai": "Assistant",
 }
 
 
@@ -21,9 +21,9 @@ def _make_console(force_terminal: bool | None = None) -> Console:
 
 
 def _print_turn(console: Console, speaker: str, content: str) -> None:
-    label, style = _SPEAKER_STYLES[speaker]
+    label = _SPEAKER_LABELS[speaker]
     separator = "\n" if "\n" in content else " "
-    console.print(Text(f"{label}:{separator}{content}", style=style))
+    console.print(Text(f"{label}:{separator}{content}"))
 
 
 def _run_conversation(console: Console, graph, query: str) -> SupportState:
