@@ -9,6 +9,18 @@ from customer_support_fde.state import SupportState
 from customer_support_fde.tools.menu_tools import cart_total, resolve_menu_item
 
 
+def _cart_result(
+    cart: dict[str, int], failed: list[str], verb: str, tool_call_id: str
+) -> Command:
+    content = f"Failed to {verb}: {', '.join(failed)}" if failed else "Success"
+    return Command(
+        update={
+            "cart_items": cart,
+            "messages": [ToolMessage(content=content, tool_call_id=tool_call_id)],
+        }
+    )
+
+
 @tool
 def add_items_to_cart(
     items: dict[str, int],
@@ -31,14 +43,7 @@ def add_items_to_cart(
         else:
             failed.append(name)
 
-    content = f"Failed to add: {', '.join(failed)}" if failed else "Success"
-
-    return Command(
-        update={
-            "cart_items": cart,
-            "messages": [ToolMessage(content=content, tool_call_id=tool_call_id)],
-        }
-    )
+    return _cart_result(cart, failed, "add", tool_call_id)
 
 
 @tool
@@ -72,14 +77,7 @@ def remove_items_from_cart(
         else:
             cart[item_name] -= quantity
 
-    content = f"Failed to remove: {', '.join(failed)}" if failed else "Success"
-
-    return Command(
-        update={
-            "cart_items": cart,
-            "messages": [ToolMessage(content=content, tool_call_id=tool_call_id)],
-        }
-    )
+    return _cart_result(cart, failed, "remove", tool_call_id)
 
 
 @tool
@@ -87,29 +85,15 @@ def mark_order_confirmed(
     state: Annotated[SupportState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
-    """Confirm the customer is done ordering, finalizing the current cart.
-
-    """
-    if not state["cart_items"]:
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content="There's nothing in the cart yet to confirm.",
-                        tool_call_id=tool_call_id,
-                    )
-                ],
-            }
-        )
-
-    return Command(
-        update={
-            "order_confirmed": True,
-            "messages": [
-                ToolMessage(content="Order confirmed.", tool_call_id=tool_call_id)
-            ],
-        }
-    )
+    """Confirm the customer is done ordering, finalizing the current cart."""
+    update = {}
+    if state["cart_items"]:
+        update["order_confirmed"] = True
+        content = "Order confirmed."
+    else:
+        content = "There's nothing in the cart yet to confirm."
+    update["messages"] = [ToolMessage(content=content, tool_call_id=tool_call_id)]
+    return Command(update=update)
 
 
 @tool
