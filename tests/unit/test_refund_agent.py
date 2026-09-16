@@ -18,7 +18,7 @@ def _base_state(**overrides) -> dict:
         "sentiment": "neutral",
         "messages": [],
         "menu": [],
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,

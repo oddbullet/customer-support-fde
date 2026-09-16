@@ -15,7 +15,7 @@ def _base_state() -> dict:
         "sentiment": None,
         "messages": [],
         "menu": [],
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": True,
         "order_ticket": None,
         "order_summary": None,

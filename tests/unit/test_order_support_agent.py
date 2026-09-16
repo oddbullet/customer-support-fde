@@ -55,7 +55,7 @@ def _base_state(user_query: str) -> dict:
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -215,14 +215,14 @@ def test_get_menu_item_tool_call_not_found(monkeypatch):
     assert "No menu item matches" in tool_message.content
 
 
-# An add_items_to_cart tool call for one item updates the state's menu_items. (base)
-def test_add_items_to_cart_tool_call_updates_menu_items(monkeypatch):
+# An add_items_to_cart tool call for one item updates the state's cart_items. (base)
+def test_add_items_to_cart_tool_call_updates_cart_items(monkeypatch):
     tool_call_response = AIMessage(
         content="",
         tool_calls=[
             {
                 "name": "add_items_to_cart",
-                "args": {"names": ["Kung Pao Chicken"]},
+                "args": {"items": {"Kung Pao Chicken": 1}},
                 "id": "call_1",
             }
         ],
@@ -232,17 +232,17 @@ def test_add_items_to_cart_tool_call_updates_menu_items(monkeypatch):
 
     state = _run_inner_loop(_base_state("Add a kung pao chicken"))
 
-    assert state["menu_items"] == {"Kung Pao Chicken": 1}
+    assert state["cart_items"] == {"Kung Pao Chicken": 1}
 
 
 # An add_items_to_cart tool call with multiple names updates all of them at once. (base)
-def test_add_items_to_cart_tool_call_batch_updates_menu_items(monkeypatch):
+def test_add_items_to_cart_tool_call_batch_updates_cart_items(monkeypatch):
     tool_call_response = AIMessage(
         content="",
         tool_calls=[
             {
                 "name": "add_items_to_cart",
-                "args": {"names": ["Kung Pao Chicken", "Spring Rolls"]},
+                "args": {"items": {"Kung Pao Chicken": 1, "Spring Rolls": 1}},
                 "id": "call_1",
             }
         ],
@@ -254,11 +254,11 @@ def test_add_items_to_cart_tool_call_batch_updates_menu_items(monkeypatch):
         _base_state("Add a kung pao chicken and spring rolls")
     )
 
-    assert state["menu_items"] == {"Kung Pao Chicken": 1, "Spring Rolls": 1}
+    assert state["cart_items"] == {"Kung Pao Chicken": 1, "Spring Rolls": 1}
 
 
-# Unmatched/ambiguous names in an add_items_to_cart call leave menu_items unchanged. (edge)
-def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_menu_items_unchanged(
+# Unmatched/ambiguous names in an add_items_to_cart call leave cart_items unchanged. (edge)
+def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_cart_items_unchanged(
     monkeypatch,
 ):
     tool_call_response = AIMessage(
@@ -266,7 +266,7 @@ def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_menu_items_unchange
         tool_calls=[
             {
                 "name": "add_items_to_cart",
-                "args": {"names": ["Pizza", "Beef Noodle"]},
+                "args": {"items": {"Pizza": 1, "Beef Noodle": 1}},
                 "id": "call_1",
             }
         ],
@@ -276,17 +276,17 @@ def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_menu_items_unchange
 
     state = _run_inner_loop(_base_state("Add a pizza and beef noodle"))
 
-    assert state["menu_items"] == {}
+    assert state["cart_items"] == {}
 
 
-# A remove_items_from_cart tool call for an unqualified name deletes the entry entirely. (base)
-def test_remove_items_from_cart_tool_call_unqualified_deletes_entry(monkeypatch):
+# A remove_items_from_cart tool call with a quantity matching the cart deletes the entry entirely. (base)
+def test_remove_items_from_cart_tool_call_quantity_matching_deletes_entry(monkeypatch):
     tool_call_response = AIMessage(
         content="",
         tool_calls=[
             {
                 "name": "remove_items_from_cart",
-                "args": {"items": [{"name": "Kung Pao Chicken"}]},
+                "args": {"items": {"Kung Pao Chicken": 2}},
                 "id": "call_1",
             }
         ],
@@ -295,11 +295,11 @@ def test_remove_items_from_cart_tool_call_unqualified_deletes_entry(monkeypatch)
     _patch_llm(monkeypatch, [tool_call_response, final_response])
 
     state = _base_state("Remove the kung pao chicken")
-    state["menu_items"] = {"Kung Pao Chicken": 2}
+    state["cart_items"] = {"Kung Pao Chicken": 2}
 
     state = _run_inner_loop(state)
 
-    assert state["menu_items"] == {}
+    assert state["cart_items"] == {}
 
 
 # A remove_items_from_cart tool call with a quantity decrements and keeps the entry. (base)
@@ -309,7 +309,7 @@ def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatc
         tool_calls=[
             {
                 "name": "remove_items_from_cart",
-                "args": {"items": [{"name": "Kung Pao Chicken", "quantity": 1}]},
+                "args": {"items": {"Kung Pao Chicken": 1}},
                 "id": "call_1",
             }
         ],
@@ -318,11 +318,11 @@ def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatc
     _patch_llm(monkeypatch, [tool_call_response, final_response])
 
     state = _base_state("Remove one kung pao chicken")
-    state["menu_items"] = {"Kung Pao Chicken": 3}
+    state["cart_items"] = {"Kung Pao Chicken": 3}
 
     state = _run_inner_loop(state)
 
-    assert state["menu_items"] == {"Kung Pao Chicken": 2}
+    assert state["cart_items"] == {"Kung Pao Chicken": 2}
 
 
 # await_customer's standard path: while the order isn't confirmed yet, it interrupts and
@@ -359,7 +359,7 @@ def test_await_customer_does_not_interrupt_when_confirmed(monkeypatch):
     assert result["order_confirmed"] is True
 
 
-# call_model rebuilds the cart-summary SystemMessage from state["menu_items"] on every
+# call_model rebuilds the cart-summary SystemMessage from state["cart_items"] on every
 # call, not just the first turn's, now that messages persists across turns. (regression)
 def test_call_model_refreshes_cart_summary_on_later_turns(monkeypatch):
     final_response = AIMessage(content="Anything else?")
@@ -374,7 +374,7 @@ def test_call_model_refreshes_cart_summary_on_later_turns(monkeypatch):
         HumanMessage(content="Add a kung pao chicken"),
         AIMessage(content="Added! Anything else?"),
     ]
-    state["menu_items"] = {"Kung Pao Chicken": 1}
+    state["cart_items"] = {"Kung Pao Chicken": 1}
 
     call_model(state)
 

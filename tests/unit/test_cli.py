@@ -68,7 +68,7 @@ def test_cli_run_calls_load_menu_exactly_once_across_an_interrupt(
                 tool_calls=[
                     {
                         "name": "add_items_to_cart",
-                        "args": {"names": ["Kung Pao Chicken"]},
+                        "args": {"items": {"Kung Pao Chicken": 1}},
                         "id": "call_1",
                     }
                 ],

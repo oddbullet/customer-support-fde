@@ -88,7 +88,7 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -125,7 +125,7 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
             tool_calls=[
                 {
                     "name": "add_items_to_cart",
-                    "args": {"names": [item_name]},
+                    "args": {"items": {item_name: 1}},
                     "id": call_id,
                 }
             ],
@@ -151,7 +151,7 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -179,8 +179,8 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
     result = graph.invoke(Command(resume="Add another kung pao chicken"), config)
     assert "__interrupt__" in result
 
-    final_menu_items = graph.get_state(config).values["menu_items"]
-    assert final_menu_items == {"Kung Pao Chicken": 2, "Spring Rolls": 1}
+    final_cart_items = graph.get_state(config).values["cart_items"]
+    assert final_cart_items == {"Kung Pao Chicken": 2, "Spring Rolls": 1}
 
 
 # Adding two items then removing one entirely in a later turn leaves only the other. (base)
@@ -202,14 +202,14 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
-            _tool_call("add_items_to_cart", {"names": ["Spring Rolls"]}, "call_2"),
+            _tool_call("add_items_to_cart", {"items": {"Spring Rolls": 1}}, "call_2"),
             AIMessage(content="Added! Anything else?"),
             _tool_call(
                 "remove_items_from_cart",
-                {"items": [{"name": "Kung Pao Chicken"}]},
+                {"items": {"Kung Pao Chicken": 1}},
                 "call_3",
             ),
             AIMessage(content="Removed! Anything else?"),
@@ -227,7 +227,7 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -259,7 +259,7 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
     assert "__interrupt__" not in result
 
     final_state = graph.get_state(config).values
-    assert final_state["menu_items"] == {"Spring Rolls": 1}
+    assert final_state["cart_items"] == {"Spring Rolls": 1}
     assert final_state["order_id"] is not None
     assert final_state["order_ticket"] == {
         "order_id": final_state["order_id"],
@@ -313,7 +313,7 @@ def test_condenses_conversation_history_past_the_threshold(monkeypatch):
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -381,7 +381,7 @@ def test_preference_stated_early_survives_condensation(monkeypatch):
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -453,7 +453,7 @@ def test_returning_customer_account_preferences_reach_order_agent_context(
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -513,7 +513,7 @@ def test_sign_up_account_number_is_retrievable_in_a_later_conversation(
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -582,7 +582,7 @@ def test_continue_without_account_reaches_call_model_with_no_account_state(monke
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -633,10 +633,10 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
-            _tool_call("add_items_to_cart", {"names": ["Spring Rolls"]}, "call_2"),
+            _tool_call("add_items_to_cart", {"items": {"Spring Rolls": 1}}, "call_2"),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_3"),
             AIMessage(content="Great, your order is confirmed!"),
@@ -652,7 +652,7 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -779,7 +779,7 @@ def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -825,7 +825,7 @@ def test_price_change_mid_conversation_does_not_affect_confirmed_order(
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_2"),
@@ -842,7 +842,7 @@ def test_price_change_mid_conversation_does_not_affect_confirmed_order(
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -907,7 +907,7 @@ def test_account_holder_preferences_are_saved_on_order_confirmation(
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_2"),
@@ -929,7 +929,7 @@ def test_account_holder_preferences_are_saved_on_order_confirmation(
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -983,7 +983,7 @@ def test_guest_conversation_writes_no_preference_data(monkeypatch, tmp_path):
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_2"),
@@ -1006,7 +1006,7 @@ def test_guest_conversation_writes_no_preference_data(monkeypatch, tmp_path):
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,
@@ -1062,7 +1062,7 @@ def test_memory_gen_node_failure_does_not_affect_ticket_delivery(monkeypatch, tm
     order_llm = _fake_order_llm(
         [
             _tool_call(
-                "add_items_to_cart", {"names": ["Kung Pao Chicken"]}, "call_1"
+                "add_items_to_cart", {"items": {"Kung Pao Chicken": 1}}, "call_1"
             ),
             AIMessage(content="Added! Anything else?"),
             _tool_call("mark_order_confirmed", {}, "call_2"),
@@ -1084,7 +1084,7 @@ def test_memory_gen_node_failure_does_not_affect_ticket_delivery(monkeypatch, tm
         "sentiment": None,
         "messages": [],
         "menu": SAMPLE_MENU,
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,

@@ -47,12 +47,12 @@ def price_for_item(name: str, menu: list[MenuItem]) -> float | None:
     return None
 
 
-def cart_total(menu_items: dict[str, int], menu: list[MenuItem]) -> float | None:
-    if not menu_items:
+def cart_total(cart_items: dict[str, int], menu: list[MenuItem]) -> float | None:
+    if not cart_items:
         return None
 
     raw_total = Decimal("0")
-    for name, quantity in menu_items.items():
+    for name, quantity in cart_items.items():
         unit_price = price_for_item(name, menu)
         raw_total += Decimal(str(unit_price)) * quantity
 

@@ -13,7 +13,7 @@ class SupportState(TypedDict):
     sentiment: Literal["positive", "neutral", "negative"] | None
     messages: Annotated[list[AnyMessage], add_messages]
     menu: list[MenuItem]
-    menu_items: dict[str, int]
+    cart_items: dict[str, int]
     order_confirmed: bool
     order_ticket: dict | None
     order_summary: dict | None
@@ -36,7 +36,7 @@ def initial_state(query: str) -> SupportState:
         "sentiment": None,
         "messages": [],
         "menu": db.load_menu(),
-        "menu_items": {},
+        "cart_items": {},
         "order_confirmed": False,
         "order_ticket": None,
         "order_summary": None,

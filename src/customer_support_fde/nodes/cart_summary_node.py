@@ -7,10 +7,10 @@ from customer_support_fde.state import SupportState
 from customer_support_fde.tools.menu_tools import MenuItem, cart_total, price_for_item
 
 
-def build_order_summary(menu_items: dict[str, int], menu: list[MenuItem]) -> dict:
+def build_order_summary(cart_items: dict[str, int], menu: list[MenuItem]) -> dict:
     lines = []
 
-    for name, quantity in menu_items.items():
+    for name, quantity in cart_items.items():
         unit_price = price_for_item(name, menu)
         line_total_decimal = Decimal(str(unit_price)) * quantity
         lines.append(
@@ -22,7 +22,7 @@ def build_order_summary(menu_items: dict[str, int], menu: list[MenuItem]) -> dic
             }
         )
 
-    return {"lines": lines, "total": cart_total(menu_items, menu)}
+    return {"lines": lines, "total": cart_total(cart_items, menu)}
 
 
 def render_order_summary(summary: dict, order_id: str | None = None) -> str:
@@ -46,7 +46,7 @@ def render_order_summary(summary: dict, order_id: str | None = None) -> str:
 
 
 def cart_summary_node(state: SupportState) -> SupportState:
-    summary = build_order_summary(state["menu_items"], state["menu"])
+    summary = build_order_summary(state["cart_items"], state["menu"])
 
     order_id = None
     if summary["lines"]:
