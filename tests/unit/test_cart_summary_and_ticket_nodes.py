@@ -395,15 +395,19 @@ def test_refund_ticket_node_handles_no_order_identified():
     assert result["refund_ticket"]["decision"] is None
 
 
-def _patch_ticket_gen_llm(monkeypatch, reply_content):
+def _patch_ticket_gen_llm(monkeypatch, issue):
+    fake_structured_llm = MagicMock()
+    fake_structured_llm.invoke.return_value = (
+        ticket_gen_node_module._RefundIssueExtraction(issue=issue)
+    )
     fake_llm = MagicMock()
-    fake_llm.invoke.return_value = AIMessage(content=reply_content)
+    fake_llm.with_structured_output.return_value = fake_structured_llm
     monkeypatch.setattr(ticket_gen_node_module, "_build_llm", lambda: fake_llm)
-    return fake_llm
+    return fake_structured_llm
 
 
-# _extract_refund_issue returns the model's stripped reply when there is a
-# conversation to summarize. (base)
+# _extract_refund_issue returns the structured output's stripped issue field
+# when there is a conversation to summarize. (base)
 def test_extract_refund_issue_returns_stripped_model_reply(monkeypatch):
     _patch_ticket_gen_llm(monkeypatch, "  Customer received the wrong dish.  ")
     state = _refund_base_state()
@@ -419,7 +423,7 @@ def test_extract_refund_issue_returns_stripped_model_reply(monkeypatch):
 def test_extract_refund_issue_returns_none_without_invoking_model_when_nothing_to_summarize(
     monkeypatch,
 ):
-    fake_llm = _patch_ticket_gen_llm(monkeypatch, "irrelevant")
+    fake_structured_llm = _patch_ticket_gen_llm(monkeypatch, "irrelevant")
     state = _refund_base_state()
     state["messages"] = []
     state["refund_conversation_summary"] = None
@@ -427,13 +431,15 @@ def test_extract_refund_issue_returns_none_without_invoking_model_when_nothing_t
     result = ticket_gen_node_module._extract_refund_issue(state)
 
     assert result is None
-    fake_llm.invoke.assert_not_called()
+    fake_structured_llm.invoke.assert_not_called()
 
 
-# _extract_refund_issue returns None when the model's reply is "None"
-# (case-insensitive), its explicit signal that no issue was raised. (edge)
-def test_extract_refund_issue_returns_none_when_model_says_none(monkeypatch):
-    _patch_ticket_gen_llm(monkeypatch, "  NoNe  ")
+# _extract_refund_issue returns None when the structured output's issue
+# field is null, its explicit signal that no issue was raised. (edge)
+def test_extract_refund_issue_returns_none_when_structured_output_has_no_issue(
+    monkeypatch,
+):
+    _patch_ticket_gen_llm(monkeypatch, None)
     state = _refund_base_state()
     state["messages"] = [HumanMessage(content="just checking my order status")]
 
@@ -442,13 +448,32 @@ def test_extract_refund_issue_returns_none_when_model_says_none(monkeypatch):
     assert result is None
 
 
-# _extract_refund_issue returns None and logs a WARNING when the LLM call
-# raises, never letting the exception propagate. (error)
+# _extract_refund_issue's prompt to the model includes an example of what
+# counts as an issue, to steer it away from degenerate replies. (base)
+def test_extract_refund_issue_prompt_includes_issue_examples(monkeypatch):
+    fake_structured_llm = _patch_ticket_gen_llm(
+        monkeypatch, "Customer received the wrong dish."
+    )
+    state = _refund_base_state()
+    state["messages"] = [HumanMessage(content="I got the wrong dish")]
+
+    ticket_gen_node_module._extract_refund_issue(state)
+
+    sent_messages = fake_structured_llm.invoke.call_args[0][0]
+    instructions = sent_messages[0].content
+    assert "missing items" in instructions
+    assert "incorrect items" in instructions
+
+
+# _extract_refund_issue returns None and logs a WARNING when the structured
+# output call raises, never letting the exception propagate. (error)
 def test_extract_refund_issue_returns_none_and_logs_warning_on_llm_failure(
     monkeypatch, caplog
 ):
+    fake_structured_llm = MagicMock()
+    fake_structured_llm.invoke.side_effect = RuntimeError("model unavailable")
     fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = RuntimeError("model unavailable")
+    fake_llm.with_structured_output.return_value = fake_structured_llm
     monkeypatch.setattr(ticket_gen_node_module, "_build_llm", lambda: fake_llm)
     state = _refund_base_state()
     state["messages"] = [HumanMessage(content="I got the wrong dish")]
@@ -478,7 +503,7 @@ def test_ticket_gen_node_refund_branch_sets_issue_and_refund_created(monkeypatch
 # When _extract_refund_issue resolves to None, the refund_ticket's issue is
 # None and refund_created is False when no refund_request exists. (edge)
 def test_ticket_gen_node_refund_branch_handles_no_issue_and_no_refund(monkeypatch):
-    _patch_ticket_gen_llm(monkeypatch, "None")
+    _patch_ticket_gen_llm(monkeypatch, None)
     state = _refund_base_state()
     state["messages"] = [HumanMessage(content="just checking in")]
 
