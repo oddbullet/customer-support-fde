@@ -64,7 +64,6 @@ def run_interactive() -> int:
             query = sys.stdin.readline().rstrip("\n")
 
             if query.strip().lower() == "/exit":
-                console.print("Goodbye!")
                 return 0
 
             result = _run_conversation(console, graph, query)
@@ -72,7 +71,7 @@ def run_interactive() -> int:
             content = result["messages"][-1].content if result.get("messages") else ""
             _print_turn(console, "ai", content)
         except KeyboardInterrupt:
-            console.print("\nGoodbye!")
+            console.print()
             return 0
         except Exception as exc:
             console.print(Text(f"Error: {exc}", style="bold red"))
