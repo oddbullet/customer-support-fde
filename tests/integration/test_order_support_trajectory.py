@@ -988,8 +988,12 @@ def test_account_holder_preferences_are_saved_on_order_confirmation(
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
 
     fixed_preferences = "Allergies: peanuts. Likes: spicy food."
+    fake_structured_llm = MagicMock()
+    fake_structured_llm.invoke.return_value = memory_gen_node._PreferenceExtraction(
+        preferences=fixed_preferences
+    )
     fake_memory_llm = MagicMock()
-    fake_memory_llm.invoke.return_value = AIMessage(content=fixed_preferences)
+    fake_memory_llm.with_structured_output.return_value = fake_structured_llm
     monkeypatch.setattr(memory_gen_node, "_build_llm", lambda: fake_memory_llm)
 
     graph = build_graph(checkpointer=MemorySaver())
