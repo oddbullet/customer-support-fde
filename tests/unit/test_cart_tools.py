@@ -59,7 +59,7 @@ def test_found_name_added_to_empty_cart_has_quantity_one():
     assert isinstance(result, Command)
     assert result.update["cart_items"] == {"Kung Pao Chicken": 1}
     tool_message = result.update["messages"][0]
-    assert tool_message.content == "Success"
+    assert tool_message.content == "Success\nCurrent cart:\n- Kung Pao Chicken x1"
 
 
 # A quantity greater than one is applied directly to the item's cart entry. (edge)
@@ -83,7 +83,7 @@ def test_tie_name_leaves_cart_unchanged_but_is_reported():
 
     assert result.update["cart_items"] == {}
     tool_message = result.update["messages"][0]
-    assert tool_message.content == "Failed to add: Beef Noodle"
+    assert tool_message.content == "Failed to add: Beef Noodle\nCart is empty."
 
 
 # An unmatched name is not added, and is reported as a failure by name. (edge)
@@ -92,7 +92,7 @@ def test_not_found_name_leaves_cart_unchanged_but_is_reported():
 
     assert result.update["cart_items"] == {}
     tool_message = result.update["messages"][0]
-    assert tool_message.content == "Failed to add: Pizza"
+    assert tool_message.content == "Failed to add: Pizza\nCart is empty."
 
 
 # In a mixed batch, only the successfully matched names are added to the cart, and the
@@ -104,7 +104,10 @@ def test_batch_with_mixed_results_only_applies_found_items():
 
     assert result.update["cart_items"] == {"Kung Pao Chicken": 1}
     tool_message = result.update["messages"][0]
-    assert tool_message.content == "Failed to add: Pizza, Beef Noodle"
+    assert (
+        tool_message.content
+        == "Failed to add: Pizza, Beef Noodle\nCurrent cart:\n- Kung Pao Chicken x1"
+    )
 
 
 # The tool must copy the cart rather than mutate the caller's state dict in place. (regression)
@@ -143,7 +146,7 @@ def test_removal_quantity_matching_current_deletes_entry():
     assert isinstance(result, Command)
     assert result.update["cart_items"] == {}
     tool_message = result.update["messages"][0]
-    assert tool_message.content == "Success"
+    assert tool_message.content == "Success\nCart is empty."
 
 
 # A stated quantity smaller than the current cart quantity decrements the entry and
@@ -161,7 +164,7 @@ def test_quantified_removal_above_current_deletes_entry_as_success():
 
     assert result.update["cart_items"] == {}
     tool_message = result.update["messages"][0]
-    assert tool_message.content == "Success"
+    assert tool_message.content == "Success\nCart is empty."
 
 
 # A found menu item that isn't currently a key in the cart is reported as a failure by
@@ -171,7 +174,10 @@ def test_found_but_not_in_cart_name_is_reported_as_failure():
 
     assert result.update["cart_items"] == {"Kung Pao Chicken": 1}
     tool_message = result.update["messages"][0]
-    assert tool_message.content == "Failed to remove: Mapo Tofu"
+    assert (
+        tool_message.content
+        == "Failed to remove: Mapo Tofu\nCurrent cart:\n- Kung Pao Chicken x1"
+    )
 
 
 # A tie name and a not_found name each leave the cart unchanged and are reported
@@ -184,7 +190,10 @@ def test_tie_and_not_found_removal_names_leave_cart_unchanged_but_are_reported()
 
     assert result.update["cart_items"] == {"Kung Pao Chicken": 1}
     tool_message = result.update["messages"][0]
-    assert tool_message.content == "Failed to remove: Beef Noodle, Pizza"
+    assert (
+        tool_message.content
+        == "Failed to remove: Beef Noodle, Pizza\nCurrent cart:\n- Kung Pao Chicken x1"
+    )
 
 
 # In a mixed batch, only the found-and-in-cart items are removed, each independently
@@ -202,7 +211,10 @@ def test_batch_with_mixed_results_applies_only_found_and_in_cart_items():
 
     assert result.update["cart_items"] == {"Spring Rolls": 2}
     tool_message = result.update["messages"][0]
-    assert tool_message.content == "Failed to remove: Mapo Tofu, Pizza, Beef Noodle"
+    assert (
+        tool_message.content
+        == "Failed to remove: Mapo Tofu, Pizza, Beef Noodle\nCurrent cart:\n- Spring Rolls x2"
+    )
 
 
 # The tool must copy the cart rather than mutate the caller's state dict in place. (regression)
@@ -212,6 +224,31 @@ def test_remove_never_mutates_input_cart_items_in_place():
     _invoke_remove({"Kung Pao Chicken": 1}, original)
 
     assert original == {"Kung Pao Chicken": 1, "Spring Rolls": 2}
+
+
+# Even when a batch entirely fails, the tool still reports the current (unchanged) cart
+# state in its message rather than only the failure text. (regression)
+def test_add_failure_still_reports_current_nonempty_cart_state():
+    result = _invoke_add({"Pizza": 1}, {"Spring Rolls": 2})
+
+    assert result.update["cart_items"] == {"Spring Rolls": 2}
+    tool_message = result.update["messages"][0]
+    assert (
+        tool_message.content
+        == "Failed to add: Pizza\nCurrent cart:\n- Spring Rolls x2"
+    )
+
+
+# Same guarantee for remove: a fully-failed batch still reports the current cart state. (regression)
+def test_remove_failure_still_reports_current_nonempty_cart_state():
+    result = _invoke_remove({"Pizza": 1}, {"Spring Rolls": 2})
+
+    assert result.update["cart_items"] == {"Spring Rolls": 2}
+    tool_message = result.update["messages"][0]
+    assert (
+        tool_message.content
+        == "Failed to remove: Pizza\nCurrent cart:\n- Spring Rolls x2"
+    )
 
 
 def _invoke_get_cart_total(cart_items):

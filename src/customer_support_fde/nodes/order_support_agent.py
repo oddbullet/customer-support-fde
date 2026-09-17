@@ -59,18 +59,8 @@ greeting or meta-commentary.
 """
 
 
-def _render_cart_summary(cart_items: dict[str, int]) -> str | None:
-    if not cart_items:
-        return None
-    lines = [f"- {name} x{quantity}" for name, quantity in cart_items.items()]
-    return "Current cart:\n" + "\n".join(lines)
-
-
 def _build_context_messages(state: SupportState) -> list[AnyMessage]:
     context: list[AnyMessage] = [SystemMessage(content=SYSTEM_PROMPT)]
-    cart_summary = _render_cart_summary(state["cart_items"])
-    if cart_summary:
-        context.append(SystemMessage(content=cart_summary))
     summary = state.get("order_conversation_summary")
     if summary is not None:
         context.append(

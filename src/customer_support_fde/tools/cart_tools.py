@@ -9,10 +9,18 @@ from customer_support_fde.state import SupportState
 from customer_support_fde.tools.menu_tools import cart_total, resolve_menu_item
 
 
+def _format_cart_state(cart: dict[str, int]) -> str:
+    if not cart:
+        return "Cart is empty."
+    lines = [f"- {name} x{quantity}" for name, quantity in cart.items()]
+    return "Current cart:\n" + "\n".join(lines)
+
+
 def _cart_result(
     cart: dict[str, int], failed: list[str], verb: str, tool_call_id: str
 ) -> Command:
-    content = f"Failed to {verb}: {', '.join(failed)}" if failed else "Success"
+    status = f"Failed to {verb}: {', '.join(failed)}" if failed else "Success"
+    content = f"{status}\n{_format_cart_state(cart)}"
     return Command(
         update={
             "cart_items": cart,
