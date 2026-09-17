@@ -13,7 +13,7 @@ from customer_support_fde.nodes.order_support_agent import (
     call_model,
     order_tools,
 )
-from customer_support_fde.tools.cart_tools import get_cart_total
+from customer_support_fde.tools.cart_tools import get_cart, get_cart_total
 
 # ToolNode.invoke() requires a LangGraph Runtime in its config even outside a
 # compiled graph run; this matches the minimal one the graph executor injects.
@@ -359,32 +359,6 @@ def test_await_customer_does_not_interrupt_when_confirmed(monkeypatch):
     assert result["order_confirmed"] is True
 
 
-# call_model rebuilds the cart-summary SystemMessage from state["cart_items"] on every
-# call, not just the first turn's, now that messages persists across turns. (regression)
-def test_call_model_refreshes_cart_summary_on_later_turns(monkeypatch):
-    final_response = AIMessage(content="Anything else?")
-    bound = MagicMock()
-    bound.invoke.return_value = final_response
-    fake_llm = MagicMock()
-    fake_llm.bind_tools.return_value = bound
-    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
-
-    state = _base_state("Add a spring roll too")
-    state["messages"] = [
-        HumanMessage(content="Add a kung pao chicken"),
-        AIMessage(content="Added! Anything else?"),
-    ]
-    state["cart_items"] = {"Kung Pao Chicken": 1}
-
-    call_model(state)
-
-    sent_messages = bound.invoke.call_args[0][0]
-    system_messages = [m for m in sent_messages if isinstance(m, SystemMessage)]
-    assert any(
-        "Kung Pao Chicken" in m.content and "1" in m.content for m in system_messages
-    )
-
-
 # An LLM call failure in call_model raises rather than returning partial state. (error)
 def test_call_model_llm_failure_propagates_rather_than_returning_partial_state(
     monkeypatch,
@@ -404,6 +378,12 @@ def test_call_model_llm_failure_propagates_rather_than_returning_partial_state(
 # model can look up an exact total instead of computing one itself. (base)
 def test_get_cart_total_is_registered_on_order_tools():
     assert get_cart_total in _ORDER_TOOLS
+
+
+# get_cart is registered on the order support agent's tool list, so the model can
+# look up the exact current cart contents instead of guessing from history. (base)
+def test_get_cart_is_registered_on_order_tools():
+    assert get_cart in _ORDER_TOOLS
 
 
 # With 3 or fewer completed turns, condensation is skipped even over the token
@@ -583,3 +563,15 @@ def test_build_context_messages_omits_account_preferences_when_none():
 
     system_messages = [m for m in context if isinstance(m, SystemMessage)]
     assert not any("preferences" in m.content.lower() for m in system_messages)
+
+
+# Cart contents are no longer injected as standing context; the cart-mutating tools
+# report cart state directly in their own ToolMessage instead. (regression)
+def test_build_context_messages_never_includes_cart_summary():
+    state = _base_state("What's on the menu?")
+    state["cart_items"] = {"Kung Pao Chicken": 2}
+
+    context = order_support_agent._build_context_messages(state)
+
+    system_messages = [m for m in context if isinstance(m, SystemMessage)]
+    assert not any("Kung Pao Chicken" in m.content for m in system_messages)

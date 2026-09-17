@@ -14,6 +14,7 @@ from customer_support_fde.nodes.common import estimate_token_count as _estimate_
 from customer_support_fde.state import SupportState
 from customer_support_fde.tools.cart_tools import (
     add_items_to_cart,
+    get_cart,
     get_cart_total,
     mark_order_confirmed,
     remove_items_from_cart,
@@ -32,7 +33,9 @@ When a tool reports multiple equally-close matches for a name, ask the \
 customer which one they meant instead of guessing. \
 Whenever the customer asks for their cart total (or anything about how much \
 they currently owe), call get_cart_total to look it up rather than adding up \
-prices yourself.
+prices yourself. \
+Whenever the customer asks what's currently in their cart, call get_cart to \
+look it up rather than relying on your memory of the conversation.
 """
 
 _ORDER_TOOLS = [
@@ -42,6 +45,7 @@ _ORDER_TOOLS = [
     remove_items_from_cart,
     mark_order_confirmed,
     get_cart_total,
+    get_cart,
 ]
 
 order_tools = ToolNode(_ORDER_TOOLS)
@@ -59,18 +63,8 @@ greeting or meta-commentary.
 """
 
 
-def _render_cart_summary(cart_items: dict[str, int]) -> str | None:
-    if not cart_items:
-        return None
-    lines = [f"- {name} x{quantity}" for name, quantity in cart_items.items()]
-    return "Current cart:\n" + "\n".join(lines)
-
-
 def _build_context_messages(state: SupportState) -> list[AnyMessage]:
     context: list[AnyMessage] = [SystemMessage(content=SYSTEM_PROMPT)]
-    cart_summary = _render_cart_summary(state["cart_items"])
-    if cart_summary:
-        context.append(SystemMessage(content=cart_summary))
     summary = state.get("order_conversation_summary")
     if summary is not None:
         context.append(
