@@ -1,6 +1,7 @@
 import logging
 
 from langchain_core.messages import SystemMessage
+from pydantic import BaseModel, Field
 
 from customer_support_fde import db, tickets
 from customer_support_fde.nodes.common import build_llm as _build_llm
@@ -12,12 +13,22 @@ _logger = logging.getLogger(__name__)
 
 _ISSUE_EXTRACTION_INSTRUCTIONS = """\
 You are summarizing a customer's refund conversation for a support ticket. \
-Read the conversation that follows and reply with a one-to-two-sentence \
-statement of the customer's issue or complaint, in their own terms (such as \
-missing items, incorrect items, poor food quality, or late delivery). If the \
-conversation never raised any issue or complaint, reply with exactly \
-"None" and nothing else.
+Read the conversation that follows and extract the customer's issue or \
+complaint, in their own terms (such as missing items, incorrect items, poor \
+food quality, or late delivery). Leave the issue field null if the \
+conversation never raised any issue or complaint.
 """
+
+
+class _RefundIssueExtraction(BaseModel):
+    issue: str | None = Field(
+        default=None,
+        description=(
+            "A one-to-two-sentence statement of the customer's issue or "
+            "complaint, in their own terms. Null when no issue or "
+            "complaint was raised."
+        ),
+    )
 
 
 def _extract_refund_issue(state: SupportState) -> str | None:
@@ -34,17 +45,18 @@ def _extract_refund_issue(state: SupportState) -> str | None:
     context.extend(messages)
 
     try:
-        reply = _build_llm().invoke(context).content
+        result = _build_llm().with_structured_output(_RefundIssueExtraction).invoke(
+            context
+        )
     except Exception:
         _logger.warning(
             "Failed to extract refund issue from conversation", exc_info=True
         )
         return None
 
-    reply = reply.strip()
-    if reply.lower() == "none":
+    if result.issue is None:
         return None
-    return reply
+    return result.issue.strip() or None
 
 
 def ticket_gen_node(state: SupportState) -> SupportState:
