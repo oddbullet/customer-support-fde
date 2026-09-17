@@ -13,7 +13,8 @@ _logger = logging.getLogger(__name__)
 _ISSUE_EXTRACTION_INSTRUCTIONS = """\
 You are summarizing a customer's refund conversation for a support ticket. \
 Read the conversation that follows and reply with a one-to-two-sentence \
-statement of the customer's issue or complaint, in their own terms. If the \
+statement of the customer's issue or complaint, in their own terms (such as \
+missing items, incorrect items, poor food quality, or late delivery). If the \
 conversation never raised any issue or complaint, reply with exactly \
 "None" and nothing else.
 """
