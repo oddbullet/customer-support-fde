@@ -118,3 +118,16 @@ def get_cart_total(state: Annotated[SupportState, InjectedState]) -> str:
     if total is None:
         return "Your cart is empty, so there's no total yet."
     return f"Your current cart total is ${total:.2f}."
+
+
+@tool
+def get_cart(state: Annotated[SupportState, InjectedState]) -> str:
+    """Return the customer's current cart contents: every item currently in the
+    cart and its quantity. Always use this instead of guessing the cart's
+    contents from the conversation history.
+
+    Returns:
+        str: One line per cart item in the form "- {name} x{quantity}", or a
+        message saying the cart is empty when there's nothing in it yet.
+    """
+    return _format_cart_state(state["cart_items"])

@@ -2,6 +2,7 @@ from langgraph.types import Command
 
 from customer_support_fde.tools.cart_tools import (
     add_items_to_cart,
+    get_cart,
     get_cart_total,
     mark_order_confirmed,
     remove_items_from_cart,
@@ -278,3 +279,33 @@ def test_get_cart_total_empty_cart_reports_no_numeric_total():
 
     assert "$" not in rendered
     assert "empty" in rendered.lower()
+
+
+def _invoke_get_cart(cart_items):
+    return get_cart.func(state={"cart_items": cart_items, "menu": SAMPLE_MENU})
+
+
+# A cart with multiple items renders one line per item in the shared cart-state format. (base)
+def test_get_cart_multiple_items_renders_current_cart_lines():
+    rendered = _invoke_get_cart({"Kung Pao Chicken": 2, "Mapo Tofu": 1})
+
+    assert rendered == "Current cart:\n- Kung Pao Chicken x2\n- Mapo Tofu x1"
+
+
+# An empty cart is reported with the exact shared empty-cart message. (edge)
+def test_get_cart_empty_cart_reports_exact_empty_message():
+    rendered = _invoke_get_cart({})
+
+    assert rendered == "Cart is empty."
+
+
+# The tool is a pure read: it returns a plain string, not a Command, and never mutates
+# the cart dict passed in via state. (negative)
+def test_get_cart_is_read_only_and_returns_plain_string_not_command():
+    original = {"Spring Rolls": 2}
+
+    result = _invoke_get_cart(original)
+
+    assert isinstance(result, str)
+    assert not isinstance(result, Command)
+    assert original == {"Spring Rolls": 2}

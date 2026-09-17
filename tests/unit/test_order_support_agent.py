@@ -13,7 +13,7 @@ from customer_support_fde.nodes.order_support_agent import (
     call_model,
     order_tools,
 )
-from customer_support_fde.tools.cart_tools import get_cart_total
+from customer_support_fde.tools.cart_tools import get_cart, get_cart_total
 
 # ToolNode.invoke() requires a LangGraph Runtime in its config even outside a
 # compiled graph run; this matches the minimal one the graph executor injects.
@@ -378,6 +378,12 @@ def test_call_model_llm_failure_propagates_rather_than_returning_partial_state(
 # model can look up an exact total instead of computing one itself. (base)
 def test_get_cart_total_is_registered_on_order_tools():
     assert get_cart_total in _ORDER_TOOLS
+
+
+# get_cart is registered on the order support agent's tool list, so the model can
+# look up the exact current cart contents instead of guessing from history. (base)
+def test_get_cart_is_registered_on_order_tools():
+    assert get_cart in _ORDER_TOOLS
 
 
 # With 3 or fewer completed turns, condensation is skipped even over the token
