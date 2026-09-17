@@ -19,10 +19,14 @@ def _make_console(force_terminal: bool | None = None) -> Console:
     return Console(force_terminal=force_terminal)
 
 
+_AI_BACKGROUND_STYLE = "on #00384A"
+
+
 def _print_turn(console: Console, speaker: str, content: str) -> None:
     label = _SPEAKER_LABELS[speaker]
     separator = "\n" if "\n" in content else " "
-    console.print(Text(f"{label}:{separator}{content}"))
+    style = _AI_BACKGROUND_STYLE if speaker == "ai" else None
+    console.print(Text(f"{label}:{separator}{content}", style=style))
 
 
 def _invoke_with_status(console: Console, graph, state_or_command, config) -> SupportState:
