@@ -377,8 +377,8 @@ def test_run_interactive_clears_screen_and_loops_for_a_second_conversation(monke
 
 
 # Typing /exit (case-insensitive) at a new-conversation prompt ends the session
-# with a closing message and exit code 0. (base)
-def test_run_interactive_exits_on_slash_exit_command(monkeypatch, capsys):
+# with exit code 0 and no closing message. (base)
+def test_run_interactive_exits_on_slash_exit_command(monkeypatch):
     def _fail_if_called(*args, **kwargs):
         raise AssertionError("_run_conversation should not be called")
 
@@ -389,12 +389,10 @@ def test_run_interactive_exits_on_slash_exit_command(monkeypatch, capsys):
     exit_code = interactive.run_interactive()
 
     assert exit_code == 0
-    captured = capsys.readouterr()
-    assert "Goodbye" in captured.out
 
 
 # A KeyboardInterrupt raised at the prompt ends the session the same way as /exit. (edge)
-def test_run_interactive_exits_cleanly_on_keyboard_interrupt_at_prompt(monkeypatch, capsys):
+def test_run_interactive_exits_cleanly_on_keyboard_interrupt_at_prompt(monkeypatch):
     class _RaisingStdin:
         def readline(self):
             raise KeyboardInterrupt()
@@ -405,14 +403,10 @@ def test_run_interactive_exits_cleanly_on_keyboard_interrupt_at_prompt(monkeypat
     exit_code = interactive.run_interactive()
 
     assert exit_code == 0
-    captured = capsys.readouterr()
-    assert "Goodbye" in captured.out
 
 
 # A KeyboardInterrupt raised mid-conversation ends the session the same way as /exit. (edge)
-def test_run_interactive_exits_cleanly_on_keyboard_interrupt_mid_conversation(
-    monkeypatch, capsys
-):
+def test_run_interactive_exits_cleanly_on_keyboard_interrupt_mid_conversation(monkeypatch):
     def _raise(*args, **kwargs):
         raise KeyboardInterrupt()
 
@@ -423,8 +417,6 @@ def test_run_interactive_exits_cleanly_on_keyboard_interrupt_mid_conversation(
     exit_code = interactive.run_interactive()
 
     assert exit_code == 0
-    captured = capsys.readouterr()
-    assert "Goodbye" in captured.out
 
 
 # A blank line, or a question that happens to contain the literal word "exit", does

@@ -19,10 +19,14 @@ def _make_console(force_terminal: bool | None = None) -> Console:
     return Console(force_terminal=force_terminal)
 
 
+_AI_BACKGROUND_STYLE = "on #00384A"
+
+
 def _print_turn(console: Console, speaker: str, content: str) -> None:
     label = _SPEAKER_LABELS[speaker]
     separator = "\n" if "\n" in content else " "
-    console.print(Text(f"{label}:{separator}{content}"))
+    style = _AI_BACKGROUND_STYLE if speaker == "ai" else None
+    console.print(Text(f"{label}:{separator}{content}", style=style))
 
 
 def _invoke_with_status(console: Console, graph, state_or_command, config) -> SupportState:
@@ -40,6 +44,7 @@ def _run_conversation(console: Console, graph, query: str) -> SupportState:
         _print_turn(console, "ai", result["__interrupt__"][0].value)
         console.print("> ", end="")
         answer = sys.stdin.readline().rstrip("\n")
+        console.print()
         result = _invoke_with_status(console, graph, Command(resume=answer), config)
 
     return result
@@ -64,15 +69,15 @@ def run_interactive() -> int:
             query = sys.stdin.readline().rstrip("\n")
 
             if query.strip().lower() == "/exit":
-                console.print("Goodbye!")
                 return 0
 
+            console.print()
             result = _run_conversation(console, graph, query)
 
             content = result["messages"][-1].content if result.get("messages") else ""
             _print_turn(console, "ai", content)
         except KeyboardInterrupt:
-            console.print("\nGoodbye!")
+            console.print()
             return 0
         except Exception as exc:
             console.print(Text(f"Error: {exc}", style="bold red"))
