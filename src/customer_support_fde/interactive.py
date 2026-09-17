@@ -40,6 +40,7 @@ def _run_conversation(console: Console, graph, query: str) -> SupportState:
         _print_turn(console, "ai", result["__interrupt__"][0].value)
         console.print("> ", end="")
         answer = sys.stdin.readline().rstrip("\n")
+        console.print()
         result = _invoke_with_status(console, graph, Command(resume=answer), config)
 
     return result
@@ -66,6 +67,7 @@ def run_interactive() -> int:
             if query.strip().lower() == "/exit":
                 return 0
 
+            console.print()
             result = _run_conversation(console, graph, query)
 
             content = result["messages"][-1].content if result.get("messages") else ""
