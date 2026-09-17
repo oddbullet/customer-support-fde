@@ -561,6 +561,77 @@ def test_sign_up_account_number_is_retrievable_in_a_later_conversation(
     )
 
 
+# The resume that merely acknowledges the sign-up message must not create a
+# second account behind the scenes: the account number recorded in the
+# conversation's own final state must match the one shown to the customer,
+# and exactly one row must exist for it. (regression)
+def test_sign_up_does_not_duplicate_account_on_acknowledgement_resume(
+    monkeypatch, tmp_path
+):
+    db_path = _use_tmp_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        router_agent,
+        "_build_llm",
+        lambda: _fake_router_llm(
+            RouterDecision(destination="order_support", sentiment="neutral")
+        ),
+    )
+    monkeypatch.setattr(
+        order_support_agent,
+        "_build_llm",
+        lambda: _fake_order_llm([AIMessage(content="Sure, how can I help?")]),
+    )
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    initial_state = {
+        "user_query": "I'd like to sign up",
+        "destination": "order_support",
+        "sentiment": None,
+        "messages": [],
+        "menu": SAMPLE_MENU,
+        "cart_items": {},
+        "order_confirmed": False,
+        "order_ticket": None,
+        "order_summary": None,
+        "order_id": None,
+        "order_lookup": None,
+        "refund_resolved": False,
+        "refund_request": None,
+        "complaint_ids": {},
+        "refund_ticket": None,
+        "order_conversation_summary": None,
+        "refund_conversation_summary": None,
+        "account_number": None,
+        "account_preferences": None,
+    }
+
+    result = graph.invoke(initial_state, config)
+    assert "__interrupt__" in result
+
+    result = graph.invoke(Command(resume="3"), config)
+    assert "__interrupt__" in result
+    sign_up_message = result["__interrupt__"][0].value
+    formatted_number = next(
+        token.strip(".") for token in sign_up_message.split() if "-" in token
+    )
+
+    result = graph.invoke(Command(resume="ok"), config)
+    assert "__interrupt__" in result
+
+    final_state = graph.get_state(config).values
+    assert final_state["account_number"] == db.normalize_account_number(
+        formatted_number
+    )
+
+    conn = sqlite3.connect(db_path)
+    try:
+        account_count = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+    finally:
+        conn.close()
+    assert account_count == 1
+
+
 # Continuing without an account reaches call_model within the same invoke cycle with
 # both account fields None, and no account-preferences SystemMessage in context. (base)
 def test_continue_without_account_reaches_call_model_with_no_account_state(monkeypatch):
