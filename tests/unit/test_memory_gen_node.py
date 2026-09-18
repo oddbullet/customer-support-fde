@@ -54,16 +54,20 @@ def test_memory_gen_node_guest_return_contains_no_other_key():
     assert list(result.keys()) == []
 
 
-def _patch_memory_gen_llm(monkeypatch, reply_content):
+def _patch_memory_gen_llm(monkeypatch, preferences):
+    fake_structured_llm = MagicMock()
+    fake_structured_llm.invoke.return_value = (
+        memory_gen_node_module._PreferenceExtraction(preferences=preferences)
+    )
     fake_llm = MagicMock()
-    fake_llm.invoke.return_value = AIMessage(content=reply_content)
+    fake_llm.with_structured_output.return_value = fake_structured_llm
     monkeypatch.setattr(memory_gen_node_module, "_build_llm", lambda: fake_llm)
-    return fake_llm
+    return fake_structured_llm
 
 
 # Account present, no prior preferences, model finds a like/dislike/allergy →
 # update_account_preferences is called once with the account number and the
-# model's returned text. (base, FR-001, FR-003)
+# structured output's preferences field. (base, FR-001, FR-003)
 def test_memory_gen_node_calls_update_with_extracted_preferences(monkeypatch):
     _patch_memory_gen_llm(monkeypatch, "Allergies: peanuts. Likes: spicy food.")
     mock_update = MagicMock()
@@ -85,11 +89,11 @@ def test_memory_gen_node_calls_update_with_extracted_preferences(monkeypatch):
 
 # Prior preferences exist → the request sent to the model includes a message
 # carrying that prior text, and update_account_preferences is called with the
-# model's combined reply. (base, FR-005)
+# structured output's combined preferences field. (base, FR-005)
 def test_memory_gen_node_includes_prior_preferences_in_request_and_combines(
     monkeypatch,
 ):
-    fake_llm = _patch_memory_gen_llm(
+    fake_structured_llm = _patch_memory_gen_llm(
         monkeypatch, "Allergies: peanuts. Dislikes: onions."
     )
     mock_update = MagicMock()
@@ -101,17 +105,17 @@ def test_memory_gen_node_includes_prior_preferences_in_request_and_combines(
 
     memory_gen_node(state)
 
-    sent_messages = fake_llm.invoke.call_args[0][0]
+    sent_messages = fake_structured_llm.invoke.call_args[0][0]
     assert any("Allergies: peanuts." in m.content for m in sent_messages)
     mock_update.assert_called_once_with(
         "K7QP3M9X", "Allergies: peanuts. Dislikes: onions."
     )
 
 
-# Model replies exactly "None" (any case/whitespace) → update_account_preferences
+# Structured output's preferences field is null → update_account_preferences
 # is NOT called. (edge, FR-006)
-def test_memory_gen_node_none_reply_skips_write(monkeypatch):
-    _patch_memory_gen_llm(monkeypatch, "  NoNe  ")
+def test_memory_gen_node_null_preferences_skips_write(monkeypatch):
+    _patch_memory_gen_llm(monkeypatch, None)
     mock_update = MagicMock()
     monkeypatch.setattr(db, "update_account_preferences", mock_update)
     state = _base_state()
@@ -132,7 +136,9 @@ def test_memory_gen_node_none_reply_skips_write(monkeypatch):
 def test_memory_gen_node_system_prompt_covers_customizations_and_allergy_distinction(
     monkeypatch,
 ):
-    fake_llm = _patch_memory_gen_llm(monkeypatch, "Dislikes: onions (one order).")
+    fake_structured_llm = _patch_memory_gen_llm(
+        monkeypatch, "Dislikes: onions (one order)."
+    )
     monkeypatch.setattr(db, "update_account_preferences", MagicMock())
     state = _base_state()
     state["account_number"] = "K7QP3M9X"
@@ -141,18 +147,43 @@ def test_memory_gen_node_system_prompt_covers_customizations_and_allergy_distinc
 
     memory_gen_node(state)
 
-    sent_messages = fake_llm.invoke.call_args[0][0]
+    sent_messages = fake_structured_llm.invoke.call_args[0][0]
     system_messages = [m for m in sent_messages if isinstance(m, SystemMessage)]
     prompt_text = " ".join(m.content.lower() for m in system_messages)
     assert "customization" in prompt_text or "one-off" in prompt_text
     assert "allerg" in prompt_text
 
 
+# The system prompt explicitly tells the model to ignore order logistics and
+# the assistant's own messages, so it isn't tempted to record a pickup-time
+# or order-confirmation line as a preference. (regression — a real
+# conversation caused the extraction to save "Estimated pickup: 6:05 PM" and
+# an order-confirmation pleasantry as a customer's stored preferences)
+def test_memory_gen_node_system_prompt_excludes_order_logistics(monkeypatch):
+    fake_structured_llm = _patch_memory_gen_llm(monkeypatch, None)
+    state = _base_state()
+    state["account_number"] = "K7QP3M9X"
+    state["account_preferences"] = None
+    state["messages"] = [
+        AIMessage(content="Great, your order is confirmed! Estimated pickup: 6:05 PM.")
+    ]
+
+    memory_gen_node(state)
+
+    sent_messages = fake_structured_llm.invoke.call_args[0][0]
+    system_messages = [m for m in sent_messages if isinstance(m, SystemMessage)]
+    prompt_text = " ".join(m.content.lower() for m in system_messages)
+    assert "pickup" in prompt_text or "logistics" in prompt_text
+    assert "ignore" in prompt_text
+
+
 # The model call raising an exception → the function returns {} and
 # update_account_preferences is never called. (error, FR-008)
 def test_memory_gen_node_model_call_failure_returns_empty_dict(monkeypatch, caplog):
+    fake_structured_llm = MagicMock()
+    fake_structured_llm.invoke.side_effect = RuntimeError("model unavailable")
     fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = RuntimeError("model unavailable")
+    fake_llm.with_structured_output.return_value = fake_structured_llm
     monkeypatch.setattr(memory_gen_node_module, "_build_llm", lambda: fake_llm)
     mock_update = MagicMock()
     monkeypatch.setattr(db, "update_account_preferences", mock_update)

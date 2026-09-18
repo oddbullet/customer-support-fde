@@ -1,3 +1,4 @@
+from langgraph.func import task
 from langgraph.types import interrupt
 
 from customer_support_fde import db
@@ -47,8 +48,13 @@ def _use_existing_account() -> SupportState:
         return _no_account()
 
 
+@task
+def _create_account() -> str:
+    return db.create_account()
+
+
 def _sign_up() -> SupportState:
-    account_number = db.create_account()
+    account_number = _create_account().result()
     interrupt(
         f"Your new account number is {db.format_account_number(account_number)}. "
         "Please save it for future visits."

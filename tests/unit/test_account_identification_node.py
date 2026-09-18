@@ -133,13 +133,18 @@ def test_recovery_menu_try_again_loops_back_and_succeeds(monkeypatch):
     assert result == {"account_number": "K7QP3M9X", "account_preferences": None}
 
 
-# Replying "3" at the primary menu calls db.create_account, returns the new number
-# with no preferences, and shows the customer the formatted account number. (base)
+# Replying "3" at the primary menu calls the (task-wrapped) account creation,
+# returns the new number with no preferences, and shows the customer the
+# formatted account number. _create_account is mocked directly rather than
+# db.create_account because @task requires a real graph run to resolve its
+# future, which these direct-call unit tests don't provide. (base)
 def test_primary_menu_sign_up_creates_account_and_shows_formatted_number(monkeypatch):
     fake_interrupt = MagicMock(side_effect=["3", "ok"])
     monkeypatch.setattr(node_module, "interrupt", fake_interrupt)
+    fake_future = MagicMock()
+    fake_future.result.return_value = "K7QP3M9X"
     monkeypatch.setattr(
-        node_module.db, "create_account", MagicMock(return_value="K7QP3M9X")
+        node_module, "_create_account", MagicMock(return_value=fake_future)
     )
     state = _base_state()
 
@@ -156,8 +161,10 @@ def test_recovery_menu_sign_up_matches_primary_menu_sign_up(monkeypatch):
     fake_interrupt = MagicMock(side_effect=["1", "NOTAREAL1", "2", "ok"])
     monkeypatch.setattr(node_module, "interrupt", fake_interrupt)
     monkeypatch.setattr(node_module.db, "get_account", MagicMock(return_value=None))
+    fake_future = MagicMock()
+    fake_future.result.return_value = "K7QP3M9X"
     monkeypatch.setattr(
-        node_module.db, "create_account", MagicMock(return_value="K7QP3M9X")
+        node_module, "_create_account", MagicMock(return_value=fake_future)
     )
     state = _base_state()
 
