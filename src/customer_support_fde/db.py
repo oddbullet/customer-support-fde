@@ -127,7 +127,7 @@ def _resolve_path(path: Path | str | None) -> Path:
 
 def _remedy(path: Path) -> str:
     return (
-        f"Menu database not found at '{path}'. Run: customer-support-fde --init-db"
+        f"Menu database not found at '{path}'. Run: uv run start --init-db"
     )
 
 
@@ -186,7 +186,7 @@ def load_menu(path: Path | str | None = None) -> list[MenuItem]:
         except sqlite3.Error as exc:
             raise MenuStoreError(
                 f"Menu database at '{resolved}' is missing the menu_items table. "
-                f"Run: customer-support-fde --init-db"
+                f"Run: uv run start --init-db"
             ) from exc
 
         menu: list[MenuItem] = []

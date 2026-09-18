@@ -37,7 +37,7 @@ The menu and confirmed orders live in a SQLite database, not `menu/menu.json` (w
 serves as seed data). Before running any conversation, initialize and seed the database:
 
 ```
-customer-support-fde --init-db
+uv run start --init-db
 ```
 
 This is idempotent and safe to re-run after editing `menu.json` — it updates existing dishes and
@@ -48,3 +48,12 @@ Re-run `--init-db` on an existing database too: it also creates the `refund_requ
 `refund_request_lines`, `complaints`, and `accounts` tables used by the refund agent and the
 customer account identification node, and is safe to run against a database that already has
 orders in it.
+
+To inspect the compiled LangGraph topology, run:
+
+```
+uv run start --graph
+```
+
+This renders the current graph as a PNG to `graph.png` in the working directory. Rendering is
+done via the public Mermaid.ink API, so this requires internet access.
