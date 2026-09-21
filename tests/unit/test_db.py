@@ -770,7 +770,6 @@ def test_extend_complaint_updates_fields_but_preserves_id_and_created_at(tmp_pat
     assert updated["id"] == original["id"]
     assert updated["created_at"] == original["created_at"]
     assert updated["description"] == "Second complaint, same issue."
-    assert updated["updated_at"] != original["updated_at"] or True
 
 
 # list_complaints returns newest first. (base)

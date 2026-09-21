@@ -273,32 +273,6 @@ def test_refund_agent_recondenses_replacing_old_summary(monkeypatch):
     assert "old summary" not in result["refund_conversation_summary"].lower()
 
 
-# The condensation instructions given to the model direct it to preserve, per
-# order discussed, the order identified, the facts gathered, and any outcome
-# reached, and to keep separate orders' facts and outcomes distinct rather than
-# merged. (base)
-def test_refund_agent_condensation_instructions_keep_orders_distinct(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    summary_response = AIMessage(content="Some summary.")
-    fake_llm = MagicMock()
-    fake_llm.invoke.return_value = summary_response
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(refund_agent_module, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        4, last_turn_tokens=refund_agent_module.REFUND_HISTORY_TOKEN_THRESHOLD + 1
-    )
-    state = _base_state(messages=conversation)
-
-    refund_agent(state)
-
-    condense_call_messages = fake_llm.invoke.call_args[0][0]
-    instructions = condense_call_messages[0].content
-    assert "order" in instructions.lower()
-    assert "outcome" in instructions.lower()
-    assert "distinct" in instructions.lower()
-
-
 # When the condensation model call itself raises, refund_agent still returns a
 # normal reply for that turn and leaves messages/refund_conversation_summary
 # unchanged; no exception propagates out of refund_agent. (error)

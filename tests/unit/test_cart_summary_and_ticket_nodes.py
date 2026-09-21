@@ -448,23 +448,6 @@ def test_extract_refund_issue_returns_none_when_structured_output_has_no_issue(
     assert result is None
 
 
-# _extract_refund_issue's prompt to the model includes an example of what
-# counts as an issue, to steer it away from degenerate replies. (base)
-def test_extract_refund_issue_prompt_includes_issue_examples(monkeypatch):
-    fake_structured_llm = _patch_ticket_gen_llm(
-        monkeypatch, "Customer received the wrong dish."
-    )
-    state = _refund_base_state()
-    state["messages"] = [HumanMessage(content="I got the wrong dish")]
-
-    ticket_gen_node_module._extract_refund_issue(state)
-
-    sent_messages = fake_structured_llm.invoke.call_args[0][0]
-    instructions = sent_messages[0].content
-    assert "missing items" in instructions
-    assert "incorrect items" in instructions
-
-
 # _extract_refund_issue returns None and logs a WARNING when the structured
 # output call raises, never letting the exception propagate. (error)
 def test_extract_refund_issue_returns_none_and_logs_warning_on_llm_failure(

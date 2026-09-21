@@ -1,12 +1,16 @@
 import sys
+from pathlib import Path
 
 from customer_support_fde import db, interactive
+from customer_support_fde.graph import build_graph
 from customer_support_fde.tracing import setup_tracing
 
 from dotenv import load_dotenv
 
 load_dotenv()
 setup_tracing()
+
+GRAPH_FILENAME = "graph.png"
 
 
 def run(argv: list[str] | None = None) -> int:
@@ -22,6 +26,17 @@ def run(argv: list[str] | None = None) -> int:
         try:
             count = db.init_database()
             print(f"Initialized {db.database_path()} with {count} menu items.")
+        except Exception as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        return 0
+
+    if "--graph" in argv:
+        try:
+            output_path = Path(GRAPH_FILENAME)
+            png_bytes = build_graph().get_graph().draw_mermaid_png()
+            output_path.write_bytes(png_bytes)
+            print(f"Wrote graph to {output_path.resolve()}")
         except Exception as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1

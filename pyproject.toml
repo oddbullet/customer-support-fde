@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-customer-support-fde = "customer_support_fde:main"
+start = "customer_support_fde:main"
 
 [tool.pytest.ini_options]
 addopts = "--basetemp=.pytest-tmp"
