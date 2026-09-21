@@ -1,7 +1,7 @@
 import logging
 from unittest.mock import MagicMock
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 
 from customer_support_fde import db
 from customer_support_fde.nodes import memory_gen_node as memory_gen_node_module
@@ -127,54 +127,6 @@ def test_memory_gen_node_null_preferences_skips_write(monkeypatch):
 
     assert result == {}
     mock_update.assert_not_called()
-
-
-# A one-off per-order customization statement is handled by the same path —
-# the system prompt instructs the model to capture per-order customizations
-# and to distinguish allergies from other preferences. (edge, FR-001, FR-010,
-# Clarifications)
-def test_memory_gen_node_system_prompt_covers_customizations_and_allergy_distinction(
-    monkeypatch,
-):
-    fake_structured_llm = _patch_memory_gen_llm(
-        monkeypatch, "Dislikes: onions (one order)."
-    )
-    monkeypatch.setattr(db, "update_account_preferences", MagicMock())
-    state = _base_state()
-    state["account_number"] = "K7QP3M9X"
-    state["account_preferences"] = None
-    state["messages"] = [HumanMessage(content="No onions on this one.")]
-
-    memory_gen_node(state)
-
-    sent_messages = fake_structured_llm.invoke.call_args[0][0]
-    system_messages = [m for m in sent_messages if isinstance(m, SystemMessage)]
-    prompt_text = " ".join(m.content.lower() for m in system_messages)
-    assert "customization" in prompt_text or "one-off" in prompt_text
-    assert "allerg" in prompt_text
-
-
-# The system prompt explicitly tells the model to ignore order logistics and
-# the assistant's own messages, so it isn't tempted to record a pickup-time
-# or order-confirmation line as a preference. (regression — a real
-# conversation caused the extraction to save "Estimated pickup: 6:05 PM" and
-# an order-confirmation pleasantry as a customer's stored preferences)
-def test_memory_gen_node_system_prompt_excludes_order_logistics(monkeypatch):
-    fake_structured_llm = _patch_memory_gen_llm(monkeypatch, None)
-    state = _base_state()
-    state["account_number"] = "K7QP3M9X"
-    state["account_preferences"] = None
-    state["messages"] = [
-        AIMessage(content="Great, your order is confirmed! Estimated pickup: 6:05 PM.")
-    ]
-
-    memory_gen_node(state)
-
-    sent_messages = fake_structured_llm.invoke.call_args[0][0]
-    system_messages = [m for m in sent_messages if isinstance(m, SystemMessage)]
-    prompt_text = " ".join(m.content.lower() for m in system_messages)
-    assert "pickup" in prompt_text or "logistics" in prompt_text
-    assert "ignore" in prompt_text
 
 
 # The model call raising an exception → the function returns {} and

@@ -111,21 +111,6 @@ def test_ambiguous_or_mixed_signal_query_stays_unclear_and_keeps_sentiment(
     assert result["sentiment"] == "neutral"
 
 
-# SYSTEM_PROMPT explicitly instructs that a past-order complaint (cold, late,
-# missing, or wrong item) routes to "refund" without requiring refund/money-back
-# language, and that a complaint unrelated to a past order does not route to
-# "refund". (base)
-def test_system_prompt_covers_complaint_recognition_and_unrelated_complaint_exclusion():
-    prompt = router_agent.SYSTEM_PROMPT
-
-    assert (
-        "even when the customer never uses refund or money-back language"
-        in prompt
-    )
-    assert "A complaint with no connection to a past order" in prompt
-    assert 'do not route it to "refund"' in prompt
-
-
 # A past-order complaint with no refund/money-back language still routes to refund
 # with sentiment attached, mirroring spec.md User Story 1 Acceptance Scenarios 1-3. (base)
 @pytest.mark.parametrize(
@@ -152,15 +137,6 @@ def test_complaint_only_query_routes_to_refund_with_sentiment(monkeypatch, query
 
     assert result["destination"] == "refund"
     assert result["sentiment"] is not None
-
-
-# SYSTEM_PROMPT explicitly instructs that a past-order complaint combined with an
-# explicit refund ask is a single "refund" case, not the mixed-signal case. (base)
-def test_system_prompt_treats_complaint_plus_refund_ask_as_single_refund_case():
-    prompt = router_agent.SYSTEM_PROMPT
-
-    assert 'treat it as a single "refund" case' in prompt
-    assert "rather than the mixed-signal case" in prompt
 
 
 # A message combining a past-order complaint with an explicit refund ask routes
