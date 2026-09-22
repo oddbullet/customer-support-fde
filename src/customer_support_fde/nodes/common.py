@@ -8,12 +8,14 @@ DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 HISTORY_TOKEN_THRESHOLD = 40_000
 
+LLM_MAX_RETRIES = 3
 
 def build_llm() -> ChatOpenAI:
     return ChatOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=os.environ.get("OPENROUTER_API_KEY"),
         model=os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
+        max_retries=LLM_MAX_RETRIES,
     )
 
 
@@ -58,6 +60,7 @@ def prompt_until(
 __all__ = [
     "DEFAULT_MODEL",
     "HISTORY_TOKEN_THRESHOLD",
+    "LLM_MAX_RETRIES",
     "build_llm",
     "estimate_token_count",
     "condense_messages",
