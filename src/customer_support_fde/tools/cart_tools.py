@@ -38,18 +38,19 @@ def add_items_to_cart(
     """Add one or more menu items to the customer's cart.
 
     Args:
-        items: Mapping of menu item name to the quantity to add.
+        items: Mapping of menu item name to the quantity to add. Quantities
+            must be positive; zero or negative quantities are rejected.
     """
     cart = dict(state["cart_items"])
     menu = state["menu"]
     failed = []
     for name, quantity in items.items():
         match = resolve_menu_item(name, menu)
-        if match.status == "found":
-            item_name = match.item["name"]
-            cart[item_name] = cart.get(item_name, 0) + quantity
-        else:
+        if quantity <= 0 or match.status != "found":
             failed.append(name)
+            continue
+        item_name = match.item["name"]
+        cart[item_name] = cart.get(item_name, 0) + quantity
 
     return _cart_result(cart, failed, "add", tool_call_id)
 
@@ -63,7 +64,8 @@ def remove_items_from_cart(
     """Remove one or more menu items from the customer's cart.
 
     Args:
-        items: Mapping of menu item name to the quantity to remove. If the
+        items: Mapping of menu item name to the quantity to remove. Quantities
+            must be positive; zero or negative quantities are rejected. If the
             quantity given meets or exceeds what's currently in the cart,
             the entire entry is removed.
     """
@@ -71,6 +73,9 @@ def remove_items_from_cart(
     menu = state["menu"]
     failed = []
     for name, quantity in items.items():
+        if quantity <= 0:
+            failed.append(name)
+            continue
         match = resolve_menu_item(name, menu)
         if match.status != "found":
             failed.append(name)
