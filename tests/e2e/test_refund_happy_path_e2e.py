@@ -50,7 +50,7 @@ def test_missing_item_gets_refund(e2e_db):
         rubric=(
             "Across the conversation, the assistant must have clearly told "
             "the customer their refund request was submitted (awaiting "
-            "review) for $23.00 - never that it is already complete. "
+            "review) - never that it is already complete. "
             "Nothing later in the conversation may contradict that."
         ),
         transcript=transcript.format(),
