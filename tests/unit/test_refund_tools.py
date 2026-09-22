@@ -1,4 +1,6 @@
+import pytest
 from langgraph.types import Command
+from pydantic import ValidationError
 
 from customer_support_fde import db
 from customer_support_fde.tools.refund_tools import (
@@ -133,6 +135,14 @@ def _invoke_process_refund(
         state={"order_lookup": order, "complaint_ids": complaint_ids or {}},
         tool_call_id="call_1",
     )
+
+
+# A zero or negative undelivered quantity is rejected before it can record a $0.00 or
+# negative refund amount. (negative)
+@pytest.mark.parametrize("quantity", [0, -1])
+def test_undelivered_item_with_non_positive_quantity_is_rejected(quantity):
+    with pytest.raises(ValidationError):
+        UndeliveredItem(name="Mapo Tofu", quantity=quantity)
 
 
 # The eligible path writes a request and the reply states the amount and that it is

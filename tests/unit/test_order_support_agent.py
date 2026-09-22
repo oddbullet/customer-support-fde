@@ -222,7 +222,7 @@ def test_add_items_to_cart_tool_call_updates_cart_items(monkeypatch):
         tool_calls=[
             {
                 "name": "add_items_to_cart",
-                "args": {"items": {"Kung Pao Chicken": 1}},
+                "args": {"items": [{"name": "Kung Pao Chicken", "quantity": 1}]},
                 "id": "call_1",
             }
         ],
@@ -242,7 +242,7 @@ def test_add_items_to_cart_tool_call_batch_updates_cart_items(monkeypatch):
         tool_calls=[
             {
                 "name": "add_items_to_cart",
-                "args": {"items": {"Kung Pao Chicken": 1, "Spring Rolls": 1}},
+                "args": {"items": [{"name": "Kung Pao Chicken", "quantity": 1}, {"name": "Spring Rolls", "quantity": 1}]},
                 "id": "call_1",
             }
         ],
@@ -266,7 +266,7 @@ def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_cart_items_unchange
         tool_calls=[
             {
                 "name": "add_items_to_cart",
-                "args": {"items": {"Pizza": 1, "Beef Noodle": 1}},
+                "args": {"items": [{"name": "Pizza", "quantity": 1}, {"name": "Beef Noodle", "quantity": 1}]},
                 "id": "call_1",
             }
         ],
@@ -286,7 +286,7 @@ def test_remove_items_from_cart_tool_call_quantity_matching_deletes_entry(monkey
         tool_calls=[
             {
                 "name": "remove_items_from_cart",
-                "args": {"items": {"Kung Pao Chicken": 2}},
+                "args": {"items": [{"name": "Kung Pao Chicken", "quantity": 2}]},
                 "id": "call_1",
             }
         ],
@@ -309,7 +309,7 @@ def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatc
         tool_calls=[
             {
                 "name": "remove_items_from_cart",
-                "args": {"items": {"Kung Pao Chicken": 1}},
+                "args": {"items": [{"name": "Kung Pao Chicken", "quantity": 1}]},
                 "id": "call_1",
             }
         ],

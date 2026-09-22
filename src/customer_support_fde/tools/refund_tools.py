@@ -6,15 +6,15 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from customer_support_fde import db, refund_policy
 from customer_support_fde.state import SupportState
 
 
 class UndeliveredItem(BaseModel):
-    name: str
-    quantity: int
+    name: str = Field(description="Name of the ordered dish that was not received.")
+    quantity: int = Field(gt=0, description="How many were not received. Must be positive.")
 
 
 def _render_order(order: dict) -> str:

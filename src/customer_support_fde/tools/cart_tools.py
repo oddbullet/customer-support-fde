@@ -4,9 +4,15 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
+from pydantic import BaseModel, Field
 
 from customer_support_fde.state import SupportState
 from customer_support_fde.tools.menu_tools import cart_total, resolve_menu_item
+
+
+class CartItem(BaseModel):
+    name: str = Field(description="Menu item name.")
+    quantity: int = Field(gt=0, description="How many. Must be positive.")
 
 
 def _format_cart_state(cart: dict[str, int]) -> str:
@@ -31,64 +37,59 @@ def _cart_result(
 
 @tool
 def add_items_to_cart(
-    items: dict[str, int],
+    items: list[CartItem],
     state: Annotated[SupportState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
     """Add one or more menu items to the customer's cart.
 
     Args:
-        items: Mapping of menu item name to the quantity to add. Quantities
-            must be positive; zero or negative quantities are rejected.
+        items: The menu items to add, each with the quantity to add.
     """
     cart = dict(state["cart_items"])
     menu = state["menu"]
     failed = []
-    for name, quantity in items.items():
-        match = resolve_menu_item(name, menu)
-        if quantity <= 0 or match.status != "found":
-            failed.append(name)
+    for item in items:
+        match = resolve_menu_item(item.name, menu)
+        if match.status != "found":
+            failed.append(item.name)
             continue
         item_name = match.item["name"]
-        cart[item_name] = cart.get(item_name, 0) + quantity
+        cart[item_name] = cart.get(item_name, 0) + item.quantity
 
     return _cart_result(cart, failed, "add", tool_call_id)
 
 
 @tool
 def remove_items_from_cart(
-    items: dict[str, int],
+    items: list[CartItem],
     state: Annotated[SupportState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
     """Remove one or more menu items from the customer's cart.
 
     Args:
-        items: Mapping of menu item name to the quantity to remove. Quantities
-            must be positive; zero or negative quantities are rejected. If the
-            quantity given meets or exceeds what's currently in the cart,
+        items: The menu items to remove, each with the quantity to remove. If
+            the quantity given meets or exceeds what's currently in the cart,
             the entire entry is removed.
     """
     cart = dict(state["cart_items"])
     menu = state["menu"]
     failed = []
-    for name, quantity in items.items():
-        if quantity <= 0:
-            failed.append(name)
-            continue
-        match = resolve_menu_item(name, menu)
+    for item in items:
+        match = resolve_menu_item(item.name, menu)
         if match.status != "found":
-            failed.append(name)
+            failed.append(item.name)
             continue
         item_name = match.item["name"]
         current = cart.get(item_name)
         if current is None:
-            failed.append(name)
+            failed.append(item.name)
             continue
-        if quantity >= current:
+        if item.quantity >= current:
             del cart[item_name]
         else:
-            cart[item_name] -= quantity
+            cart[item_name] -= item.quantity
 
     return _cart_result(cart, failed, "remove", tool_call_id)
 
