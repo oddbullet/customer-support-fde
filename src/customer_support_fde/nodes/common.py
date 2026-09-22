@@ -8,12 +8,7 @@ DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 HISTORY_TOKEN_THRESHOLD = 40_000
 
-# Retries for a failed OpenRouter request, on top of the initial attempt. Applied by the
-# underlying OpenAI client and backed off between attempts, so it covers the HTTP call at
-# every call site, including the ones built by .bind_tools() and .with_structured_output().
-# Only the request is retried — tool functions run in ToolNode, outside this scope.
 LLM_MAX_RETRIES = 3
-
 
 def build_llm() -> ChatOpenAI:
     return ChatOpenAI(
