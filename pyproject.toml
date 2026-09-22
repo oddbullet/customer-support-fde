@@ -11,6 +11,7 @@ dependencies = [
     "langchain-openai>=1.6.1",
     "langgraph>=1.2.11",
     "openinference-instrumentation-langchain>=0.1.76",
+    "pydantic>=2.13.5",
     "pytest>=9.1.1",
     "python-dotenv>=1.2.3",
     "rich>=15.0.0",

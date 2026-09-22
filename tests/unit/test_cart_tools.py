@@ -1,6 +1,9 @@
+import pytest
 from langgraph.types import Command
+from pydantic import ValidationError
 
 from customer_support_fde.tools.cart_tools import (
+    CartItem,
     add_items_to_cart,
     get_cart,
     get_cart_total,
@@ -37,9 +40,13 @@ SAMPLE_MENU = [
 ]
 
 
-def _invoke_add(items, cart_items):
+def _cart_items(items: dict[str, int]) -> list[CartItem]:
+    return [CartItem(name=name, quantity=quantity) for name, quantity in items.items()]
+
+
+def _invoke_add(items: dict[str, int], cart_items):
     return add_items_to_cart.func(
-        items=items,
+        items=_cart_items(items),
         state={"cart_items": cart_items, "menu": SAMPLE_MENU},
         tool_call_id="call_1",
     )
@@ -47,7 +54,7 @@ def _invoke_add(items, cart_items):
 
 def _invoke_remove(items: dict[str, int], cart_items):
     return remove_items_from_cart.func(
-        items=items,
+        items=_cart_items(items),
         state={"cart_items": cart_items, "menu": SAMPLE_MENU},
         tool_call_id="call_1",
     )
@@ -114,42 +121,31 @@ def test_batch_with_mixed_results_only_applies_found_items():
 # A negative quantity must be refused rather than applied. order_lines enforces
 # quantity > 0, so a negative cart entry would blow up the whole order at record
 # time rather than at the point the bad quantity was introduced. (negative)
-def test_add_with_negative_quantity_is_refused_and_reported():
-    result = _invoke_add({"Kung Pao Chicken": -2}, {})
-
-    assert result.update["cart_items"] == {}
-    tool_message = result.update["messages"][0]
-    assert tool_message.content == "Failed to add: Kung Pao Chicken\nCart is empty."
+def test_cart_item_with_negative_quantity_is_rejected():
+    with pytest.raises(ValidationError):
+        CartItem(name="Kung Pao Chicken", quantity=-2)
 
 
-# A negative add against an existing entry must not quietly discount it. (negative)
-def test_add_with_negative_quantity_leaves_existing_entry_untouched():
-    result = _invoke_add({"Kung Pao Chicken": -5}, {"Kung Pao Chicken": 3})
-
-    assert result.update["cart_items"] == {"Kung Pao Chicken": 3}
-
-
-# Zero adds nothing, so it is refused like any other non-positive quantity rather
-# than reported as a success. (negative)
-def test_add_with_zero_quantity_is_refused():
-    result = _invoke_add({"Spring Rolls": 0}, {})
-
-    assert result.update["cart_items"] == {}
-    tool_message = result.update["messages"][0]
-    assert tool_message.content == "Failed to add: Spring Rolls\nCart is empty."
+# Zero adds or removes nothing, so it is refused like any other non-positive
+# quantity. (negative)
+def test_cart_item_with_zero_quantity_is_rejected():
+    with pytest.raises(ValidationError):
+        CartItem(name="Spring Rolls", quantity=0)
 
 
-# A non-positive quantity fails on its own without blocking the valid items batched
-# alongside it. (edge)
-def test_add_batch_applies_valid_items_and_refuses_non_positive_one():
-    result = _invoke_add({"Kung Pao Chicken": 2, "Spring Rolls": -1}, {})
-
-    assert result.update["cart_items"] == {"Kung Pao Chicken": 2}
-    tool_message = result.update["messages"][0]
-    assert (
-        tool_message.content
-        == "Failed to add: Spring Rolls\nCurrent cart:\n- Kung Pao Chicken x2"
-    )
+# A non-positive quantity anywhere in a tool call's items rejects the whole call, so
+# the model gets the validation error back and retries. (edge)
+@pytest.mark.parametrize("tool", [add_items_to_cart, remove_items_from_cart])
+def test_tool_call_with_one_non_positive_quantity_is_rejected(tool):
+    with pytest.raises(ValidationError):
+        tool.tool_call_schema.model_validate(
+            {
+                "items": [
+                    {"name": "Kung Pao Chicken", "quantity": 2},
+                    {"name": "Spring Rolls", "quantity": -1},
+                ]
+            }
+        )
 
 
 # The tool must copy the cart rather than mutate the caller's state dict in place. (regression)
@@ -256,30 +252,6 @@ def test_batch_with_mixed_results_applies_only_found_and_in_cart_items():
     assert (
         tool_message.content
         == "Failed to remove: Mapo Tofu, Pizza, Beef Noodle\nCurrent cart:\n- Spring Rolls x2"
-    )
-
-
-# A negative removal quantity must be refused, not treated as an add. (negative)
-def test_remove_with_negative_quantity_is_refused_and_reported():
-    result = _invoke_remove({"Kung Pao Chicken": -2}, {"Kung Pao Chicken": 1})
-
-    assert result.update["cart_items"] == {"Kung Pao Chicken": 1}
-    tool_message = result.update["messages"][0]
-    assert (
-        tool_message.content
-        == "Failed to remove: Kung Pao Chicken\nCurrent cart:\n- Kung Pao Chicken x1"
-    )
-
-
-# Zero removes nothing, so it is refused rather than reported as a success. (negative)
-def test_remove_with_zero_quantity_is_refused():
-    result = _invoke_remove({"Kung Pao Chicken": 0}, {"Kung Pao Chicken": 2})
-
-    assert result.update["cart_items"] == {"Kung Pao Chicken": 2}
-    tool_message = result.update["messages"][0]
-    assert (
-        tool_message.content
-        == "Failed to remove: Kung Pao Chicken\nCurrent cart:\n- Kung Pao Chicken x2"
     )
 
 
