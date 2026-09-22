@@ -20,7 +20,10 @@ dependencies = [
 start = "customer_support_fde:main"
 
 [tool.pytest.ini_options]
-addopts = "--basetemp=.pytest-tmp"
+addopts = "--basetemp=.pytest-tmp -m \"not e2e\""
+markers = [
+    "e2e: end-to-end tests that call the real OpenRouter LLM; excluded by default, run with `-m e2e`.",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
