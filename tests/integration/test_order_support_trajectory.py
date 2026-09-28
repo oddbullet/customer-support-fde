@@ -13,6 +13,7 @@ from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes import memory_gen_node, order_support_agent, router_agent
 from customer_support_fde.nodes.cart_summary_node import render_order_summary
 from customer_support_fde.nodes.router_agent import RouterDecision
+from customer_support_fde.state import initial_state
 
 from _trajectory import extract_outputs
 
@@ -1213,40 +1214,10 @@ def test_memory_gen_node_failure_does_not_affect_ticket_delivery(monkeypatch, tm
 
 
 def _order_initial_state(user_query: str) -> dict:
-    return {
-        "user_query": user_query,
-        "destination": "order_support",
-        "sentiment": None,
-        "messages": [],
-        "menu": SAMPLE_MENU,
-        "cart_items": {},
-        "order_confirmed": False,
-        "order_ticket": None,
-        "order_summary": None,
-        "order_id": None,
-        "order_lookup": None,
-        "refund_resolved": False,
-        "refund_request": None,
-        "complaint_ids": {},
-        "refund_ticket": None,
-        "order_conversation_summary": None,
-        "refund_conversation_summary": None,
-        "account_number": None,
-        "account_preferences": None,
-        "tool_limit_reached": None,
-    }
+    return {**initial_state(user_query), "menu": SAMPLE_MENU}
 
 
-def _get_menu_call(call_id: str) -> AIMessage:
-    return AIMessage(
-        content="", tool_calls=[{"name": "get_menu", "args": {}, "id": call_id}]
-    )
-
-
-# An order agent stuck calling get_menu runs it only 3 times, then the graph ends with
-# the tool-limit breach recorded and no order confirmed or ticket written. (base)
-def test_order_agent_same_tool_loop_stops_at_tool_limit(monkeypatch, tmp_path):
-    _use_tmp_db(monkeypatch, tmp_path)
+def _mock_order_router(monkeypatch) -> None:
     monkeypatch.setattr(
         router_agent,
         "_build_llm",
@@ -1254,7 +1225,20 @@ def test_order_agent_same_tool_loop_stops_at_tool_limit(monkeypatch, tmp_path):
             RouterDecision(destination="order_support", sentiment="neutral")
         ),
     )
-    order_llm = _fake_order_llm([_get_menu_call(f"call_{i}") for i in range(6)])
+
+
+def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
+    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": call_id}])
+
+
+# An order agent that calls get_menu over the limit runs it only 3 times, then the graph
+# ends with the breach recorded and no order confirmed or ticket written. (base)
+def test_order_agent_exceeding_tool_limit_ends_conversation(monkeypatch, tmp_path):
+    _use_tmp_db(monkeypatch, tmp_path)
+    _mock_order_router(monkeypatch)
+    order_llm = _fake_order_llm(
+        [_tool_call("get_menu", {}, f"call_{i}") for i in range(6)]
+    )
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
 
     graph = build_graph(checkpointer=MemorySaver())
@@ -1279,17 +1263,11 @@ def test_order_agent_same_tool_loop_stops_at_tool_limit(monkeypatch, tmp_path):
 # customer's reply so three more in the next turn don't trip it either. (regression)
 def test_three_same_tool_steps_per_turn_do_not_trip_limit(monkeypatch, tmp_path):
     _use_tmp_db(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        router_agent,
-        "_build_llm",
-        lambda: _fake_router_llm(
-            RouterDecision(destination="order_support", sentiment="neutral")
-        ),
-    )
+    _mock_order_router(monkeypatch)
     order_llm = _fake_order_llm(
-        [_get_menu_call(f"call_a{i}") for i in range(3)]
+        [_tool_call("get_menu", {}, f"call_a{i}") for i in range(3)]
         + [AIMessage(content="Here's the menu.")]
-        + [_get_menu_call(f"call_b{i}") for i in range(3)]
+        + [_tool_call("get_menu", {}, f"call_b{i}") for i in range(3)]
         + [AIMessage(content="Here it is again.")]
     )
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)

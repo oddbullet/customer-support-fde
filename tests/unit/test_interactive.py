@@ -506,9 +506,9 @@ def test_tool_limit_warning_text():
     )
 
 
-# When a conversation ends at the tool limit, the red warning is shown and the loop
-# waits for Enter before clearing the screen. (base)
-def test_run_interactive_shows_tool_limit_warning_before_clearing(monkeypatch, capsys):
+# When a conversation exceeds the tool limit, the red warning is shown, the loop waits
+# for Enter before clearing the screen, and no generic error line is printed. (base)
+def test_run_interactive_shows_warning_when_tool_limit_exceeded(monkeypatch, capsys):
     events = []
     monkeypatch.setattr(
         interactive,
@@ -529,23 +529,9 @@ def test_run_interactive_shows_tool_limit_warning_before_clearing(monkeypatch, c
     assert events == [("warning", interactive.TOOL_LIMIT_WARNING), ("clear",)]
     captured = capsys.readouterr()
     assert "Press Enter to start a new conversation." in captured.out
+    assert "Error:" not in captured.out
     # The blank line was consumed by the Enter pause, so /exit ends the session.
     assert stdin.read() == ""
-
-
-# A tool-limit ending is not reported as a crash: no generic error line is printed. (edge)
-def test_run_interactive_tool_limit_prints_no_error_line(monkeypatch, capsys):
-    monkeypatch.setattr(interactive.Console, "clear", lambda self: None)
-    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
-    monkeypatch.setattr(
-        interactive, "_run_conversation", lambda console, graph, query: _TOOL_LIMIT_STATE
-    )
-    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("hi\n\n/exit\n"))
-
-    exit_code = interactive.run_interactive()
-
-    assert exit_code == 0
-    assert "Error:" not in capsys.readouterr().out
 
 
 # Every line of a multi-line warning is rendered red. (edge)
@@ -561,7 +547,8 @@ def test_print_warning_colors_every_line_of_multiline_message():
 
 # Square brackets in a warning are printed literally, not parsed as Rich markup. (edge)
 def test_print_warning_does_not_parse_markup():
-    console = Console(file=io.StringIO(), force_terminal=False)
+    console = interactive._make_console(force_terminal=False)
+    console.file = io.StringIO()
 
     interactive.print_warning("[bold]not markup[/bold]", console)
 
@@ -580,11 +567,14 @@ def test_print_warning_emits_no_ansi_when_not_a_tty():
     assert "\x1b[" not in output
 
 
-# An empty warning prints without raising. (edge)
+# An empty warning prints an empty line without raising. (edge)
 def test_print_warning_accepts_empty_message():
-    console = _color_console()
+    console = interactive._make_console(force_terminal=False)
+    console.file = io.StringIO()
 
     interactive.print_warning("", console)
+
+    assert console.file.getvalue() == "\n"
 
 
 # With no console given, the warning prints to stdout via the default console. (base)

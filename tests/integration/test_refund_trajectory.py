@@ -548,9 +548,9 @@ def test_second_order_outcome_not_conflated_with_first_after_condensation(
     assert stored[0]["order_id"] == second_order_id
 
 
-# A refund agent stuck calling lookup_order runs it only 3 times, then the graph ends
-# with the tool-limit breach recorded and the refund left unresolved with no ticket. (base)
-def test_refund_agent_same_tool_loop_stops_at_tool_limit(monkeypatch, tmp_path):
+# A refund agent that calls lookup_order over the limit runs it only 3 times, then the
+# graph ends with the breach recorded and the refund left unresolved with no ticket. (base)
+def test_refund_agent_exceeding_tool_limit_ends_conversation(monkeypatch, tmp_path):
     db_path = _use_tmp_db(monkeypatch, tmp_path)
     order_id = _seed_order(db_path)
     _mock_router(monkeypatch)

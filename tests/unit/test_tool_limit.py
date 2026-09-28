@@ -39,22 +39,32 @@ def _history(*steps: list[AnyMessage]) -> list[AnyMessage]:
     return messages
 
 
+def _exceeding_limit(tool_name: str) -> list[AnyMessage]:
+    # A turn where the agent has called tool_name 3 times in a row and asks for a 4th.
+    return _history(
+        _step(tool_name), _step(tool_name), _step(tool_name), _pending(tool_name)
+    )
+
+
 # The limit is 3 consecutive calls to the same tool. (base)
 def test_max_consecutive_tool_calls_is_three():
     assert MAX_CONSECUTIVE_TOOL_CALLS == 3
 
 
-# A 4th consecutive step calling the same tool is reported as repeated. (base)
-def test_fourth_consecutive_call_to_same_tool_is_repeated():
+# A 4th consecutive get_menu call exceeds the limit of 3 and is reported. (base)
+def test_fourth_consecutive_get_menu_exceeds_limit():
     messages = _history(
-        _step("get_menu"), _step("get_menu"), _step("get_menu"), _pending("get_menu")
+        _step("get_menu"),  # 1
+        _step("get_menu"),  # 2
+        _step("get_menu"),  # 3
+        _pending("get_menu"),  # 4: over the limit
     )
 
     assert find_repeated_tool(messages) == "get_menu"
 
 
-# A 4th consecutive call still trips the limit when bundled with another tool in one step. (edge)
-def test_fourth_consecutive_call_bundled_with_another_tool_is_repeated():
+# A 4th consecutive call still exceeds the limit when bundled with another tool in one step. (edge)
+def test_fourth_consecutive_call_exceeds_limit_when_bundled_with_another_tool():
     messages = _history(
         _step("get_menu"),
         _step("get_menu"),
@@ -73,11 +83,9 @@ def test_first_over_limit_tool_in_call_order_is_reported():
     assert find_repeated_tool(messages) == "get_cart"
 
 
-# route_after_agent sends a 4th consecutive same-tool request to the tool-limit node. (base)
-def test_route_after_agent_routes_repeated_tool_to_tool_limit():
-    messages = _history(
-        _step("get_menu"), _step("get_menu"), _step("get_menu"), _pending("get_menu")
-    )
+# route_after_agent sends a call over the limit to the tool-limit node instead of the tools. (base)
+def test_route_after_agent_routes_call_over_limit_to_tool_limit():
+    messages = _exceeding_limit("get_menu")
 
     assert route_after_agent({"messages": messages}) == "tool_limit"
 
@@ -94,19 +102,6 @@ def test_route_after_agent_routes_plain_reply_to_end():
     messages = _history(_step("get_menu")) + [AIMessage(content="Here's the menu.")]
 
     assert route_after_agent({"messages": messages}) == "__end__"
-
-
-# tool_limit_node records the agent and the repeated tool. (base)
-def test_tool_limit_node_records_agent_and_tool():
-    messages = _history(
-        _step("get_menu"), _step("get_menu"), _step("get_menu"), _pending("get_menu")
-    )
-
-    result = tool_limit_node({"destination": "order_support", "messages": messages})
-
-    assert result == {
-        "tool_limit_reached": {"agent": "order_support", "tool": "get_menu"}
-    }
 
 
 # Histories that must NOT trip the limit: plain replies, exactly 3 in a row, runs broken
@@ -150,9 +145,7 @@ def test_find_repeated_tool_allows_legitimate_histories(messages):
 
 # ToolMessages between steps do not change the result. (edge)
 def test_tool_messages_between_steps_do_not_affect_result():
-    with_results = _history(
-        _step("get_menu"), _step("get_menu"), _step("get_menu"), _pending("get_menu")
-    )
+    with_results = _exceeding_limit("get_menu")
     without_results = [m for m in with_results if not isinstance(m, ToolMessage)]
 
     assert find_repeated_tool(with_results) == find_repeated_tool(without_results)
@@ -164,8 +157,8 @@ def test_tool_messages_between_steps_do_not_affect_result():
     ("destination", "tool"),
     [("refund", "lookup_order"), ("order_support", "add_items_to_cart")],
 )
-def test_tool_limit_node_reports_agent_and_tool_per_path(destination, tool):
-    messages = _history(_step(tool), _step(tool), _step(tool), _pending(tool))
+def test_tool_limit_node_records_which_agent_and_tool_exceeded_limit(destination, tool):
+    messages = _exceeding_limit(tool)
 
     result = tool_limit_node({"destination": destination, "messages": messages})
 
