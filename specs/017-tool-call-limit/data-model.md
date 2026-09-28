@@ -9,6 +9,7 @@ No database changes. The only change is to the in-memory graph state (`SupportSt
 | `tool_limit_reached` | `dict \| None` | `None` | `tool_limit_node` | `None` while the conversation is within the limit. Otherwise `{"agent": "order_support" \| "refund", "tool": str}`. |
 
 Validation:
+- The key is required, like every other `SupportState` field. Tools receive state via `InjectedState` typed as `SupportState`, and pydantic validates it against the TypedDict, so any hand-built state (including test fixtures) must include `"tool_limit_reached": None`.
 - `agent` is copied from `state["destination"]`, which is always `"order_support"` or `"refund"` once an agent node has run.
 - `tool` is the name of a tool in the newest `AIMessage.tool_calls` whose consecutive run was over the limit. If several tools are over the limit in the same step, it's the first one in `tool_calls` order.
 

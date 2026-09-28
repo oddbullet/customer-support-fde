@@ -27,6 +27,7 @@ class SupportState(TypedDict):
     refund_conversation_summary: str | None
     account_number: str | None
     account_preferences: str | None
+    tool_limit_reached: dict | None
 
 
 def initial_state(query: str) -> SupportState:
@@ -50,4 +51,5 @@ def initial_state(query: str) -> SupportState:
         "refund_conversation_summary": None,
         "account_number": None,
         "account_preferences": None,
+        "tool_limit_reached": None,
     }

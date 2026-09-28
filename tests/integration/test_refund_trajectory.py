@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 from agentevals.graph_trajectory.strict import graph_trajectory_strict_match
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
@@ -120,6 +120,7 @@ def test_qualifying_refund_conversation_creates_pending_request(monkeypatch, tmp
         "refund_conversation_summary": None,
         "account_number": None,
         "account_preferences": None,
+        "tool_limit_reached": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -171,6 +172,7 @@ def _run_denial_conversation(monkeypatch, tmp_path, order_id, process_args):
         "refund_conversation_summary": None,
         "account_number": None,
         "account_preferences": None,
+        "tool_limit_reached": None,
     }
 
     return graph.invoke(initial_state, config)
@@ -289,6 +291,7 @@ def test_complaint_only_conversation_creates_no_refund_request(monkeypatch, tmp_
         "refund_conversation_summary": None,
         "account_number": None,
         "account_preferences": None,
+        "tool_limit_reached": None,
     }
 
     result = graph.invoke(initial_state, config)
@@ -322,6 +325,7 @@ def _refund_initial_state(user_query: str) -> dict:
         "refund_conversation_summary": None,
         "account_number": None,
         "account_preferences": None,
+        "tool_limit_reached": None,
     }
 
 
@@ -542,3 +546,27 @@ def test_second_order_outcome_not_conflated_with_first_after_condensation(
     stored = db.list_refund_requests(db_path)
     assert len(stored) == 1
     assert stored[0]["order_id"] == second_order_id
+
+
+# A refund agent stuck calling lookup_order runs it only 3 times, then the graph ends
+# with the tool-limit breach recorded and the refund left unresolved with no ticket. (base)
+def test_refund_agent_same_tool_loop_stops_at_tool_limit(monkeypatch, tmp_path):
+    db_path = _use_tmp_db(monkeypatch, tmp_path)
+    order_id = _seed_order(db_path)
+    _mock_router(monkeypatch)
+    refund_llm = _fake_refund_llm(
+        [_tool_call("lookup_order", {"order_id": order_id}, f"call_{i}") for i in range(6)]
+    )
+    monkeypatch.setattr(refund_agent, "_build_llm", lambda: refund_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+
+    result = graph.invoke(_refund_initial_state("I never got my mapo tofu"), config)
+
+    assert "__interrupt__" not in result
+    assert result["tool_limit_reached"] == {"agent": "refund", "tool": "lookup_order"}
+    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert len(tool_messages) == 3
+    assert result["refund_resolved"] is False
+    assert result.get("refund_ticket") is None

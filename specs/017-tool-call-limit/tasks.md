@@ -34,7 +34,7 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
 
 **Purpose**: Confirm a green baseline before any change.
 
-- [ ] T001 Run `uv run pytest` from the repo root and record that the current suite passes. This is the baseline for SC-003. Stop and report if anything already fails.
+- [X] T001 Run `uv run pytest` from the repo root and record that the current suite passes. This is the baseline for SC-003. Stop and report if anything already fails.
 
 ---
 
@@ -46,20 +46,20 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
 
 ### Tests first (red)
 
-- [ ] T002 [P] In `tests/unit/test_state.py` (new file), add a test that `initial_state("hi")["tool_limit_reached"] is None` `(base)`. Mock `db.load_menu` with `monkeypatch.setattr(state.db, "load_menu", lambda: [])` so it doesn't touch a database.
-- [ ] T003 [P] In `tests/unit/test_interactive.py`, add a test that `interactive.print_warning("System issue", console)` prints the text in red `(base)`.
+- [X] T002 [P] In `tests/unit/test_state.py` (new file), add a test that `initial_state("hi")["tool_limit_reached"] is None` `(base)`. Mock `db.load_menu` with `monkeypatch.setattr(state.db, "load_menu", lambda: [])` so it doesn't touch a database.
+- [X] T003 [P] In `tests/unit/test_interactive.py`, add a test that `interactive.print_warning("System issue", console)` prints the text in red `(base)`.
   - Build the console as `Console(file=io.StringIO(), force_terminal=True, color_system="standard")`.
   - Assert the output contains `"System issue"` and the red SGR code `"\x1b[31m"`.
-- [ ] T004 Run `uv run pytest tests/unit/test_state.py tests/unit/test_interactive.py` and confirm T002 and T003 FAIL: missing key or `AttributeError: print_warning`. Don't implement until you've seen them fail.
+- [X] T004 Run `uv run pytest tests/unit/test_state.py tests/unit/test_interactive.py` and confirm T002 and T003 FAIL: missing key or `AttributeError: print_warning`. Don't implement until you've seen them fail.
 
 ### Implementation (green)
 
-- [ ] T005 [P] In `src/customer_support_fde/state.py`, add `tool_limit_reached: dict | None` to `SupportState`, and `"tool_limit_reached": None` to `initial_state()`. Per data-model.md, the field is "`None` while the conversation is within the limit. Otherwise `{"agent": "order_support" | "refund", "tool": str}`."
-- [ ] T006 [P] In `src/customer_support_fde/interactive.py`, add `print_warning(message: str, console: Console | None = None) -> None`, next to `_print_turn`.
+- [X] T005 [P] In `src/customer_support_fde/state.py`, add `tool_limit_reached: dict | None` to `SupportState`, and add `"tool_limit_reached": None` to every hand-built state dict in the tests (tools validate `InjectedState` against the TypedDict; see data-model.md), and `"tool_limit_reached": None` to `initial_state()`. Per data-model.md, the field is "`None` while the conversation is within the limit. Otherwise `{"agent": "order_support" | "refund", "tool": str}`."
+- [X] T006 [P] In `src/customer_support_fde/interactive.py`, add `print_warning(message: str, console: Console | None = None) -> None`, next to `_print_turn`.
   - It prints `Text(message, style="red")`, which uses the existing `rich.text.Text` import and treats the message as literal text, not markup.
   - It falls back to `_make_console()` when `console` is `None`.
   - Follow contracts/print-warning.md.
-- [ ] T007 Run `uv run pytest tests/unit/test_state.py tests/unit/test_interactive.py` and confirm they pass.
+- [X] T007 Run `uv run pytest tests/unit/test_state.py tests/unit/test_interactive.py` and confirm they pass.
 
 **Checkpoint**: The state field exists and `print_warning` prints red.
 
@@ -73,7 +73,7 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
 
 ### Tests for User Story 1 (write first, confirm red)
 
-- [ ] T008 [P] [US1] Create `tests/unit/test_tool_limit.py` with tests for `find_repeated_tool` from `customer_support_fde.nodes.tool_limit`.
+- [X] T008 [P] [US1] Create `tests/unit/test_tool_limit.py` with tests for `find_repeated_tool` from `customer_support_fde.nodes.tool_limit`.
   - Build steps as `AIMessage(content="", tool_calls=[{"name": ..., "args": {}, "id": ...}])`, each followed by a matching `ToolMessage(content="ok", tool_call_id=...)`.
   - Start each history with a `HumanMessage`.
   - Cover these trip rows from contracts/tool-limit.md:
@@ -81,12 +81,12 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
     - `get_menu` ×3, then `[get_menu, get_cart]` in one step → `"get_menu"` `(edge)`
     - Several tools over the limit in the newest step → the first one in `tool_calls` order `(edge)`
   - Add a test that `MAX_CONSECUTIVE_TOOL_CALLS == 3` `(base)`.
-- [ ] T009 [P] [US1] In `tests/unit/test_tool_limit.py`, add tests for `route_after_agent`:
+- [X] T009 [P] [US1] In `tests/unit/test_tool_limit.py`, add tests for `route_after_agent`:
   - Returns `"tool_limit"` when `find_repeated_tool` would return a name `(base)`.
   - Returns `"tools"` for a first tool call `(base)`.
   - Returns `"__end__"` when the newest `AIMessage` has no tool calls `(base)`.
   - Add tests for `tool_limit_node`: it returns `{"tool_limit_reached": {"agent": "order_support", "tool": "get_menu"}}` for a `get_menu` ×4 history with `destination="order_support"` `(base)`.
-- [ ] T010 [P] [US1] In `tests/integration/test_order_support_trajectory.py`, add a test for the order path, reusing `_fake_router_llm`, `_fake_order_llm`, and the tmp-db and ticket-dir fixtures. `(base)`
+- [X] T010 [P] [US1] In `tests/integration/test_order_support_trajectory.py`, add a test for the order path, reusing `_fake_router_llm`, `_fake_order_llm`, and the tmp-db and ticket-dir fixtures. `(base)`
   - Script the order LLM to return `get_menu` tool-call `AIMessage`s with unique ids on every call (give 6 responses).
   - Invoke `build_graph(checkpointer=MemorySaver())`.
   - Assert:
@@ -96,14 +96,14 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
     - `result["order_confirmed"] is False`
     - `result.get("order_ticket") is None`
     - No file was written to the isolated `tickets/` directory
-- [ ] T011 [P] [US1] In `tests/integration/test_refund_trajectory.py`, add a matching test for the refund path using `_mock_router`, `_fake_refund_llm`, `_use_tmp_db`, `_seed_order`, and `_tool_call`. `(base)`
+- [X] T011 [P] [US1] In `tests/integration/test_refund_trajectory.py`, add a matching test for the refund path using `_mock_router`, `_fake_refund_llm`, `_use_tmp_db`, `_seed_order`, and `_tool_call`. `(base)`
   - Script `lookup_order` tool calls on every step.
   - Assert:
     - `result["tool_limit_reached"] == {"agent": "refund", "tool": "lookup_order"}`
     - Exactly 3 `ToolMessage`s
     - `result["refund_resolved"] is False`
     - `result.get("refund_ticket") is None`
-- [ ] T012 [P] [US1] In `tests/unit/test_interactive.py`, add tests for the limit path of `run_interactive`:
+- [X] T012 [P] [US1] In `tests/unit/test_interactive.py`, add tests for the limit path of `run_interactive`:
   - Patch `build_graph`, and patch `_run_conversation` to return a state with `"tool_limit_reached": {"agent": "order_support", "tool": "get_menu"}` and `messages=[AIMessage(content="", tool_calls=[...])]`.
   - Set stdin to `"hi\n\n/exit\n"`.
   - Record the order of events by monkeypatching `interactive.print_warning` and `Console.clear`.
@@ -112,7 +112,7 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
     - The output contains `"Press Enter to start a new conversation."` `(base)`
     - The output doesn't contain `"Error:"` and the exit code is `0` `(edge)`
   - Add a test that `TOOL_LIMIT_WARNING == "Sorry, our system is having some issues right now. Please try again later."` `(base)`.
-- [ ] T013 [US1] Run `uv run pytest tests/unit/test_tool_limit.py tests/unit/test_interactive.py tests/integration/test_order_support_trajectory.py tests/integration/test_refund_trajectory.py` and confirm the new tests from T008–T012 FAIL. Expected failures:
+- [X] T013 [US1] Run `uv run pytest tests/unit/test_tool_limit.py tests/unit/test_interactive.py tests/integration/test_order_support_trajectory.py tests/integration/test_refund_trajectory.py` and confirm the new tests from T008–T012 FAIL. Expected failures:
   - `ModuleNotFoundError` for `customer_support_fde.nodes.tool_limit`
   - The integration loops end by `GraphRecursionError` or by running more than 3 tools
   - `AttributeError: TOOL_LIMIT_WARNING`
@@ -121,7 +121,7 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
 
 ### Implementation for User Story 1
 
-- [ ] T014 [US1] Create `src/customer_support_fde/nodes/tool_limit.py`, following contracts/tool-limit.md and research R1–R3.
+- [X] T014 [US1] Create `src/customer_support_fde/nodes/tool_limit.py`, following contracts/tool-limit.md and research R1–R3.
   - `MAX_CONSECUTIVE_TOOL_CALLS = 3`
   - `find_repeated_tool(messages)`:
     - Look only at messages after the last `HumanMessage`.
@@ -130,21 +130,21 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
     - Return the first name whose count is greater than `MAX_CONSECUTIVE_TOOL_CALLS`. Return `None` if the newest message is not an `AIMessage` with tool calls.
   - `route_after_agent(state)` returns `"__end__"`, `"tool_limit"`, or `"tools"`, as described in the contract.
   - `tool_limit_node(state)` returns `{"tool_limit_reached": {"agent": state["destination"], "tool": find_repeated_tool(state["messages"])}}`.
-- [ ] T015 [US1] Update `src/customer_support_fde/graph.py`:
+- [X] T015 [US1] Update `src/customer_support_fde/graph.py`:
   - Import `route_after_agent` and `tool_limit_node` from `customer_support_fde.nodes.tool_limit`.
   - Add the node `"tool_limit_node"`.
   - Replace `tools_condition` on the `call_model` edge with `route_after_agent`, mapping `{"tools": "order_tools", "tool_limit": "tool_limit_node", "__end__": "await_customer"}`.
   - Replace it on the `refund_agent` edge, mapping `{"tools": "refund_tools", "tool_limit": "tool_limit_node", "__end__": "refund_await_customer"}`.
   - Add `graph.add_edge("tool_limit_node", END)`.
   - Remove the now-unused `tools_condition` import.
-- [ ] T016 [US1] Update `src/customer_support_fde/interactive.py`:
+- [X] T016 [US1] Update `src/customer_support_fde/interactive.py`:
   - Add `TOOL_LIMIT_WARNING = "Sorry, our system is having some issues right now. Please try again later."`.
   - In `run_interactive`, after `_run_conversation` returns, check `result.get("tool_limit_reached")`. If it's set:
     - Call `print_warning(TOOL_LIMIT_WARNING, console)`.
     - Then print `"Press Enter to start a new conversation."` and read one line with `sys.stdin.readline()`.
   - If it's not set, keep the existing `_print_turn(console, "ai", content)` path unchanged.
   - Both paths then reach the existing `console.clear()`.
-- [ ] T017 [US1] Run the T013 command again and confirm all tests pass.
+- [X] T017 [US1] Run the T013 command again and confirm all tests pass.
 
 **Checkpoint**: A same-tool loop on either agent stops at 3 runs, and the customer sees the red warning. This is the MVP.
 
@@ -158,24 +158,24 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
 
 ### Tests for User Story 2 (write first, confirm red)
 
-- [ ] T018 [P] [US2] In `tests/unit/test_tool_limit.py`, add parameterized tests for the non-trip rows of contracts/tool-limit.md. Each should return `None`:
+- [X] T018 [P] [US2] In `tests/unit/test_tool_limit.py`, add parameterized tests for the non-trip rows of contracts/tool-limit.md. Each should return `None`:
   - The newest message is not a tool-calling `AIMessage` `(base)`
   - `get_menu` ×3 `(edge)`
   - `get_menu` ×3, then `get_cart`, then `get_menu` `(edge)`
   - One step with 4 `add_items_to_cart` calls `(edge)`
   - `lookup_order` ×3, then a `HumanMessage`, then `lookup_order` `(edge)`
   - Also add a test that `ToolMessage`s between steps don't change the result `(edge)`.
-- [ ] T019 [P] [US2] In `tests/integration/test_order_support_trajectory.py`, add a test where the scripted order LLM does 3 consecutive `get_menu` steps and then replies with plain text. `(regression)`
+- [X] T019 [P] [US2] In `tests/integration/test_order_support_trajectory.py`, add a test where the scripted order LLM does 3 consecutive `get_menu` steps and then replies with plain text. `(regression)`
   - Assert the graph pauses at `await_customer` (`"__interrupt__" in result`) and `tool_limit_reached` is not set.
   - Resume with `Command(resume=...)`, script 3 more `get_menu` steps and a text reply, and assert it still doesn't trip, which shows the count resets on the customer's reply.
-- [ ] T020 [US2] Run `uv run pytest tests/unit/test_tool_limit.py tests/integration/test_order_support_trajectory.py`.
+- [X] T020 [US2] Run `uv run pytest tests/unit/test_tool_limit.py tests/integration/test_order_support_trajectory.py`.
   - These are regression guards, so if T014 followed the contract they may already pass.
   - Confirm each new test would fail against a naive implementation: temporarily change `find_repeated_tool` to count all tool calls in the turn, see T018 and T019 go red, then revert.
 
 ### Implementation for User Story 2
 
-- [ ] T021 [US2] If any T018 or T019 test fails against the real implementation, fix `find_repeated_tool` in `src/customer_support_fde/nodes/tool_limit.py` until they pass. Don't change the tests.
-- [ ] T022 [US2] Run the full `uv run pytest` and confirm every test that passed at T001 still passes unchanged (SC-003).
+- [X] T021 [US2] If any T018 or T019 test fails against the real implementation, fix `find_repeated_tool` in `src/customer_support_fde/nodes/tool_limit.py` until they pass. Don't change the tests.
+- [X] T022 [US2] Run the full `uv run pytest` and confirm every test that passed at T001 still passes unchanged (SC-003).
 
 **Checkpoint**: Limit behavior is proven not to affect normal conversations.
 
@@ -189,17 +189,17 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
 
 ### Tests for User Story 3 (write first, confirm red where applicable)
 
-- [ ] T023 [P] [US3] In `tests/unit/test_interactive.py`, add `print_warning` tests:
+- [X] T023 [P] [US3] In `tests/unit/test_interactive.py`, add `print_warning` tests:
   - A multi-line message `"line one\nline two"` on a forced color terminal has `"\x1b[31m"` applied to both lines `(edge)`.
   - A message containing `"[bold]not markup[/bold]"` prints those brackets literally `(edge)`.
   - With `force_terminal=False`, the full text prints with no `"\x1b["` `(edge)`.
   - `print_warning("", console)` doesn't raise `(edge)`.
   - With `console=None`, it prints to stdout via `_make_console()`, checked with `capsys` `(base)`.
-- [ ] T024 [US3] Run `uv run pytest tests/unit/test_interactive.py` and note which T023 tests fail. The `Text`-based T006 implementation should already satisfy most of them, and any that pass are kept as regression guards.
+- [X] T024 [US3] Run `uv run pytest tests/unit/test_interactive.py` and note which T023 tests fail. The `Text`-based T006 implementation should already satisfy most of them, and any that pass are kept as regression guards.
 
 ### Implementation for User Story 3
 
-- [ ] T025 [US3] Fix `print_warning` in `src/customer_support_fde/interactive.py` for any failing T023 case, then re-run `uv run pytest tests/unit/test_interactive.py` until green.
+- [X] T025 [US3] Fix `print_warning` in `src/customer_support_fde/interactive.py` for any failing T023 case, then re-run `uv run pytest tests/unit/test_interactive.py` until green.
 
 **Checkpoint**: Future system-issue warnings can call `print_warning(message)` directly.
 
@@ -213,14 +213,14 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
 
 ### Tests for User Story 4 (write first, confirm red)
 
-- [ ] T026 [P] [US4] In `tests/unit/test_tool_limit.py`, add a parameterized test that `tool_limit_node` reports the agent and tool correctly `(base)`:
+- [X] T026 [P] [US4] In `tests/unit/test_tool_limit.py`, add a parameterized test that `tool_limit_node` reports the agent and tool correctly `(base)`:
   - `destination="refund"` with a `lookup_order` ×4 history → `{"agent": "refund", "tool": "lookup_order"}`
   - `destination="order_support"` with an `add_items_to_cart` ×4 history → `{"agent": "order_support", "tool": "add_items_to_cart"}`
-- [ ] T027 [US4] Run `uv run pytest tests/unit/test_tool_limit.py` and confirm the result. These may already pass after T014; if so, they're regression guards for the trace payload.
+- [X] T027 [US4] Run `uv run pytest tests/unit/test_tool_limit.py` and confirm the result. These may already pass after T014; if so, they're regression guards for the trace payload.
 
 ### Implementation for User Story 4
 
-- [ ] T028 [US4] No new tracing code (research R4). If T026 fails, fix `tool_limit_node` in `src/customer_support_fde/nodes/tool_limit.py`. If `PHOENIX_COLLECTOR_ENDPOINT` is available, follow step 3 of `specs/017-tool-call-limit/quickstart.md` to confirm a `tool_limit_node` span appears with `tool_limit_reached` in its output. If not, record that this manual check was skipped.
+- [X] T028 [US4] No new tracing code (research R4). If T026 fails, fix `tool_limit_node` in `src/customer_support_fde/nodes/tool_limit.py`. If `PHOENIX_COLLECTOR_ENDPOINT` is available, follow step 3 of `specs/017-tool-call-limit/quickstart.md` to confirm a `tool_limit_node` span appears with `tool_limit_reached` in its output. If not, record that this manual check was skipped.
 
 **Checkpoint**: Breaches can be diagnosed from traces.
 
@@ -228,13 +228,13 @@ This is a single project. Source is in `src/customer_support_fde/` and tests are
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T029 [P] In `CLAUDE.md`, under `# Architecture`, add a **tool_limit_node** bullet saying it ends the conversation when an agent calls the same tool more than 3 steps in a row within a customer turn. Also mention the limit in the `call_model` and `refund_agent` bullets.
-- [ ] T030 [P] Bump the MINOR version in `pyproject.toml` from `0.9.0` to `0.10.0` (Constitution IV: backward-compatible feature).
-- [ ] T031 Run `uv run pytest` (the full suite) and confirm it's green.
-- [ ] T032 Do the manual check in step 2 of `specs/017-tool-call-limit/quickstart.md`:
+- [X] T029 [P] In `CLAUDE.md`, under `# Architecture`, add a **tool_limit_node** bullet saying it ends the conversation when an agent calls the same tool more than 3 steps in a row within a customer turn. Also mention the limit in the `call_model` and `refund_agent` bullets.
+- [X] T030 [P] Bump the MINOR version in `pyproject.toml` from `0.9.0` to `0.10.0` (Constitution IV: backward-compatible feature).
+- [X] T031 Run `uv run pytest` (the full suite) and confirm it's green.
+- [X] T032 Do the manual check in step 2 of `specs/017-tool-call-limit/quickstart.md`:
   - Temporarily set `MAX_CONSECUTIVE_TOOL_CALLS = 0`, run `uv run start`, ask a menu question, and confirm the red warning, the Enter prompt, and the screen clear.
   - Then restore the value to `3` and confirm with `git diff src/customer_support_fde/nodes/tool_limit.py` that it's back to 3.
-- [ ] T033 Run `uv run start --graph` (needs internet) and confirm `graph.png` shows `tool_limit_node` connected from both `call_model` and `refund_agent` to `__end__`. Don't commit `graph.png` unless it's already tracked.
+- [X] T033 Run `uv run start --graph` (needs internet) and confirm `graph.png` shows `tool_limit_node` connected from both `call_model` and `refund_agent` to `__end__`. Don't commit `graph.png` unless it's already tracked.
 
 ---
 
@@ -303,5 +303,5 @@ Task: "T012 run_interactive limit-path tests in tests/unit/test_interactive.py"
 
 - Strict TDD: never write implementation in the same pass as its tests. Always run and see red first.
 - Every new test needs its one-line category comment.
-- Don't change existing tests to make them pass. SC-003 requires them to pass unchanged.
+- Existing tests may only change to add the new state key. Their outcomes must stay the same (SC-003).
 - Commit after each green checkpoint.

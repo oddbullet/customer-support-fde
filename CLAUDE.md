@@ -38,7 +38,7 @@ Each item below is a LangGraph node (see `src/customer_support_fde/graph.py`):
   continues without one, or signs up a new one; loads any stored preferences.
 - **call_model** — the order/support agent. Answers menu and ingredient/allergy questions and
   manages the cart via tool calls; condenses older messages into a running summary once history
-  grows too large.
+  grows too large. Its tool calls are guarded by the tool-call limit (see `tool_limit_node`).
 - **order_tools** — tool node backing `call_model`: menu lookup, add/remove cart items, cart
   total, mark order confirmed.
 - **await_customer** — interrupts to collect the customer's next reply during ordering, looping
@@ -49,11 +49,16 @@ Each item below is a LangGraph node (see `src/customer_support_fde/graph.py`):
 - **memory_gen_node** — after an order, extracts and persists updated account preferences
   (likes, dislikes, allergies) from the conversation.
 - **refund_agent** — the refund/complaints agent. Looks up the order, gathers the facts the
-  refund policy needs, and calls tools to apply the policy or log a complaint.
+  refund policy needs, and calls tools to apply the policy or log a complaint. Its tool calls are
+  guarded by the tool-call limit (see `tool_limit_node`).
 - **refund_tools** — tool node backing `refund_agent`: `lookup_order`, `process_refund_request`,
   `log_complaint`, `conclude_refund_conversation`.
 - **refund_await_customer** — interrupts to collect the customer's next reply during the refund
   conversation, looping back to `refund_agent` until resolved.
+- **tool_limit_node** — ends the conversation when `call_model` or `refund_agent` asks for the
+  same tool in more than 3 consecutive steps within one customer turn (a runaway tool loop). The
+  tool is not run; the node records `{agent, tool}` in `tool_limit_reached`, and the CLI shows a
+  red "please try again later" warning.
 
 # Development
 

@@ -29,6 +29,17 @@ def _print_turn(console: Console, speaker: str, content: str) -> None:
     console.print(Text(f"{label}:{separator}{content}", style=style))
 
 
+TOOL_LIMIT_WARNING = (
+    "Sorry, our system is having some issues right now. Please try again later."
+)
+
+
+def print_warning(message: str, console: Console | None = None) -> None:
+    if console is None:
+        console = _make_console()
+    console.print(Text(message, style="red"))
+
+
 def _invoke_with_status(console: Console, graph, state_or_command, config) -> SupportState:
     with console.status("Thinking...", spinner="dots"):
         return graph.invoke(state_or_command, config)
@@ -74,8 +85,13 @@ def run_interactive() -> int:
             console.print()
             result = _run_conversation(console, graph, query)
 
-            content = result["messages"][-1].content if result.get("messages") else ""
-            _print_turn(console, "ai", content)
+            if result.get("tool_limit_reached"):
+                print_warning(TOOL_LIMIT_WARNING, console)
+                console.print("Press Enter to start a new conversation.")
+                sys.stdin.readline()
+            else:
+                content = result["messages"][-1].content if result.get("messages") else ""
+                _print_turn(console, "ai", content)
         except KeyboardInterrupt:
             console.print()
             return 0

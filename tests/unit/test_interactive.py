@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 from langchain_core.messages import AIMessage
 from langgraph.types import Command
+from rich.console import Console
 
 from customer_support_fde import interactive
 
@@ -467,3 +468,127 @@ def test_run_interactive_recovers_from_mid_conversation_error(monkeypatch, capsy
     captured = capsys.readouterr()
     assert "Error" in captured.out
     assert "boom" in captured.out
+
+
+def _color_console() -> Console:
+    return Console(file=io.StringIO(), force_terminal=True, color_system="standard")
+
+
+# print_warning() renders the given message in red on a color terminal. (base)
+def test_print_warning_renders_message_in_red():
+    console = _color_console()
+
+    interactive.print_warning("System issue", console)
+
+    output = console.file.getvalue()
+    assert "System issue" in output
+    assert "\x1b[31m" in output
+
+
+_TOOL_LIMIT_STATE = {
+    "destination": "order_support",
+    "user_query": "hi",
+    "sentiment": None,
+    "order_confirmed": False,
+    "tool_limit_reached": {"agent": "order_support", "tool": "get_menu"},
+    "messages": [
+        AIMessage(
+            content="", tool_calls=[{"name": "get_menu", "args": {}, "id": "call_1"}]
+        )
+    ],
+}
+
+
+# The tool-limit warning is a fixed, friendly message with no internal details. (base)
+def test_tool_limit_warning_text():
+    assert interactive.TOOL_LIMIT_WARNING == (
+        "Sorry, our system is having some issues right now. Please try again later."
+    )
+
+
+# When a conversation ends at the tool limit, the red warning is shown and the loop
+# waits for Enter before clearing the screen. (base)
+def test_run_interactive_shows_tool_limit_warning_before_clearing(monkeypatch, capsys):
+    events = []
+    monkeypatch.setattr(
+        interactive,
+        "print_warning",
+        lambda message, console=None: events.append(("warning", message)),
+    )
+    monkeypatch.setattr(interactive.Console, "clear", lambda self: events.append(("clear",)))
+    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
+    monkeypatch.setattr(
+        interactive, "_run_conversation", lambda console, graph, query: _TOOL_LIMIT_STATE
+    )
+    stdin = io.StringIO("hi\n\n/exit\n")
+    monkeypatch.setattr(interactive.sys, "stdin", stdin)
+
+    exit_code = interactive.run_interactive()
+
+    assert exit_code == 0
+    assert events == [("warning", interactive.TOOL_LIMIT_WARNING), ("clear",)]
+    captured = capsys.readouterr()
+    assert "Press Enter to start a new conversation." in captured.out
+    # The blank line was consumed by the Enter pause, so /exit ends the session.
+    assert stdin.read() == ""
+
+
+# A tool-limit ending is not reported as a crash: no generic error line is printed. (edge)
+def test_run_interactive_tool_limit_prints_no_error_line(monkeypatch, capsys):
+    monkeypatch.setattr(interactive.Console, "clear", lambda self: None)
+    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
+    monkeypatch.setattr(
+        interactive, "_run_conversation", lambda console, graph, query: _TOOL_LIMIT_STATE
+    )
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("hi\n\n/exit\n"))
+
+    exit_code = interactive.run_interactive()
+
+    assert exit_code == 0
+    assert "Error:" not in capsys.readouterr().out
+
+
+# Every line of a multi-line warning is rendered red. (edge)
+def test_print_warning_colors_every_line_of_multiline_message():
+    console = _color_console()
+
+    interactive.print_warning("line one\nline two", console)
+
+    lines = console.file.getvalue().splitlines()
+    assert "\x1b[31m" in lines[0] and "line one" in lines[0]
+    assert "\x1b[31m" in lines[1] and "line two" in lines[1]
+
+
+# Square brackets in a warning are printed literally, not parsed as Rich markup. (edge)
+def test_print_warning_does_not_parse_markup():
+    console = Console(file=io.StringIO(), force_terminal=False)
+
+    interactive.print_warning("[bold]not markup[/bold]", console)
+
+    assert "[bold]not markup[/bold]" in console.file.getvalue()
+
+
+# Without a color terminal, the full warning text prints with no ANSI escape codes. (edge)
+def test_print_warning_emits_no_ansi_when_not_a_tty():
+    console = interactive._make_console(force_terminal=False)
+    console.file = io.StringIO()
+
+    interactive.print_warning("System issue", console)
+
+    output = console.file.getvalue()
+    assert "System issue" in output
+    assert "\x1b[" not in output
+
+
+# An empty warning prints without raising. (edge)
+def test_print_warning_accepts_empty_message():
+    console = _color_console()
+
+    interactive.print_warning("", console)
+
+
+# With no console given, the warning prints to stdout via the default console. (base)
+def test_print_warning_defaults_to_stdout_console(capsys):
+    interactive.print_warning("System issue")
+
+    assert "System issue" in capsys.readouterr().out
