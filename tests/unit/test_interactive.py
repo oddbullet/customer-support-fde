@@ -2,6 +2,7 @@ import io
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
+import pytest
 from langchain_core.messages import AIMessage
 from langgraph.types import Command
 from rich.console import Console
@@ -582,3 +583,129 @@ def test_print_warning_defaults_to_stdout_console(capsys):
     interactive.print_warning("System issue")
 
     assert "System issue" in capsys.readouterr().out
+
+
+class _FakeInterrupt:
+    def __init__(self, value):
+        self.value = value
+
+
+def _scripted_graph(outcomes):
+    # Each graph.invoke call records (input, thread_id) and consumes the next scripted
+    # outcome: an exception instance is raised, anything else is returned.
+    calls = []
+    remaining = list(outcomes)
+
+    def _invoke(state_or_command, config):
+        calls.append((state_or_command, config["configurable"]["thread_id"]))
+        outcome = remaining.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    graph = MagicMock()
+    graph.invoke.side_effect = _invoke
+    return graph, calls
+
+
+def _record_warnings(monkeypatch):
+    warnings = []
+    monkeypatch.setattr(
+        interactive, "print_warning", lambda message, console=None: warnings.append(message)
+    )
+    return warnings
+
+
+def _buffer_console() -> Console:
+    return Console(file=io.StringIO(), force_terminal=False)
+
+
+# When both models are unavailable, the retry warning is shown, one Enter is read, and
+# the failed step is replayed with invoke(None) on the same thread. (base)
+def test_run_conversation_retries_failed_step_after_model_unavailable(monkeypatch):
+    warnings = _record_warnings(monkeypatch)
+    stdin = io.StringIO("\n")
+    monkeypatch.setattr(interactive.sys, "stdin", stdin)
+    console = _buffer_console()
+    graph, calls = _scripted_graph(
+        [interactive.ModelUnavailableError("down"), _RESOLVED_STATE]
+    )
+
+    result = interactive._run_conversation(console, graph, "what's on the menu?")
+
+    assert result is _RESOLVED_STATE
+    assert warnings == [interactive.TOOL_LIMIT_WARNING]
+    assert "Press Enter to try again." in console.file.getvalue()
+    assert stdin.read() == ""
+    assert calls[1][0] is None
+    assert calls[0][1] == calls[1][1]
+
+
+# Repeated model outages keep the conversation open: each one shows the warning again
+# and replays the same step. (edge)
+def test_run_conversation_retries_repeatedly_while_models_stay_unavailable(monkeypatch):
+    warnings = _record_warnings(monkeypatch)
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("\n\n"))
+    graph, calls = _scripted_graph(
+        [
+            interactive.ModelUnavailableError("down"),
+            interactive.ModelUnavailableError("still down"),
+            _RESOLVED_STATE,
+        ]
+    )
+
+    result = interactive._run_conversation(_buffer_console(), graph, "hi")
+
+    assert result is _RESOLVED_STATE
+    assert warnings == [interactive.TOOL_LIMIT_WARNING] * 2
+    assert [call[0] for call in calls[1:]] == [None, None]
+    assert len({call[1] for call in calls}) == 1
+
+
+# A model outage while resuming an interrupt is retried the same way, and the
+# conversation then continues through its next interrupt normally. (base)
+def test_run_conversation_retries_after_outage_on_interrupt_resume(monkeypatch):
+    _record_warnings(monkeypatch)
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("2\n\nyes\n"))
+    graph, calls = _scripted_graph(
+        [
+            {"__interrupt__": [_FakeInterrupt("Reply with 1, 2, or 3.")]},
+            interactive.ModelUnavailableError("down"),
+            {"__interrupt__": [_FakeInterrupt("What would you like to order?")]},
+            _RESOLVED_STATE,
+        ]
+    )
+
+    result = interactive._run_conversation(_buffer_console(), graph, "I'd like to order")
+
+    assert result is _RESOLVED_STATE
+    assert isinstance(calls[1][0], Command) and calls[1][0].resume == "2"
+    assert calls[2][0] is None
+    assert isinstance(calls[3][0], Command) and calls[3][0].resume == "yes"
+
+
+# Errors other than ModelUnavailableError are not caught by _run_conversation, so they
+# still reach run_interactive's generic error handler. (regression)
+def test_run_conversation_does_not_catch_other_errors(monkeypatch):
+    warnings = _record_warnings(monkeypatch)
+    graph, _calls = _scripted_graph([RuntimeError("boom")])
+
+    with pytest.raises(RuntimeError, match="boom"):
+        interactive._run_conversation(_buffer_console(), graph, "hi")
+
+    assert warnings == []
+
+
+# The raw ModelUnavailableError text is never shown to the customer. (error)
+def test_run_conversation_hides_model_unavailable_details(monkeypatch):
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("\n"))
+    console = _buffer_console()
+    graph, _calls = _scripted_graph(
+        [interactive.ModelUnavailableError("internal provider detail"), _RESOLVED_STATE]
+    )
+
+    interactive._run_conversation(console, graph, "hi")
+
+    output = console.file.getvalue()
+    assert interactive.TOOL_LIMIT_WARNING in output
+    assert "internal provider detail" not in output

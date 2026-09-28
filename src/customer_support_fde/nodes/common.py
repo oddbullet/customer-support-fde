@@ -4,18 +4,40 @@ from typing import Callable
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
+from customer_support_fde import circuit_breaker
+from customer_support_fde.circuit_breaker import CircuitBreakerLLM
+
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 HISTORY_TOKEN_THRESHOLD = 40_000
 
 LLM_MAX_RETRIES = 3
 
-def build_llm() -> ChatOpenAI:
+
+def _chat_model(model: str, max_retries: int) -> ChatOpenAI:
     return ChatOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=os.environ.get("OPENROUTER_API_KEY"),
-        model=os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL),
-        max_retries=LLM_MAX_RETRIES,
+        model=model,
+        max_retries=max_retries,
+    )
+
+
+def build_llm() -> ChatOpenAI | CircuitBreakerLLM:
+    primary_model = os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL)
+    fallback_model = os.environ.get("FALLBACK_MODEL", "").strip()
+    if not fallback_model:
+        return _chat_model(primary_model, LLM_MAX_RETRIES)
+
+    # The probe makes a single attempt so a half-open circuit doesn't repeat the full
+    # retry delay against a primary that is still down.
+    return CircuitBreakerLLM(
+        primary=_chat_model(primary_model, LLM_MAX_RETRIES),
+        probe=_chat_model(primary_model, 0),
+        fallback=_chat_model(fallback_model, LLM_MAX_RETRIES),
+        primary_model=primary_model,
+        fallback_model=fallback_model,
+        breaker=circuit_breaker._BREAKER,
     )
 
 
@@ -31,7 +53,7 @@ def estimate_token_count(messages: list[AnyMessage]) -> int:
 
 
 def condense_messages(
-    llm: ChatOpenAI,
+    llm: ChatOpenAI | CircuitBreakerLLM,
     older_messages: list[AnyMessage],
     instructions: str,
     previous_summary: str | None,

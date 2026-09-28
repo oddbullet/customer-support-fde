@@ -45,7 +45,7 @@ Every new test gets a one-line comment directly above its definition (above the 
 
 **Purpose**: Configuration surface.
 
-- [ ] T001 Add `FALLBACK_MODEL=` to `.env.example` directly under `OPENROUTER_MODEL=`. Add a one-line comment above it: `# Optional model id used when the primary model fails after all retries (circuit breaker). Leave blank to disable.`
+- [X] T001 Add `FALLBACK_MODEL=` to `.env.example` directly under `OPENROUTER_MODEL=`. Add a one-line comment above it: `# Optional model id used when the primary model fails after all retries (circuit breaker). Leave blank to disable.`
 
 ---
 
@@ -55,16 +55,16 @@ Every new test gets a one-line comment directly above its definition (above the 
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Write the `is_retryable` contract tests in `tests/unit/test_circuit_breaker.py`, one parametrized test built from the table in `contracts/circuit-breaker.md`.
+- [X] T002 Write the `is_retryable` contract tests in `tests/unit/test_circuit_breaker.py`, one parametrized test built from the table in `contracts/circuit-breaker.md`.
   - **True**: `APIConnectionError`, `APITimeoutError`, and `APIStatusError`/subclasses with status 408, 409, 429, 500, 502, 503, 504.
   - **False**: status 400, 401, 403, 404, 422, plus `pydantic.ValidationError`, `ValueError`, `RuntimeError`.
   - Also add a `(base)` test that `ModelUnavailableError` is an `Exception` subclass and that `CIRCUIT_COOLDOWN_SECONDS == 60`.
-- [ ] T003 Run `uv run pytest tests/unit/test_circuit_breaker.py`. Confirm the new tests fail (red) because the `customer_support_fde.circuit_breaker` module does not exist yet.
-- [ ] T004 Create `src/customer_support_fde/circuit_breaker.py` with:
+- [X] T003 Run `uv run pytest tests/unit/test_circuit_breaker.py`. Confirm the new tests fail (red) because the `customer_support_fde.circuit_breaker` module does not exist yet.
+- [X] T004 Create `src/customer_support_fde/circuit_breaker.py` with:
   - `CIRCUIT_COOLDOWN_SECONDS = 60`
   - `class ModelUnavailableError(Exception)`
   - `is_retryable(exc: BaseException) -> bool`. It returns True for `isinstance(exc, openai.APIConnectionError)` (which covers `APITimeoutError`), or for `isinstance(exc, openai.APIStatusError)` with `exc.status_code in (408, 409, 429)` or `exc.status_code >= 500`. Otherwise it returns False.
-- [ ] T005 Run `uv run pytest tests/unit/test_circuit_breaker.py`. Confirm green.
+- [X] T005 Run `uv run pytest tests/unit/test_circuit_breaker.py`. Confirm green.
 
 **Checkpoint**: Foundation ready. User story work can begin.
 
@@ -81,14 +81,14 @@ Every new test gets a one-line comment directly above its definition (above the 
 
 ### Tests for User Story 1 (write first, confirm red) ⚠️
 
-- [ ] T006 [P] [US1] Add `CircuitBreakerLLM` **closed-state** tests to `tests/unit/test_circuit_breaker.py`, one test per row of the "closed" rows in `contracts/circuit-breaker.md`. Build each wrapper as `CircuitBreakerLLM(primary=FakeRunnable, probe=FakeRunnable, fallback=FakeRunnable, primary_model="p", fallback_model="f", breaker=circuit_breaker.CircuitBreaker(clock=fake_clock))`.
+- [X] T006 [P] [US1] Add `CircuitBreakerLLM` **closed-state** tests to `tests/unit/test_circuit_breaker.py`, one test per row of the "closed" rows in `contracts/circuit-breaker.md`. Build each wrapper as `CircuitBreakerLLM(primary=FakeRunnable, probe=FakeRunnable, fallback=FakeRunnable, primary_model="p", fallback_model="f", breaker=circuit_breaker.CircuitBreaker(clock=fake_clock))`.
   - (a) `(base)` The primary succeeds, the result is returned, the fallback is not called, and `breaker.effective_state() == "closed"`.
   - (b) `(base)` The primary raises a retryable error, the fallback's result is returned, the fallback received the **same input object** (`is`), and the state is now `"open"`.
   - (c) `(error)` Both models raise retryable errors. `ModelUnavailableError` is raised with `__cause__` being the fallback's error, and the state is `"open"`.
   - (d) `(error)` The primary raises a retryable error and the fallback raises `AuthenticationError`. The `AuthenticationError` is re-raised unchanged.
   - (e) `(error)` The primary raises `AuthenticationError`. It is re-raised, the fallback is not called, and the state stays `"closed"`.
   - (f) `(base)` `bind_tools(["t"])` and `with_structured_output(Schema)` each return a new `CircuitBreakerLLM`. All three inner runnables received the same call, and the new wrapper shares the **same** `breaker` object.
-- [ ] T007 [P] [US1] Add `build_llm` selection tests to `tests/unit/test_common.py`.
+- [X] T007 [P] [US1] Add `build_llm` selection tests to `tests/unit/test_common.py`.
   - `(regression)` With `FALLBACK_MODEL` unset, `""`, or `"   "` (parametrized), `common.build_llm()` returns a `ChatOpenAI` instance.
   - `(base)` With `FALLBACK_MODEL="fallback/model"` and `OPENROUTER_MODEL="primary/model"`, it returns a `CircuitBreakerLLM` where:
     - `primary.model_name == "primary/model"` and `primary.max_retries == 3`;
@@ -97,13 +97,13 @@ Every new test gets a one-line comment directly above its definition (above the 
     - `breaker is circuit_breaker._BREAKER` (the shared singleton).
   - `(edge)` With `OPENROUTER_MODEL` unset, the primary uses `DEFAULT_MODEL`.
   - Add `monkeypatch.delenv("FALLBACK_MODEL", raising=False)` to the existing `test_build_llm_retries_failing_api_calls_before_giving_up`, so it keeps guarding FR-009.
-- [ ] T008 [P] [US1] Add CLI tests to `tests/unit/test_interactive.py` following `contracts/cli-model-unavailable.md`. Reuse the existing fake-graph/fake-stdin patterns in that file.
+- [X] T008 [P] [US1] Add CLI tests to `tests/unit/test_interactive.py` following `contracts/cli-model-unavailable.md`. Reuse the existing fake-graph/fake-stdin patterns in that file.
   - (a) `(base)` The first `graph.invoke` raises `ModelUnavailableError`. `print_warning` is called with `TOOL_LIMIT_WARNING`, then "Press Enter to try again." is printed, one stdin line is read, and the next call is `graph.invoke(None, config)` with the **same** `thread_id`. Its result is returned by `_run_conversation`.
   - (b) `(edge)` `ModelUnavailableError` twice in a row. The warning is shown twice and `invoke(None, config)` is called twice.
   - (c) `(base)` The error happens after an interrupt resume (`Command(resume=...)` raises). Recovery via `invoke(None, config)` then yields another `__interrupt__`, which is printed and answered normally.
   - (d) `(regression)` A plain `RuntimeError` from `graph.invoke` is **not** caught by `_run_conversation`. It propagates, and `run_interactive` still prints `Error: ...`.
   - (e) `(error)` The raw `ModelUnavailableError` message text never appears in the output.
-- [ ] T009 [P] [US1] Create `tests/integration/test_circuit_breaker_graph.py`.
+- [X] T009 [P] [US1] Create `tests/integration/test_circuit_breaker_graph.py`.
   - **Environment**: set `OPENROUTER_API_KEY="test-key"`, `OPENROUTER_MODEL="primary/model"`, `FALLBACK_MODEL="fallback/model"`. Patch `openai._base_client.time.sleep` to a no-op. Use an autouse `reset_circuit()` fixture.
   - **Fake transport**: patch `openai._base_client.SyncHttpxClientWrapper.send` (the class used in `tests/unit/test_common.py` via `type(llm.root_client._client)`) with a function that reads `json.loads(request.content)["model"]` and records each call's model id in a list.
     - For a failing model, it returns `httpx.Response(503, json={"error": {"message": "down"}}, request=request)`.
@@ -116,11 +116,11 @@ Every new test gets a one-line comment directly above its definition (above the 
     - (b) `(base)` Continue (a) with `Command(resume="2")` (continue without an account). The result is an `__interrupt__` whose value is `"What would you like to order?"`, from call_model via the fallback.
     - (c) `(error)` With `failing = {"primary/model", "fallback/model"}`, `graph.invoke(initial_state(...), config)` raises `ModelUnavailableError`. Then set `failing = set()` and call `graph.invoke(None, config)`, which returns the `PRIMARY_MENU` interrupt. This proves the replay re-runs the failed router step.
     - (d) `(regression)` Reach call_model as in (b). Make both models fail, and `Command(resume=...)` of the next customer message raises `ModelUnavailableError`. Clear the failures and call `graph.invoke(None, config)`, which returns the next reply. `graph.get_state(config).values["messages"]` contains that customer message exactly **once**.
-- [ ] T010 [US1] Run `uv run pytest tests/unit/test_circuit_breaker.py tests/unit/test_common.py tests/unit/test_interactive.py tests/integration/test_circuit_breaker_graph.py`. Confirm the new US1 tests fail (red) and the previously passing tests still pass.
+- [X] T010 [US1] Run `uv run pytest tests/unit/test_circuit_breaker.py tests/unit/test_common.py tests/unit/test_interactive.py tests/integration/test_circuit_breaker_graph.py`. Confirm the new US1 tests fail (red) and the previously passing tests still pass.
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] In `src/customer_support_fde/circuit_breaker.py`, add `class CircuitBreaker`.
+- [X] T011 [US1] In `src/customer_support_fde/circuit_breaker.py`, add `class CircuitBreaker`.
   - **Constructor**: `__init__(self, cooldown_seconds: float = CIRCUIT_COOLDOWN_SECONDS, clock: Callable[[], float] = time.monotonic)`.
   - **Fields**: `state: Literal["closed", "open"] = "closed"` and `opened_at: float | None = None`.
   - **Methods**:
@@ -128,7 +128,7 @@ Every new test gets a one-line comment directly above its definition (above the 
     - `record_open()`, which sets `state = "open"` and `opened_at = clock()`.
     - `record_close()`, which sets `state = "closed"` and `opened_at = None`.
   - **Singleton**: a module-level `_BREAKER = CircuitBreaker()`, plus `reset_circuit()`, which resets `_BREAKER` to closed with `opened_at = None` and `clock = time.monotonic`.
-- [ ] T012 [US1] In `src/customer_support_fde/circuit_breaker.py`, add `class CircuitBreakerLLM`.
+- [X] T012 [US1] In `src/customer_support_fde/circuit_breaker.py`, add `class CircuitBreakerLLM`.
   - **Constructor**: `__init__(self, primary, probe, fallback, primary_model: str, fallback_model: str, breaker: CircuitBreaker)`.
   - **Pass-through methods**: `bind_tools(*args, **kwargs)` and `with_structured_output(*args, **kwargs)` return `CircuitBreakerLLM` with the call applied to `primary`, `probe` and `fallback`, the same model ids, and the same `breaker`.
   - **`invoke(input, config=None, **kwargs)`, closed-state path only for now**:
@@ -136,7 +136,7 @@ Every new test gets a one-line comment directly above its definition (above the 
     2. On a non-retryable error, re-raise it.
     3. On a retryable error, call `breaker.record_open()`, then call `fallback.invoke(input, config, **kwargs)`.
     4. If the fallback raises a retryable error, `raise ModelUnavailableError("primary and fallback models unavailable") from exc`. If it raises a non-retryable error, re-raise it.
-- [ ] T013 [US1] In `src/customer_support_fde/nodes/common.py`, update `build_llm()`.
+- [X] T013 [US1] In `src/customer_support_fde/nodes/common.py`, update `build_llm()`.
   - **Read the setting**: `fallback = os.environ.get("FALLBACK_MODEL", "").strip()`.
   - **Empty**: return the existing `ChatOpenAI(...)`, unchanged.
   - **Set**: build three `ChatOpenAI` clients with the same `base_url` and `api_key`:
@@ -145,14 +145,14 @@ Every new test gets a one-line comment directly above its definition (above the 
     - fallback: `model=fallback`, `max_retries=LLM_MAX_RETRIES`.
   - **Return**: `CircuitBreakerLLM(..., breaker=circuit_breaker._BREAKER)`.
   - Update the `condense_messages` `llm` parameter type hint to `ChatOpenAI | CircuitBreakerLLM`.
-- [ ] T014 [US1] In `src/customer_support_fde/interactive.py`, catch `ModelUnavailableError` inside `_run_conversation`. Put the handling in a helper `_invoke_with_retry(console, graph, state_or_command, config)` that wraps `_invoke_with_status` and is used for both the initial invoke and each resume:
+- [X] T014 [US1] In `src/customer_support_fde/interactive.py`, catch `ModelUnavailableError` inside `_run_conversation`. Put the handling in a helper `_invoke_with_retry(console, graph, state_or_command, config)` that wraps `_invoke_with_status` and is used for both the initial invoke and each resume:
   1. `print_warning(TOOL_LIMIT_WARNING, console)`
   2. `console.print("Press Enter to try again.")`
   3. `sys.stdin.readline()`
   4. `state_or_command = None`, then loop.
 
   Do not catch any other exception type.
-- [ ] T015 [US1] Run the T010 command. Confirm all US1 tests are green, then run `uv run pytest` and confirm the full suite passes.
+- [X] T015 [US1] Run the T010 command. Confirm all US1 tests are green, then run `uv run pytest` and confirm the full suite passes.
 
 **Checkpoint**: MVP. The fallback works per request, the CLI survives when both models fail, and nothing changes without `FALLBACK_MODEL`. The circuit records "open", but nothing skips the primary yet.
 
@@ -168,7 +168,7 @@ Every new test gets a one-line comment directly above its definition (above the 
 
 ### Tests for User Story 2 (write first, confirm red) ⚠️
 
-- [ ] T016 [P] [US2] Add open and half-open tests to `tests/unit/test_circuit_breaker.py`, one per remaining row of `contracts/circuit-breaker.md`, using the fake clock.
+- [X] T016 [P] [US2] Add open and half-open tests to `tests/unit/test_circuit_breaker.py`, one per remaining row of `contracts/circuit-breaker.md`, using the fake clock.
   - (a) `(base)` Open at t=0, invoke at t=30. The primary and probe are not called, the fallback answers, and the state stays `"open"`.
   - (b) `(error)` Open, the fallback raises a retryable error. `ModelUnavailableError` is raised and the state stays `"open"` with `opened_at` unchanged.
   - (c) `(base)` Open at t=0, invoke at t=60 (the boundary, `>=`). The **probe** is called once, the primary is not called, the probe's result is returned, and the state is `"closed"`.
@@ -176,12 +176,12 @@ Every new test gets a one-line comment directly above its definition (above the 
   - (e) `(edge)` Half-open, the probe raises `AuthenticationError`. It is re-raised, the fallback is not called, and the state is `"open"` with `opened_at` unchanged.
   - (f) `(edge)` Open at t=0, invoke at t=59.9. Still open, and the probe is not called.
   - (g) `(base)` `reset_circuit()` returns `_BREAKER` to `"closed"`.
-- [ ] T017 [P] [US2] Add test (e) to `tests/integration/test_circuit_breaker_graph.py`. `(base)` Run the flow of test (a). Clear the recorded model ids, then send the next customer message (`Command(resume="2")`) while the primary still fails. The recorded model ids for that step contain **no** `"primary/model"` entries (SC-002).
-- [ ] T018 [US2] Run `uv run pytest tests/unit/test_circuit_breaker.py tests/integration/test_circuit_breaker_graph.py`. Confirm the new US2 tests fail (red).
+- [X] T017 [P] [US2] Add test (e) to `tests/integration/test_circuit_breaker_graph.py`. `(base)` Run the flow of test (a). Clear the recorded model ids, then send the next customer message (`Command(resume="2")`) while the primary still fails. The recorded model ids for that step contain **no** `"primary/model"` entries (SC-002).
+- [X] T018 [US2] Run `uv run pytest tests/unit/test_circuit_breaker.py tests/integration/test_circuit_breaker_graph.py`. Confirm the new US2 tests fail (red).
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Extend `CircuitBreakerLLM.invoke` in `src/customer_support_fde/circuit_breaker.py` to branch on `breaker.effective_state()`, following the state table in `data-model.md`.
+- [X] T019 [US2] Extend `CircuitBreakerLLM.invoke` in `src/customer_support_fde/circuit_breaker.py` to branch on `breaker.effective_state()`, following the state table in `data-model.md`.
   - **`"open"`**: skip the primary and go straight to the fallback path, with no state change.
   - **`"half_open"`**: call `probe.invoke(...)`.
     - On success: `breaker.record_close()` and return.
@@ -189,7 +189,7 @@ Every new test gets a one-line comment directly above its definition (above the 
     - On a non-retryable error: re-raise with the state unchanged.
   - **`"closed"`**: unchanged from T012.
   - Factor the fallback path (the fallback call plus the `ModelUnavailableError` mapping) into one private method used by all three branches.
-- [ ] T020 [US2] Run the T018 command, then `uv run pytest`. Confirm green.
+- [X] T020 [US2] Run the T018 command, then `uv run pytest`. Confirm green.
 
 **Checkpoint**: US1 and US2 both work. During an outage, customers pay the retry delay at most once per 60-second window.
 
@@ -203,7 +203,7 @@ Every new test gets a one-line comment directly above its definition (above the 
 
 ### Tests for User Story 3 (write first, confirm red) ⚠️
 
-- [ ] T021 [P] [US3] Add span tests to `tests/unit/test_circuit_breaker.py`.
+- [X] T021 [P] [US3] Add span tests to `tests/unit/test_circuit_breaker.py`.
   - **Fixture setup**: build `TracerProvider()` with `SimpleSpanProcessor(InMemorySpanExporter())` (from `opentelemetry.sdk.trace` / `opentelemetry.sdk.trace.export` / `opentelemetry.sdk.trace.export.in_memory_span_exporter`). Monkeypatch `circuit_breaker._get_tracer` to return `provider.get_tracer("test")`, which avoids setting the global provider.
   - (a) `(base)` The primary succeeds. There is exactly one span named `llm.circuit_breaker` with:
     - `circuit.state_before="closed"` and `circuit.state_after="closed"`;
@@ -213,11 +213,11 @@ Every new test gets a one-line comment directly above its definition (above the 
   - (c) `(base)` A half-open probe succeeds. The span has `state_before="half_open"`, `state_after="closed"`, `model_answered="p"` and an event `circuit_closed`.
   - (d) `(error)` Both models fail. The span has `fallback_used=True`, **no** `circuit.model_answered` attribute, `state_after="open"`, and the span status is ERROR.
   - (e) `(edge)` Open state. The span has `state_before="open"`, `fallback_used=True` and no `circuit.primary_error`.
-- [ ] T022 [US3] Run `uv run pytest tests/unit/test_circuit_breaker.py`. Confirm the new US3 tests fail (red).
+- [X] T022 [US3] Run `uv run pytest tests/unit/test_circuit_breaker.py`. Confirm the new US3 tests fail (red).
 
 ### Implementation for User Story 3
 
-- [ ] T023 [US3] In `src/customer_support_fde/circuit_breaker.py`, add `_get_tracer()`, which returns `opentelemetry.trace.get_tracer(__name__)`.
+- [X] T023 [US3] In `src/customer_support_fde/circuit_breaker.py`, add `_get_tracer()`, which returns `opentelemetry.trace.get_tracer(__name__)`.
   - **Span**: wrap the body of `CircuitBreakerLLM.invoke` in `with _get_tracer().start_as_current_span("llm.circuit_breaker") as span:`.
   - **Attributes**:
     - `circuit.state_before` at entry and `circuit.state_after` before returning or raising (`breaker.effective_state()`);
@@ -227,7 +227,7 @@ Every new test gets a one-line comment directly above its definition (above the 
   - **Events**: `span.add_event("circuit_opened")` in `record_open` paths and `span.add_event("circuit_closed")` on probe success.
   - **Errors**: on exception, `span.set_status(StatusCode.ERROR)` and re-raise. The `start_as_current_span` default `record_exception` is fine.
   - **No new dependency**: `opentelemetry-api` and `opentelemetry-sdk` come from `arize-phoenix-otel`. Do not edit `pyproject.toml`.
-- [ ] T024 [US3] Run `uv run pytest tests/unit/test_circuit_breaker.py`, then `uv run pytest`. Confirm green.
+- [X] T024 [US3] Run `uv run pytest tests/unit/test_circuit_breaker.py`, then `uv run pytest`. Confirm green.
 
 **Checkpoint**: All user stories work on their own.
 
@@ -235,12 +235,12 @@ Every new test gets a one-line comment directly above its definition (above the 
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T025 [P] Update `CLAUDE.md`.
+- [X] T025 [P] Update `CLAUDE.md`.
   - **Project Overview bullets**: add "LLM circuit breaker: after the primary model exhausts its retries, requests fall back to `FALLBACK_MODEL` for a 60-second cool-down, then a single-attempt probe tries the primary again; if both models fail, the CLI shows a retry warning and replays the failed step on Enter."
   - **Architecture**: add a note under `call_model` / `refund_agent` that every model call goes through `build_llm()` in `nodes/common.py`, which wraps it in `circuit_breaker.CircuitBreakerLLM` when `FALLBACK_MODEL` is set.
-- [ ] T026 [P] Check that every new test in `tests/unit/test_circuit_breaker.py`, `tests/unit/test_common.py`, `tests/unit/test_interactive.py` and `tests/integration/test_circuit_breaker_graph.py` has its one-line category comment directly above its definition (Constitution I). Add any that are missing.
-- [ ] T027 Run `uv run pytest` (the full unit and integration suite). Confirm all tests pass with `FALLBACK_MODEL` unset in the environment (SC-004).
-- [ ] T028 Run the manual checks in `quickstart.md` sections 3–4 (both models down, then breaker disabled) and record the outcome in the PR description.
+- [X] T026 [P] Check that every new test in `tests/unit/test_circuit_breaker.py`, `tests/unit/test_common.py`, `tests/unit/test_interactive.py` and `tests/integration/test_circuit_breaker_graph.py` has its one-line category comment directly above its definition (Constitution I). Add any that are missing.
+- [X] T027 Run `uv run pytest` (the full unit and integration suite). Confirm all tests pass with `FALLBACK_MODEL` unset in the environment (SC-004).
+- [X] T028 Run the manual checks in `quickstart.md` sections 3–4 (both models down, then breaker disabled) and record the outcome in the PR description.
 
 ---
 
