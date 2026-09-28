@@ -58,6 +58,7 @@ def _new_order_support_initial_state(query: str) -> dict:
         "refund_conversation_summary": None,
         "account_number": None,
         "account_preferences": None,
+        "tool_limit_reached": None,
     }
 
 

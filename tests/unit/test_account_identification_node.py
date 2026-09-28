@@ -14,6 +14,7 @@ def _base_state() -> SupportState:
     return {
         "account_number": None,
         "account_preferences": None,
+        "tool_limit_reached": None,
     }
 
 

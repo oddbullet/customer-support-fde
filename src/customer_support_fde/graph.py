@@ -1,6 +1,5 @@
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
-from langgraph.prebuilt import tools_condition
 
 from customer_support_fde.nodes.account_identification_node import (
     account_identification_node,
@@ -20,6 +19,7 @@ from customer_support_fde.nodes.refund_agent import (
 )
 from customer_support_fde.nodes.router_agent import router_agent
 from customer_support_fde.nodes.ticket_gen_node import ticket_gen_node
+from customer_support_fde.nodes.tool_limit import route_after_agent, tool_limit_node
 from customer_support_fde.state import SupportState
 
 
@@ -50,6 +50,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_node("refund_agent", refund_agent)
     graph.add_node("refund_tools", refund_tools)
     graph.add_node("refund_await_customer", refund_await_customer)
+    graph.add_node("tool_limit_node", tool_limit_node)
 
     graph.set_entry_point("router_agent")
     graph.add_conditional_edges(
@@ -72,8 +73,12 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph.add_edge("account_identification_node", "call_model")
     graph.add_conditional_edges(
         "call_model",
-        tools_condition,
-        {"tools": "order_tools", "__end__": "await_customer"},
+        route_after_agent,
+        {
+            "tools": "order_tools",
+            "tool_limit": "tool_limit_node",
+            "__end__": "await_customer",
+        },
     )
     graph.add_edge("order_tools", "call_model")
     graph.add_conditional_edges(
@@ -88,8 +93,12 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
 
     graph.add_conditional_edges(
         "refund_agent",
-        tools_condition,
-        {"tools": "refund_tools", "__end__": "refund_await_customer"},
+        route_after_agent,
+        {
+            "tools": "refund_tools",
+            "tool_limit": "tool_limit_node",
+            "__end__": "refund_await_customer",
+        },
     )
     graph.add_edge("refund_tools", "refund_agent")
     graph.add_conditional_edges(
@@ -97,5 +106,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
         _route_from_refund_await_customer,
         {"continue": "refund_agent", "resolved": "ticket_gen_node"},
     )
+
+    graph.add_edge("tool_limit_node", END)
 
     return graph.compile(checkpointer=checkpointer)
