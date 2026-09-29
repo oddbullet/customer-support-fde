@@ -118,7 +118,7 @@ retry prompt.
 
 Write or modified the test first before writing the actual code. Use Test Driven Development.
 
-Always ask before committing.
+Always ask before committing. No overengineering, keep things simple.
 
 # Commands
 
