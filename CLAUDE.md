@@ -97,6 +97,8 @@ retry prompt.
 
 Write or modified the test first before writing the actual code. Use Test Driven Development.
 
+Always ask before committing.
+
 # Commands
 
 Start an interactive conversation (initialize the database first — see Setup below):
