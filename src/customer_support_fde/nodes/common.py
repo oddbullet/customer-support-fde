@@ -6,6 +6,7 @@ from langchain_core.messages import (
     AIMessage,
     AnyMessage,
     HumanMessage,
+    RemoveMessage,
     SystemMessage,
     ToolMessage,
 )
@@ -14,17 +15,18 @@ from langgraph.prebuilt.tool_node import ToolInvocationError
 
 from customer_support_fde import circuit_breaker
 from customer_support_fde.circuit_breaker import CircuitBreakerLLM, ModelUnavailableError
+from customer_support_fde.state import SupportState
 
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 HISTORY_TOKEN_THRESHOLD = 40_000
 
 # Condensation keeps this many of the newest messages (of any type) verbatim.
-CONDENSATION_KEEP_MESSAGES = 3
+_CONDENSATION_KEEP_MESSAGES = 3
 
 # One retry, then the agent keeps the full history. Each attempt already retries
 # network errors LLM_MAX_RETRIES times inside the client.
-CONDENSATION_MAX_ATTEMPTS = 2
+_CONDENSATION_MAX_ATTEMPTS = 2
 
 LLM_MAX_RETRIES = 3
 
@@ -74,27 +76,35 @@ def estimate_token_count(messages: list[AnyMessage]) -> int:
     # "vendor/model" names regardless of the underlying model, so estimate from the
     # last real reply's provider-reported prompt size, plus a rough per-character
     # estimate of everything added since (a long customer message or tool result).
+    reported, start = 0, 0
     for index in range(len(messages) - 1, -1, -1):
         message = messages[index]
         if isinstance(message, AIMessage) and message.usage_metadata:
-            newer_chars = sum(len(str(m.content)) for m in messages[index + 1 :])
-            return message.usage_metadata.get("input_tokens", 0) + newer_chars // 4
-    return sum(len(str(message.content)) for message in messages) // 4
+            reported, start = message.usage_metadata.get("input_tokens", 0), index + 1
+            break
+    return reported + sum(len(str(m.content)) for m in messages[start:]) // 4
 
 
-def select_messages_to_condense(messages: list[AnyMessage]) -> int | None:
-    # Returns the cutoff index: messages before it are condensed. Only runs at a turn
-    # boundary (the customer's message is newest), so a turn's own tool steps, which
-    # the tool-call limit counts, are never trimmed mid-turn.
-    if len(messages) <= CONDENSATION_KEEP_MESSAGES:
-        return None
+def summary_messages(summary: str | None) -> list[AnyMessage]:
+    # How every node shows a condensed conversation's summary to the model.
+    if summary is None:
+        return []
+    return [SystemMessage(content=f"Summary of earlier conversation:\n{summary}")]
+
+
+def select_messages_to_condense(messages: list[AnyMessage]) -> int:
+    # Returns the cutoff index: messages before it are condensed (0 means none). Only
+    # runs at a turn boundary (the customer's message is newest), so a turn's own tool
+    # steps, which the tool-call limit counts, are never trimmed mid-turn.
+    if len(messages) <= _CONDENSATION_KEEP_MESSAGES:
+        return 0
     if not isinstance(messages[-1], HumanMessage):
-        return None
-    cutoff = len(messages) - CONDENSATION_KEEP_MESSAGES
+        return 0
+    cutoff = len(messages) - _CONDENSATION_KEEP_MESSAGES
     # A tool result must stay with the assistant message that made the call.
     while cutoff > 0 and isinstance(messages[cutoff], ToolMessage):
         cutoff -= 1
-    return cutoff or None
+    return cutoff
 
 
 def _render_transcript(messages: list[AnyMessage]) -> str:
@@ -133,29 +143,53 @@ def condense_messages(
         )
     )
 
-    for attempt in range(1, CONDENSATION_MAX_ATTEMPTS + 1):
+    for attempt in range(1, _CONDENSATION_MAX_ATTEMPTS + 1):
         try:
             content = llm.invoke(condense_input).content
         except ModelUnavailableError:
             # Both models are down; the agent's own call will surface it.
             logger.warning("Failed to condense conversation history", exc_info=True)
             return None
-        except Exception:
-            logger.warning(
-                "Failed to condense conversation history (attempt %d of %d)",
-                attempt,
-                CONDENSATION_MAX_ATTEMPTS,
-                exc_info=True,
-            )
-            continue
-        if isinstance(content, str) and content.strip():
-            return content.strip()
+        except Exception as exc:
+            reason: object = exc
+        else:
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+            reason = "blank summary"
         logger.warning(
-            "Failed to condense conversation history: blank summary (attempt %d of %d)",
+            "Failed to condense conversation history (attempt %d of %d): %s",
             attempt,
-            CONDENSATION_MAX_ATTEMPTS,
+            _CONDENSATION_MAX_ATTEMPTS,
+            reason,
+            exc_info=isinstance(reason, Exception),
         )
     return None
+
+
+def condense_history(
+    llm: ChatOpenAI | CircuitBreakerLLM,
+    state: SupportState,
+    messages: list[AnyMessage],
+    *,
+    summary_key: str,
+    threshold: int,
+    instructions: str,
+    context: list[AnyMessage],
+) -> tuple[SupportState, list[AnyMessage], list[AnyMessage]]:
+    # Once the history (plus the agent's context) is over the threshold, folds everything
+    # older than the kept messages into state[summary_key]. Returns the updated state,
+    # the messages to send, and the RemoveMessages for the condensed ones.
+    cutoff = select_messages_to_condense(messages)
+    if not cutoff or estimate_token_count(context + messages) <= threshold:
+        return state, messages, []
+    older_messages = messages[:cutoff]
+    new_summary = condense_messages(
+        llm, older_messages, instructions, state.get(summary_key)
+    )
+    if new_summary is None:
+        return state, messages, []
+    removals: list[AnyMessage] = [RemoveMessage(id=m.id) for m in older_messages]
+    return {**state, summary_key: new_summary}, messages[cutoff:], removals
 
 
 def handle_tool_error(exc: Exception) -> str:
@@ -180,8 +214,6 @@ def prompt_until(
 
 __all__ = [
     "DEFAULT_MODEL",
-    "CONDENSATION_KEEP_MESSAGES",
-    "CONDENSATION_MAX_ATTEMPTS",
     "HISTORY_TOKEN_THRESHOLD",
     "LLM_MAX_RETRIES",
     "LLM_TIMEOUT_SECONDS",
@@ -190,6 +222,8 @@ __all__ = [
     "handle_tool_error",
     "estimate_token_count",
     "condense_messages",
+    "condense_history",
     "select_messages_to_condense",
+    "summary_messages",
     "prompt_until",
 ]

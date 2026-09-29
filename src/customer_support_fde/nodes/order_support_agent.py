@@ -1,7 +1,6 @@
 from langchain_core.messages import (
     AnyMessage,
     HumanMessage,
-    RemoveMessage,
     SystemMessage,
 )
 from langgraph.prebuilt import ToolNode
@@ -9,9 +8,9 @@ from langgraph.types import interrupt
 
 from customer_support_fde.nodes.common import HISTORY_TOKEN_THRESHOLD
 from customer_support_fde.nodes.common import build_llm as _build_llm
-from customer_support_fde.nodes.common import condense_messages
+from customer_support_fde.nodes.common import condense_history
 from customer_support_fde.nodes.common import handle_tool_error
-from customer_support_fde.nodes.common import select_messages_to_condense
+from customer_support_fde.nodes.common import summary_messages
 from customer_support_fde.nodes.common import estimate_token_count as _estimate_token_count
 from customer_support_fde.state import SupportState
 from customer_support_fde.tools.cart_tools import (
@@ -67,11 +66,7 @@ greeting or meta-commentary.
 
 def _build_context_messages(state: SupportState) -> list[AnyMessage]:
     context: list[AnyMessage] = [SystemMessage(content=SYSTEM_PROMPT)]
-    summary = state.get("order_conversation_summary")
-    if summary is not None:
-        context.append(
-            SystemMessage(content=f"Summary of earlier conversation:\n{summary}")
-        )
+    context.extend(summary_messages(state.get("order_conversation_summary")))
     preferences = state.get("account_preferences")
     if preferences is not None:
         context.append(
@@ -86,23 +81,15 @@ def call_model(state: SupportState) -> SupportState:
     )
 
     llm = _build_llm()
-    removals: list[AnyMessage] = []
-
-    cutoff = select_messages_to_condense(messages)
-    if cutoff is not None:
-        token_count = _estimate_token_count(_build_context_messages(state) + messages)
-        if token_count > ORDER_HISTORY_TOKEN_THRESHOLD:
-            older_messages = messages[:cutoff]
-            new_summary = condense_messages(
-                llm,
-                older_messages,
-                _CONDENSATION_INSTRUCTIONS,
-                state.get("order_conversation_summary"),
-            )
-            if new_summary is not None:
-                state = {**state, "order_conversation_summary": new_summary}
-                removals = [RemoveMessage(id=m.id) for m in older_messages]
-                messages = messages[cutoff:]
+    state, messages, removals = condense_history(
+        llm,
+        state,
+        messages,
+        summary_key="order_conversation_summary",
+        threshold=ORDER_HISTORY_TOKEN_THRESHOLD,
+        instructions=_CONDENSATION_INSTRUCTIONS,
+        context=_build_context_messages(state),
+    )
 
     context = _build_context_messages(state)
     ai_message = llm.bind_tools(_ORDER_TOOLS).invoke(context + messages)

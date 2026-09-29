@@ -2,16 +2,13 @@
 failure handling, and context retention after older messages are condensed away.
 
 Compaction keeps the last 3 messages of any type and only runs at a turn boundary (the
-newest message is the customer's). The LLM-judged retention tests at the bottom are marked
-e2e and call the real OpenRouter model.
+newest message is the customer's). The LLM-judged retention tests live in
+tests/e2e/test_condensation_retention_e2e.py.
 """
 
 import itertools
 import logging
-import os
-import sys
 import uuid
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -42,14 +39,9 @@ from _graph_fakes import (
     fake_agent_llm,
     mock_router,
     order_initial_state,
-    seed_order,
     tool_call,
     use_tmp_db,
 )
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "e2e"))
-from _driver import drive_conversation  # noqa: E402
-from _judge import judge  # noqa: E402
 
 # Comfortably over the 40,000-token threshold, as reported by the provider.
 OVER_THRESHOLD_TOKENS = 50_000
@@ -59,14 +51,12 @@ AGENTS = [
         order_support_agent,
         order_support_agent.call_model,
         "order_conversation_summary",
-        "ORDER_HISTORY_TOKEN_THRESHOLD",
         id="order",
     ),
     pytest.param(
         refund_agent,
         refund_agent.refund_agent,
         "refund_conversation_summary",
-        "REFUND_HISTORY_TOKEN_THRESHOLD",
         id="refund",
     ),
 ]
@@ -100,10 +90,24 @@ def _history(num_turns: int, last_reply_tokens: int | None = None) -> list:
     return messages
 
 
+def _tool_step(call_id: str, tokens: int | None = None, **kwargs) -> AIMessage:
+    tool_calls = [{"name": "get_menu", "args": {}, "id": call_id}]
+    return _reply("", tokens, tool_calls=tool_calls, **kwargs)
+
+
+def _new_graph():
+    graph = build_graph(checkpointer=MemorySaver())
+    return graph, {"configurable": {"thread_id": str(uuid.uuid4())}}
+
+
+def _has_system(messages: list, text: str) -> bool:
+    return any(isinstance(m, SystemMessage) and text in m.content for m in messages)
+
+
 def _agent_state(module, messages: list, **overrides) -> dict:
     destination = "refund" if module is refund_agent else "order_support"
     return {
-        **initial_state(str(messages[-1].content) if messages else "hi"),
+        **initial_state(str(messages[-1].content)),
         "destination": destination,
         "messages": messages,
         **overrides,
@@ -148,9 +152,9 @@ def test_threshold_is_40000_tokens():
 
 
 # Exactly 40,000 tokens is not over the threshold, so nothing is condensed. (edge)
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_exactly_40000_tokens_does_not_condense(
-    monkeypatch, module, node, summary_key, _threshold_name
+    monkeypatch, module, node, summary_key
 ):
     llm = _fake_llm([AIMessage(content="unused summary")])
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
@@ -164,9 +168,9 @@ def test_exactly_40000_tokens_does_not_condense(
 
 
 # 40,001 tokens condenses everything except the last 3 messages into the summary. (base)
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_40001_tokens_condenses_all_but_last_three_messages(
-    monkeypatch, module, node, summary_key, _threshold_name
+    monkeypatch, module, node, summary_key
 ):
     llm = _fake_llm([AIMessage(content="Summary of the early turns.")])
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
@@ -179,19 +183,15 @@ def test_40001_tokens_condenses_all_but_last_three_messages(
     reply = llm.bind_tools.return_value.invoke.return_value
     assert _retained(result) == history[-3:] + [reply]
     assert _conversation_sent_to_agent(llm) == history[-3:]
-    context = _sent_to_agent(llm)
-    assert any(
-        isinstance(m, SystemMessage) and "Summary of the early turns." in m.content
-        for m in context
-    )
+    assert _has_system(_sent_to_agent(llm), "Summary of the early turns.")
 
 
 # Without any usage metadata, the per-character estimate (4 characters per token) decides:
 # 160,003 characters is 40,000 tokens (no compaction), 160,004 is 40,001 (compaction). (edge)
 @pytest.mark.parametrize("extra_chars, condenses", [(3, False), (4, True)])
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_character_estimate_triggers_just_over_40000_tokens(
-    monkeypatch, module, node, summary_key, _threshold_name, extra_chars, condenses
+    monkeypatch, module, node, summary_key, extra_chars, condenses
 ):
     llm = _fake_llm([AIMessage(content="Summary.")])
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
@@ -210,8 +210,8 @@ def test_character_estimate_triggers_just_over_40000_tokens(
 
 # With 3 or fewer messages there is nothing older than the kept messages, so nothing is
 # condensed however large the count is. (edge)
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
-def test_three_messages_never_condense(monkeypatch, module, node, summary_key, _threshold_name):
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
+def test_three_messages_never_condense(monkeypatch, module, node, summary_key):
     llm = _fake_llm([AIMessage(content="unused summary")])
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
     history = _history(1, last_reply_tokens=100_000)
@@ -229,17 +229,12 @@ def test_three_messages_never_condense(monkeypatch, module, node, summary_key, _
 
 # Mid-turn (the agent is between tool steps) nothing is condensed, even over the threshold:
 # trimming there would drop the current turn's tool steps and the customer's request. (edge)
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
-def test_does_not_condense_mid_turn(monkeypatch, module, node, summary_key, _threshold_name):
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
+def test_does_not_condense_mid_turn(monkeypatch, module, node, summary_key):
     llm = _fake_llm([AIMessage(content="unused summary")])
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
     history = _history(3) + [
-        _reply(
-            "",
-            OVER_THRESHOLD_TOKENS,
-            id="tc",
-            tool_calls=[{"name": "get_menu", "args": {}, "id": "call_1"}],
-        ),
+        _tool_step("call_1", OVER_THRESHOLD_TOKENS, id="tc"),
         ToolMessage(content="menu", tool_call_id="call_1", id="t1"),
     ]
 
@@ -252,15 +247,13 @@ def test_does_not_condense_mid_turn(monkeypatch, module, node, summary_key, _thr
 
 # When the 3-message cutoff lands on a tool result, the cutoff moves back to keep the
 # assistant message that made the call, so no tool result is sent without it. (edge)
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_cutoff_never_orphans_a_tool_result(
-    monkeypatch, module, node, summary_key, _threshold_name
+    monkeypatch, module, node, summary_key
 ):
     llm = _fake_llm([AIMessage(content="Summary.")])
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
-    tool_step = AIMessage(
-        content="", id="tc", tool_calls=[{"name": "get_menu", "args": {}, "id": "call_1"}]
-    )
+    tool_step = _tool_step("call_1", id="tc")
     history = [
         HumanMessage(content="q1", id="h1"),
         AIMessage(content="a1", id="a1"),
@@ -288,20 +281,12 @@ def test_runaway_tool_loop_after_condensation_still_hits_tool_limit(monkeypatch)
             _reply("Hi! What can I get you?", OVER_THRESHOLD_TOKENS),
             _reply("Sure.", OVER_THRESHOLD_TOKENS),
         ]
-        + [
-            _reply(
-                "",
-                OVER_THRESHOLD_TOKENS,
-                tool_calls=[{"name": "get_menu", "args": {}, "id": f"call_{i}"}],
-            )
-            for i in range(6)
-        ]
+        + [_tool_step(f"call_{i}", OVER_THRESHOLD_TOKENS) for i in range(6)]
     )
     order_llm.invoke.return_value = AIMessage(content="Summary.")
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
 
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    graph, config = _new_graph()
     graph.invoke(order_initial_state("Hello"), config)
     graph.invoke(Command(resume="2"), config)  # Continue without an account.
     graph.invoke(Command(resume="Tell me about the food"), config)
@@ -326,13 +311,7 @@ def test_long_conversation_condenses_repeatedly_with_bounded_history(monkeypatch
     replies = []
     for i in range(1, 13):
         if i % 3 == 0:
-            replies.append(
-                _reply(
-                    "",
-                    OVER_THRESHOLD_TOKENS,
-                    tool_calls=[{"name": "get_menu", "args": {}, "id": f"call_{i}"}],
-                )
-            )
+            replies.append(_tool_step(f"call_{i}", OVER_THRESHOLD_TOKENS))
         replies.append(_reply(f"Reply {i}", OVER_THRESHOLD_TOKENS))
     order_llm = fake_agent_llm(replies)
     counter = itertools.count(1)
@@ -341,8 +320,7 @@ def test_long_conversation_condenses_repeatedly_with_bounded_history(monkeypatch
     )
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
 
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    graph, config = _new_graph()
     graph.invoke(order_initial_state("Turn 1"), config)
     graph.invoke(Command(resume="2"), config)  # Continue without an account.
 
@@ -369,14 +347,14 @@ def test_long_conversation_condenses_repeatedly_with_bounded_history(monkeypatch
     latest = f"summary {len(condense_calls)}"
     assert final_state["order_conversation_summary"] == latest
     last_context = order_llm.bind_tools.return_value.invoke.call_args[0][0]
-    assert any(isinstance(m, SystemMessage) and latest in m.content for m in last_context)
+    assert _has_system(last_context, latest)
 
 
 # One huge customer message after a short reply pushes the conversation over the
 # threshold, and compaction runs even though the last reported count was small. (regression)
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_huge_customer_message_triggers_condensation(
-    monkeypatch, module, node, summary_key, _threshold_name
+    monkeypatch, module, node, summary_key
 ):
     llm = _fake_llm([AIMessage(content="Summary.")])
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
@@ -443,8 +421,8 @@ def test_summarizer_receives_older_messages_as_a_transcript():
 
 
 # A summarization call that raises is retried, and the second attempt's summary is used. (error)
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
-def test_summarization_error_is_retried(monkeypatch, module, node, summary_key, _threshold_name):
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
+def test_summarization_error_is_retried(monkeypatch, module, node, summary_key):
     llm = _fake_llm([RuntimeError("provider error"), AIMessage(content="Second try.")])
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
     history = _history(3, last_reply_tokens=OVER_THRESHOLD_TOKENS)
@@ -459,9 +437,9 @@ def test_summarization_error_is_retried(monkeypatch, module, node, summary_key, 
 # A blank summary counts as a failed attempt and is retried rather than replacing the
 # history with nothing. (error)
 @pytest.mark.parametrize("blank", ["", "   \n"])
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_blank_summary_is_retried(
-    monkeypatch, module, node, summary_key, _threshold_name, blank
+    monkeypatch, module, node, summary_key, blank
 ):
     llm = _fake_llm([AIMessage(content=blank), AIMessage(content="  Second try.  ")])
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
@@ -484,9 +462,9 @@ def test_blank_summary_is_retried(
     ],
     ids=["errors", "blank", "mixed"],
 )
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_falls_back_to_full_history_after_two_failed_attempts(
-    monkeypatch, caplog, module, node, summary_key, _threshold_name, failures
+    monkeypatch, caplog, module, node, summary_key, failures
 ):
     llm = _fake_llm(failures)
     monkeypatch.setattr(module, "_build_llm", lambda: llm)
@@ -507,9 +485,9 @@ def test_falls_back_to_full_history_after_two_failed_attempts(
 
 # When both models are down (ModelUnavailableError) summarization is not retried; the
 # agent's own call then raises the same error, which the CLI turns into its retry prompt. (error)
-@pytest.mark.parametrize("module, node, summary_key, _threshold_name", AGENTS)
+@pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_model_unavailable_during_summarization_is_not_retried(
-    monkeypatch, module, node, summary_key, _threshold_name
+    monkeypatch, module, node, summary_key
 ):
     llm = _fake_llm([ModelUnavailableError("both down"), AIMessage(content="unused")])
     llm.bind_tools.return_value.invoke.side_effect = ModelUnavailableError("both down")
@@ -537,8 +515,7 @@ def test_failed_summarization_recovers_on_the_next_turn(monkeypatch):
     ]
     monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
 
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    graph, config = _new_graph()
     graph.invoke(order_initial_state("Turn 1"), config)
     graph.invoke(Command(resume="2"), config)  # Continue without an account.
     graph.invoke(Command(resume="Turn 2"), config)
@@ -597,8 +574,7 @@ def test_allergy_condensed_away_still_reaches_stored_preferences(monkeypatch, _d
     monkeypatch.setattr(memory_gen_node, "_build_llm", lambda: memory_llm)
 
     menu = [{"name": "Spring Rolls", "price": 6.95, "ingredients": ["cabbage", "carrot"]}]
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    graph, config = _new_graph()
     graph.invoke({**initial_state("I'm allergic to peanuts."), "menu": menu}, config)
     graph.invoke(Command(resume="1"), config)
     graph.invoke(Command(resume=account_number), config)
@@ -612,10 +588,7 @@ def test_allergy_condensed_away_still_reaches_stored_preferences(monkeypatch, _d
         isinstance(m, HumanMessage) and "allergic" in str(m.content)
         for m in extraction_input
     ), "the allergy turn should have been condensed away"
-    assert any(
-        isinstance(m, SystemMessage) and "Customer is allergic to peanuts." in m.content
-        for m in extraction_input
-    )
+    assert _has_system(extraction_input, "Customer is allergic to peanuts.")
     assert db.get_account(account_number, _db)["preferences"] == "Allergies: peanuts."
 
 
@@ -642,118 +615,12 @@ def test_refund_ticket_issue_extraction_receives_the_summary(monkeypatch):
     ticket_llm.with_structured_output.return_value = structured
     monkeypatch.setattr(ticket_gen_node, "_build_llm", lambda: ticket_llm)
 
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    graph, config = _new_graph()
     graph.invoke(initial_state("My order arrived cold."), config)
     graph.invoke(Command(resume="I don't have it handy."), config)
     result = graph.invoke(Command(resume="No, that's all."), config)
 
     assert result["refund_conversation_summary"] == "Customer's order arrived cold."
     extraction_input = structured.invoke.call_args[0][0]
-    assert any(
-        isinstance(m, SystemMessage) and "Customer's order arrived cold." in m.content
-        for m in extraction_input
-    )
+    assert _has_system(extraction_input, "Customer's order arrived cold.")
     assert result["refund_ticket"]["issue"] == "Order arrived cold."
-
-
-# ---------------------------------------------------------------------------
-# 5. Context retention, judged by an LLM (real OpenRouter calls)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def live_llm(monkeypatch):
-    from dotenv import load_dotenv
-
-    load_dotenv()
-    missing = [name for name in ("OPENROUTER_API_KEY", "LLM_JUDGE") if not os.environ.get(name)]
-    if missing:
-        pytest.skip(f"e2e tests require {', '.join(missing)} to be set (see .env.example)")
-    # Condense at every turn boundary so a short conversation exercises retention.
-    monkeypatch.setattr(order_support_agent, "ORDER_HISTORY_TOKEN_THRESHOLD", 1)
-    monkeypatch.setattr(refund_agent, "REFUND_HISTORY_TOKEN_THRESHOLD", 1)
-
-
-# A peanut allergy stated in the first message is condensed away, yet the agent's later
-# recommendation still avoids peanuts. (base)
-@pytest.mark.e2e
-def test_judge_allergy_retained_after_condensation(live_llm):
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-    first_message = "Hi! Just so you know, I'm severely allergic to peanuts."
-
-    transcript = drive_conversation(
-        graph,
-        config,
-        query=first_message,
-        script=[
-            "What soups do you have?",
-            "What's in the Spring Rolls?",
-            "How much is the Beef Chow Fun?",
-            "What would you recommend for my main dish?",
-        ],
-        max_turns=5,
-    )
-
-    state = graph.get_state(config).values
-    assert state["order_conversation_summary"], transcript.format()
-    assert all(m.content != first_message for m in state["messages"]), transcript.format()
-
-    verdict = judge(
-        rubric=(
-            "The customer said they are severely allergic to peanuts at the start. The "
-            "assistant's final reply recommends a main dish. It must not recommend any "
-            "dish containing peanuts, and it should account for the allergy."
-        ),
-        transcript=transcript.format(),
-        ground_truth=(
-            "Only Kung Pao Chicken contains peanuts. Mapo Tofu, Spring Rolls, Hot and "
-            "Sour Soup, Beef Chow Fun, and Vegetable Fried Rice contain no peanuts."
-        ),
-    )
-    assert verdict.verdict == "pass", verdict.reasoning
-
-
-# Refund facts given early (order id, missing dish, no substitute) are condensed away, yet
-# the agent neither re-asks for them nor reaches the wrong policy outcome. (base)
-@pytest.mark.e2e
-def test_judge_refund_facts_retained_after_condensation(live_llm, _db):
-    order_id = seed_order(_db, age_hours=1)
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-
-    transcript = drive_conversation(
-        graph,
-        config,
-        query=f"Hi, I have a problem with my order {order_id}.",
-        script=[
-            "Both of the Mapo Tofu never arrived, and nothing came in their place.",
-            "Sorry, one second, someone is at the door.",
-            "Ok, I'm back. How long do refunds usually take?",
-            "Alright. Please go ahead with the refund.",
-            "No, that's everything.",
-        ],
-        max_turns=8,
-        fallback="No, that's everything, thanks.",
-    )
-
-    state = graph.get_state(config).values
-    assert state["refund_conversation_summary"], transcript.format()
-    stored = db.list_refund_requests(_db)
-
-    verdict = judge(
-        rubric=(
-            "The customer gave their order id and said both Mapo Tofu never arrived with "
-            "no substitute early on. After that, the assistant must not ask again for the "
-            "order id or which dish was missing, and what it tells the customer about the "
-            "refund must match the ground truth."
-        ),
-        transcript=transcript.format(),
-        ground_truth=(
-            f"Order {order_id} (placed 1 hour ago): Mapo Tofu x2 at $10.00 each and "
-            "Spring Rolls x1. Refund requests recorded in the database: "
-            f"{[(r['order_id'], r['amount']) for r in stored]}."
-        ),
-    )
-    assert verdict.verdict == "pass", verdict.reasoning

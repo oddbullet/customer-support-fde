@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from customer_support_fde import db, tickets
 from customer_support_fde.nodes.common import build_llm as _build_llm
+from customer_support_fde.nodes.common import summary_messages
 from customer_support_fde.state import SupportState
 
 _EMPTY_SUMMARY = {"lines": [], "total": None}
@@ -38,10 +39,7 @@ def _extract_refund_issue(state: SupportState) -> str | None:
         return None
 
     context = [SystemMessage(content=_ISSUE_EXTRACTION_INSTRUCTIONS)]
-    if summary is not None:
-        context.append(
-            SystemMessage(content=f"Summary of earlier conversation:\n{summary}")
-        )
+    context.extend(summary_messages(summary))
     context.extend(messages)
 
     try:

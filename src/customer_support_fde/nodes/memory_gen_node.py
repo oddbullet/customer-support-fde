@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from customer_support_fde import db
 from customer_support_fde.nodes.common import build_llm as _build_llm
+from customer_support_fde.nodes.common import summary_messages
 from customer_support_fde.state import SupportState
 
 _logger = logging.getLogger(__name__)
@@ -73,11 +74,7 @@ def memory_gen_node(state: SupportState) -> SupportState:
                 content=f"Customer's current stored preferences: {prior_preferences}"
             )
         )
-    summary = state.get("order_conversation_summary")
-    if summary is not None:
-        context.append(
-            SystemMessage(content=f"Summary of earlier conversation:\n{summary}")
-        )
+    context.extend(summary_messages(state.get("order_conversation_summary")))
     context.extend(state["messages"])
 
     try:

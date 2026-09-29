@@ -1,7 +1,6 @@
 from langchain_core.messages import (
     AnyMessage,
     HumanMessage,
-    RemoveMessage,
     SystemMessage,
 )
 from langgraph.prebuilt import ToolNode
@@ -9,9 +8,9 @@ from langgraph.types import interrupt
 
 from customer_support_fde.nodes.common import HISTORY_TOKEN_THRESHOLD
 from customer_support_fde.nodes.common import build_llm as _build_llm
-from customer_support_fde.nodes.common import condense_messages
+from customer_support_fde.nodes.common import condense_history
 from customer_support_fde.nodes.common import handle_tool_error
-from customer_support_fde.nodes.common import select_messages_to_condense
+from customer_support_fde.nodes.common import summary_messages
 from customer_support_fde.nodes.common import estimate_token_count as _estimate_token_count
 from customer_support_fde.state import SupportState
 from customer_support_fde.tools.refund_tools import (
@@ -91,11 +90,7 @@ def _build_context_messages(state: SupportState) -> list[AnyMessage]:
         context.append(
             SystemMessage(content=f"Customer sentiment reading: {sentiment}.")
         )
-    summary = state.get("refund_conversation_summary")
-    if summary is not None:
-        context.append(
-            SystemMessage(content=f"Summary of earlier conversation:\n{summary}")
-        )
+    context.extend(summary_messages(state.get("refund_conversation_summary")))
     return context
 
 
@@ -105,23 +100,15 @@ def refund_agent(state: SupportState) -> SupportState:
     )
 
     llm = _build_llm()
-    removals: list[AnyMessage] = []
-
-    cutoff = select_messages_to_condense(messages)
-    if cutoff is not None:
-        token_count = _estimate_token_count(_build_context_messages(state) + messages)
-        if token_count > REFUND_HISTORY_TOKEN_THRESHOLD:
-            older_messages = messages[:cutoff]
-            new_summary = condense_messages(
-                llm,
-                older_messages,
-                _CONDENSATION_INSTRUCTIONS,
-                state.get("refund_conversation_summary"),
-            )
-            if new_summary is not None:
-                state = {**state, "refund_conversation_summary": new_summary}
-                removals = [RemoveMessage(id=m.id) for m in older_messages]
-                messages = messages[cutoff:]
+    state, messages, removals = condense_history(
+        llm,
+        state,
+        messages,
+        summary_key="refund_conversation_summary",
+        threshold=REFUND_HISTORY_TOKEN_THRESHOLD,
+        instructions=_CONDENSATION_INSTRUCTIONS,
+        context=_build_context_messages(state),
+    )
 
     context = _build_context_messages(state)
     ai_message = llm.bind_tools(_REFUND_TOOLS).invoke(context + messages)
