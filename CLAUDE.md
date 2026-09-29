@@ -33,9 +33,18 @@ driven by an LLM (via OpenRouter). Features:
 - Workflow iteration limit: each `graph.invoke()` is capped at 100 graph steps
   (`WORKFLOW_ITERATION_LIMIT` in `interactive.py`, passed as LangGraph's `recursion_limit`).
   Hitting it is unrecoverable (see Failure handling).
-- Transaction status: a placed order's recap starts "Your order has been placed." and ends with
-  the Order ID and "Please show this ID when you pick up your order." A submitted refund names the
-  amount, says it awaits staff review, and gives the Order ID.
+- Transaction status: a placed order's recap starts "Your order has been placed.", shows a
+  `Placed:` local time after the total, and ends with the Order ID and "Please show this ID when you
+  pick up your order." A submitted refund names the amount, says it awaits staff review, gives the
+  Order ID, and shows a `Submitted:` local time.
+- Date & time: every stored timestamp (orders, refunds, complaints, accounts) and the refund
+  check's "now" come from an NTP server (`clock.trusted_now()`, `pool.ntp.org`), never the host
+  clock; an order or refund uses one reading for what it stores and shows. Times are
+  stored and compared in UTC. The restaurant timezone (a main US zone, stored in the
+  `restaurant_settings` table, loaded once by `restaurant_time.load()`) is used only for display
+  (`restaurant_time.format_local()`). A `created_at` that is in the future, malformed, empty,
+  missing, or has no timezone is auto-rejected by `refund_policy.evaluate()` as
+  `invalid_order_date` (customer is sent to staff; the tool logs a WARNING).
 - Failure handling:
   - Customer-facing texts live in `messages.py`. Technical details are only logged (→ Phoenix).
   - Unrecoverable failures (tool-call limit, iteration limit, models down after the manual
@@ -56,6 +65,12 @@ driven by an LLM (via OpenRouter). Features:
     refund ticket is logged and the ticket is written without a decision.
   - Broken menu database: at startup the CLI loads the menu; if the database or `menu_items`
     table is missing, it shows a red warning with the `uv run start --init-db` fix and exits 1.
+  - Restaurant timezone not set (or unsupported): at startup, a red warning with the
+    `uv run start --set-tz <zone>` fix, exit 1.
+  - Time server unreachable (`ClockUnavailableError`): while placing an order →
+    `OrderNotPlacedError` (`ORDER_NOT_PLACED_MESSAGE`); inside a refund tool, `handle_tool_error`
+    re-raises it instead of asking the agent to retry → `GENERIC_ERROR_MESSAGE`; anywhere else
+    (account sign-up, complaints) it escapes the conversation → `GENERIC_ERROR_MESSAGE`. All exit 1.
   - Malformed router output (not matching `RouterDecision`) falls back to `unclear`, so
     `clarify_intent` asks the customer.
 
@@ -65,7 +80,8 @@ fallback model id (see `.env.example`).
 # Tech Stack
 - Python 3.14
 - LangGraph (+ LangChain / `langchain-openai` for the OpenRouter-backed LLM)
-- SQLite (menu, orders, refund requests, complaints, accounts)
+- SQLite (menu, orders, refund requests, complaints, accounts, restaurant settings)
+- `ntplib` (trusted time) and `tzdata` (timezone data for `zoneinfo` on Windows)
 - Arize Phoenix (`arize-phoenix-otel`, OpenTelemetry tracing)
 - Rich (interactive CLI rendering)
 - PyTest (+ `agentevals` for LLM-judged end-to-end tests)
@@ -118,7 +134,7 @@ retry prompt.
 
 Write or modified the test first before writing the actual code. Use Test Driven Development.
 
-Always ask before committing.
+Always ask before committing. No overengineering, keep things simple.
 
 # Commands
 
@@ -157,6 +173,16 @@ Re-run `--init-db` on an existing database too: it also creates the `refund_requ
 `refund_request_lines`, `complaints`, and `accounts` tables used by the refund agent and the
 customer account identification node, and is safe to run against a database that already has
 orders in it.
+
+Set the restaurant timezone once (`eastern`, `central`, `mountain`, `arizona`, `pacific`,
+`alaska`, or `hawaii`); `--init-db` creates the `restaurant_settings` table it is stored in:
+
+```
+uv run start --set-tz eastern
+```
+
+Tests never reach the real NTP server: the unit/integration `conftest.py` files replace
+`clock.trusted_now` with the local clock and set a timezone. The e2e tests use real NTP.
 
 To inspect the compiled LangGraph topology, run:
 

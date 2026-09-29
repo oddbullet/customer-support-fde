@@ -8,6 +8,10 @@ _MESSAGES = {
         f"This order was placed more than {REFUND_WINDOW_HOURS} hours ago, so it's "
         "outside our refund window."
     ),
+    "invalid_order_date": (
+        "We couldn't verify when this order was placed, so we can't process a refund "
+        "automatically. Please speak to a staff member at the counter."
+    ),
     "return_declined": (
         "Since a substitute dish arrived, we need you to confirm you'll return it before "
         "we can process a refund."
@@ -37,8 +41,17 @@ def evaluate(
     return_confirmed: bool,
     now: datetime,
 ) -> PolicyDecision:
-    created_at = datetime.fromisoformat(order["created_at"])
-    if now - created_at > timedelta(hours=REFUND_WINDOW_HOURS):
+    # An unparseable, timezone-less, or future created_at can't be trusted, so the
+    # order is auto-rejected rather than risk refunding on a bad date.
+    try:
+        created_at = datetime.fromisoformat(order["created_at"])
+        if created_at > now:
+            raise ValueError("created_at is in the future")
+        age = now - created_at
+    except (ValueError, TypeError):
+        return PolicyDecision(False, "invalid_order_date", _MESSAGES["invalid_order_date"])
+
+    if age > timedelta(hours=REFUND_WINDOW_HOURS):
         return PolicyDecision(False, "outside_window", _MESSAGES["outside_window"])
 
     if not undelivered:

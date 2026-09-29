@@ -1,10 +1,11 @@
 import logging
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from langgraph.types import Command
 from pydantic import ValidationError
 
-from customer_support_fde import db, messages
+from customer_support_fde import clock, db, messages
 from customer_support_fde.tools.refund_tools import (
     UndeliveredItem,
     conclude_refund_conversation,
@@ -52,6 +53,25 @@ def test_lookup_order_found_sets_order_lookup_and_renders_details(refund_db, mon
     assert "2" in message
     assert "$12.95" in message
     assert "$32.85" in message
+
+
+# The agent sees when the order was placed in the restaurant's local time, not raw
+# UTC. (cross-region)
+def test_lookup_order_shows_placed_time_in_restaurant_timezone(refund_db, monkeypatch):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+    order_id = db.record_order(
+        {"lines": _sample_lines(), "total": 32.85},
+        refund_db,
+        created_at=datetime(2026, 9, 29, 14, 3, tzinfo=timezone.utc),
+    )
+
+    result = lookup_order.func(
+        order_id=order_id, state={"order_lookup": None}, tool_call_id="call_1"
+    )
+
+    message = result.update["messages"][0].content
+    assert "Placed: Sep 29, 2026, 7:03 AM PDT" in message
+    assert "2026-09-29T14:03" not in message
 
 
 # An unknown order id leaves order_lookup unchanged and asks the customer to re-check it. (edge)
@@ -170,6 +190,64 @@ def test_process_refund_request_eligible_writes_request_and_reports_pending(
     stored = db.get_refund_request_for_order(order["order_id"], refund_db)
     assert stored is not None
     assert stored["amount"] == 20.0
+
+
+# The refund check uses the trusted (NTP) time: the same instant is used for the
+# 48h window, stored on the refund, and shown to the customer in local time. (base)
+def test_process_refund_request_uses_trusted_time_for_check_record_and_message(
+    refund_db, monkeypatch
+):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+    order_id = db.record_order(
+        {"lines": _order_with_lines(refund_db)["lines"], "total": 26.95},
+        refund_db,
+        created_at=datetime(2026, 9, 28, 14, 3, tzinfo=timezone.utc),
+    )
+    order = db.get_order(order_id, refund_db)
+    monkeypatch.setattr(
+        clock, "trusted_now", lambda: datetime(2026, 9, 29, 14, 3, tzinfo=timezone.utc)
+    )
+
+    result = _invoke_process_refund(order, [UndeliveredItem(name="Mapo Tofu", quantity=2)])
+
+    stored = db.get_refund_request_for_order(order_id, refund_db)
+    assert stored["created_at"] == "2026-09-29T14:03:00.000Z"
+    assert "Submitted: Sep 29, 2026, 7:03 AM PDT" in result.update["messages"][0].content
+
+
+# The 48h window is measured against the trusted time, not the host clock: an order
+# that the host clock sees as 1h old is denied when the trusted time says it's 49h. (base)
+def test_process_refund_request_window_uses_trusted_time(refund_db, monkeypatch):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+    order = _order_with_lines(refund_db, hours_old=1)
+    monkeypatch.setattr(
+        clock,
+        "trusted_now",
+        lambda: datetime.now(timezone.utc) + timedelta(hours=48),
+    )
+
+    result = _invoke_process_refund(order, [UndeliveredItem(name="Mapo Tofu", quantity=2)])
+
+    assert "refund_request" not in result.update
+    assert db.list_complaints(refund_db)[0]["policy_reason"] == "outside_window"
+
+
+# An unreachable time server is not handled inside the tool: it propagates so the
+# conversation ends with the generic error, and nothing is recorded. (error)
+def test_process_refund_request_clock_failure_propagates(refund_db, monkeypatch):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+    order = _order_with_lines(refund_db)
+
+    def _clock_down():
+        raise clock.ClockUnavailableError("pool.ntp.org unreachable")
+
+    monkeypatch.setattr(clock, "trusted_now", _clock_down)
+
+    with pytest.raises(clock.ClockUnavailableError):
+        _invoke_process_refund(order, [UndeliveredItem(name="Mapo Tofu", quantity=2)])
+
+    assert db.list_refund_requests(refund_db) == []
+    assert db.list_complaints(refund_db) == []
 
 
 # A reported quantity greater than ordered is clamped to the ordered quantity, and the
@@ -382,6 +460,29 @@ def test_process_refund_request_denial_outside_window_writes_complaint_no_reques
     assert complaints[0]["description"] == "It's been days and I never got my tofu"
     message = result.update["messages"][0].content
     assert "48" in message
+
+
+# An order dated in the future is auto-rejected: the customer is sent to staff, a
+# complaint records the reason, and a WARNING goes to Phoenix. (negative)
+def test_process_refund_request_future_order_date_is_rejected_and_logged(
+    refund_db, monkeypatch, caplog
+):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+    order = _order_with_lines(refund_db, hours_old=-72)
+
+    with caplog.at_level(logging.WARNING):
+        result = _invoke_process_refund(
+            order, [UndeliveredItem(name="Mapo Tofu", quantity=2)]
+        )
+
+    assert "refund_request" not in result.update
+    assert db.list_refund_requests(refund_db) == []
+    assert db.list_complaints(refund_db)[0]["policy_reason"] == "invalid_order_date"
+    assert "staff" in result.update["messages"][0].content
+    assert any(
+        record.levelno == logging.WARNING and "order date" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 # A denial (no undelivered items reported) writes a complaint with that reason. (base)

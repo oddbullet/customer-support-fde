@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from customer_support_fde import db, interactive
+from customer_support_fde import db, interactive, restaurant_time
 from customer_support_fde.graph import build_graph
 from customer_support_fde.tracing import setup_tracing
 
@@ -29,6 +29,21 @@ def run(argv: list[str] | None = None) -> int:
         except Exception as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
+        return 0
+
+    if "--set-tz" in argv:
+        index = argv.index("--set-tz") + 1
+        zone = argv[index].lower() if index < len(argv) else ""
+        if zone not in restaurant_time.US_TIMEZONES:
+            options = ", ".join(restaurant_time.US_TIMEZONES)
+            print(f"Error: choose a timezone from: {options}", file=sys.stderr)
+            return 1
+        try:
+            db.set_restaurant_timezone(restaurant_time.US_TIMEZONES[zone])
+        except Exception as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        print(f"Restaurant timezone set to {zone} ({restaurant_time.US_TIMEZONES[zone]}).")
         return 0
 
     if "--graph" in argv:

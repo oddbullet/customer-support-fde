@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 
-from customer_support_fde import db
+from customer_support_fde import db, restaurant_time
 from customer_support_fde.tracing import setup_tracing
 
 load_dotenv()
@@ -36,7 +36,9 @@ def _isolate_tickets_dir(monkeypatch, tmp_path):
 def e2e_db(tmp_path, monkeypatch) -> Path:
     path = tmp_path / "e2e.db"
     db.init_database(path)
+    db.set_restaurant_timezone("America/Los_Angeles", path)
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
+    monkeypatch.setattr(restaurant_time, "_timezone", None)
     return path
 
 

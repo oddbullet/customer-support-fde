@@ -1,10 +1,11 @@
 import logging
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from customer_support_fde import db
+from customer_support_fde import clock, db
 from customer_support_fde.nodes import ticket_gen_node as ticket_gen_node_module
 from customer_support_fde.nodes.cart_summary_node import (
     OrderNotPlacedError,
@@ -164,8 +165,12 @@ def test_render_order_summary_empty_cart_wording():
 def _use_tmp_db(monkeypatch, tmp_path):
     path = tmp_path / "test.db"
     db.init_database(path)
+    db.set_restaurant_timezone("America/Los_Angeles", path)
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
     return path
+
+
+_PLACED_AT = datetime(2026, 9, 29, 14, 3, tzinfo=timezone.utc)
 
 
 # cart_summary_node writes order_summary, records the order, writes order_id,
@@ -175,6 +180,7 @@ def test_cart_summary_node_writes_summary_and_appends_one_message(
     monkeypatch, tmp_path
 ):
     _use_tmp_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(clock, "trusted_now", lambda: _PLACED_AT)
     state = _base_state()
 
     result = cart_summary_node(state)
@@ -185,7 +191,7 @@ def test_cart_summary_node_writes_summary_and_appends_one_message(
     assert len(result["messages"]) == 1
     assert isinstance(result["messages"][0], AIMessage)
     assert result["messages"][0].content == render_order_summary(
-        expected_summary, result["order_id"]
+        expected_summary, result["order_id"], _PLACED_AT
     )
     assert result["messages"][0].content.endswith(
         f"Order ID: {db.format_order_id(result['order_id'])}\n"
@@ -208,6 +214,58 @@ def test_render_order_summary_with_order_id_confirms_order_placed():
         "Order ID: K7QP-3M9X\n"
         "Please show this ID when you pick up your order."
     )
+
+
+# A placed order's recap shows when it was placed, in the restaurant's local time,
+# between the total and the Order ID. (base)
+def test_render_order_summary_shows_local_placed_time():
+    summary = build_order_summary({"Spring Rolls": 1}, SAMPLE_MENU)
+
+    rendered = render_order_summary(summary, "K7QP3M9X", _PLACED_AT)
+
+    assert rendered == (
+        "Your order has been placed.\n\n"
+        "Here's your order:\n"
+        f"- Spring Rolls x1 @ ${6.95:.2f} each = ${6.95:.2f}\n\n"
+        f"Total: ${6.95:.2f}\n"
+        "Placed: Sep 29, 2026, 7:03 AM PDT\n"
+        "Order ID: K7QP-3M9X\n"
+        "Please show this ID when you pick up your order."
+    )
+
+
+# The order is stamped with the trusted (NTP) time, not the host clock. (base)
+def test_cart_summary_node_stamps_order_with_trusted_time(monkeypatch, tmp_path):
+    path = _use_tmp_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(clock, "trusted_now", lambda: _PLACED_AT)
+
+    result = cart_summary_node(_base_state())
+
+    assert db.get_order(result["order_id"], path)["created_at"] == "2026-09-29T14:03:00.000Z"
+    assert "Placed: Sep 29, 2026, 7:03 AM PDT" in result["messages"][0].content
+
+
+# If the time server can't be reached, the order is not placed and the failure is
+# logged. (error)
+def test_cart_summary_node_clock_failure_raises_order_not_placed(
+    monkeypatch, tmp_path, caplog
+):
+    path = _use_tmp_db(monkeypatch, tmp_path)
+    error = clock.ClockUnavailableError("pool.ntp.org unreachable")
+
+    def _clock_down():
+        raise error
+
+    monkeypatch.setattr(clock, "trusted_now", _clock_down)
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(OrderNotPlacedError) as excinfo:
+            cart_summary_node(_base_state())
+
+    assert excinfo.value.__cause__ is error
+    assert any(record.exc_info and record.exc_info[1] is error for record in caplog.records)
+    with db._connection(path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0] == 0
 
 
 # An empty cart writes no order, leaves order_id as None, and keeps the
@@ -234,7 +292,7 @@ def test_cart_summary_node_empty_cart_writes_no_order(monkeypatch, tmp_path):
 def test_cart_summary_node_record_order_failure_raises_order_not_placed(
     monkeypatch, caplog, error
 ):
-    def _fail(summary):
+    def _fail(summary, **kwargs):
         raise error
 
     monkeypatch.setattr("customer_support_fde.db.record_order", _fail)

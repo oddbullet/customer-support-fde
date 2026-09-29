@@ -1,5 +1,6 @@
 import sqlite3
 import uuid
+from datetime import datetime
 from unittest.mock import MagicMock
 
 from langchain_core.messages import AIMessage, SystemMessage
@@ -785,8 +786,9 @@ def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_p
         },
     ]
     assert final_state["order_summary"]["total"] == 19.90
+    placed_at = datetime.fromisoformat(db.get_order(final_state["order_id"])["created_at"])
     assert final_state["messages"][-1].content == render_order_summary(
-        final_state["order_summary"], final_state["order_id"]
+        final_state["order_summary"], final_state["order_id"], placed_at
     )
 
     actual = extract_outputs(graph, config)

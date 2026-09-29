@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated
 
@@ -9,7 +8,7 @@ from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from customer_support_fde import db, messages, refund_policy
+from customer_support_fde import clock, db, messages, refund_policy, restaurant_time
 from customer_support_fde.state import SupportState
 
 _logger = logging.getLogger(__name__)
@@ -37,7 +36,7 @@ def _render_order(order: dict) -> str:
             f"@ ${line['unit_price']:.2f} each = ${line['line_total']:.2f}"
         )
     lines.append(f"\nTotal: ${order['total']:.2f}")
-    lines.append(f"Placed: {order['created_at']}")
+    lines.append(f"Placed: {restaurant_time.format_local(order['created_at'])}")
     return "\n".join(lines)
 
 
@@ -203,12 +202,15 @@ def process_refund_request(
     )
     amount = _sum_amount(matched)
 
+    # One trusted (NTP) reading serves the window check, the stored refund time, and the
+    # time shown to the customer. A ClockUnavailableError propagates (see handle_tool_error).
+    now = clock.trusted_now()
     decision = refund_policy.evaluate(
         order,
         undelivered=matched,
         substitute_received=bool(substitute_dishes),
         return_confirmed=return_confirmed,
-        now=datetime.now(timezone.utc),
+        now=now,
     )
 
     if decision.eligible:
@@ -219,6 +221,7 @@ def process_refund_request(
                 amount=amount,
                 substitute_dishes=substitute_dishes or None,
                 return_confirmed=return_confirmed,
+                created_at=now,
             )
         except db.OrderStoreError:
             return _store_failure(messages.REFUND_NOT_SUBMITTED, tool_call_id)
@@ -242,7 +245,8 @@ def process_refund_request(
         message = (
             f"Your refund request for ${amount:.2f} has been submitted and is "
             "awaiting review by our staff. "
-            f"Order ID: {db.format_order_id(order_id)}."
+            f"Order ID: {db.format_order_id(order_id)}. "
+            f"Submitted: {restaurant_time.format_local(now)}."
         )
         if substitute_dishes:
             message += " Please return: " + ", ".join(substitute_dishes) + "."
@@ -255,6 +259,13 @@ def process_refund_request(
                     ToolMessage(content=message, tool_call_id=tool_call_id)
                 ],
             }
+        )
+
+    if decision.reason == "invalid_order_date":
+        _logger.warning(
+            "Refund rejected: unusable order date %r for order %s",
+            order.get("created_at"),
+            order_id,
         )
 
     complaint_ids = dict(state.get("complaint_ids") or {})

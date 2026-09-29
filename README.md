@@ -107,6 +107,17 @@ uv run start --init-db
 This is idempotent and safe to re-run after editing `menu.json` — it updates existing dishes
 and inserts new ones without deleting anything.
 
+Set the restaurant's timezone once (stored in the database; one of `eastern`, `central`,
+`mountain`, `arizona`, `pacific`, `alaska`, `hawaii`). Every time shown to customers and the
+agent is converted to it; storage and the refund window stay in UTC:
+
+```bash
+uv run start --set-tz eastern
+```
+
+Order and refund times come from an NTP server (`pool.ntp.org`), not the computer's clock, so
+the app needs internet access to it (UDP port 123).
+
 Then start an interactive conversation:
 
 ```bash
@@ -145,7 +156,9 @@ uv run pytest -m e2e
 
 ```
 src/customer_support_fde/
-├── cli.py                      # Entry point: --init-db, --graph, interactive mode
+├── cli.py                      # Entry point: --init-db, --set-tz, --graph, interactive mode
+├── clock.py                    # Trusted current time from an NTP server
+├── restaurant_time.py          # Restaurant timezone (from the database) and local-time display
 ├── interactive.py              # Rich-based interactive conversation loop
 ├── graph.py                    # LangGraph topology (nodes + edges)
 ├── state.py                    # Shared SupportState definition
