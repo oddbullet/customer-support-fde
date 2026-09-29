@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from customer_support_fde import db
 from customer_support_fde.nodes import ticket_gen_node as ticket_gen_node_module
 from customer_support_fde.nodes.cart_summary_node import (
+    OrderNotPlacedError,
     build_order_summary,
     cart_summary_node,
     render_order_summary,
@@ -187,7 +188,25 @@ def test_cart_summary_node_writes_summary_and_appends_one_message(
         expected_summary, result["order_id"]
     )
     assert result["messages"][0].content.endswith(
-        f"Order ID: {db.format_order_id(result['order_id'])}"
+        f"Order ID: {db.format_order_id(result['order_id'])}\n"
+        "Please show this ID when you pick up your order."
+    )
+
+
+# A placed order's recap leads with an explicit confirmation that the order went
+# through, so the customer never has to infer it. (base)
+def test_render_order_summary_with_order_id_confirms_order_placed():
+    summary = build_order_summary({"Spring Rolls": 1}, SAMPLE_MENU)
+
+    rendered = render_order_summary(summary, "K7QP3M9X")
+
+    assert rendered == (
+        "Your order has been placed.\n\n"
+        "Here's your order:\n"
+        f"- Spring Rolls x1 @ ${6.95:.2f} each = ${6.95:.2f}\n\n"
+        f"Total: ${6.95:.2f}\n"
+        "Order ID: K7QP-3M9X\n"
+        "Please show this ID when you pick up your order."
     )
 
 
@@ -204,18 +223,29 @@ def test_cart_summary_node_empty_cart_writes_no_order(monkeypatch, tmp_path):
     assert result["messages"][0].content == "There's nothing in your order to summarize."
 
 
-# An OrderStoreError from record_order propagates and no success AIMessage
-# is produced. (error)
-def test_cart_summary_node_record_order_failure_propagates(monkeypatch, tmp_path):
-    _use_tmp_db(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        "customer_support_fde.db.record_order",
-        lambda summary: (_ for _ in ()).throw(db.OrderStoreError("boom")),
-    )
+# A store failure while recording the order raises OrderNotPlacedError (chained to the
+# original error) instead of producing a success message, and the failure is logged
+# with its exception for Phoenix. (error)
+@pytest.mark.parametrize(
+    "error",
+    [db.OrderStoreError("disk I/O error"), db.MenuStoreError("Menu database not found")],
+    ids=["order_store", "menu_store"],
+)
+def test_cart_summary_node_record_order_failure_raises_order_not_placed(
+    monkeypatch, caplog, error
+):
+    def _fail(summary):
+        raise error
+
+    monkeypatch.setattr("customer_support_fde.db.record_order", _fail)
     state = _base_state()
 
-    with pytest.raises(db.OrderStoreError):
-        cart_summary_node(state)
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(OrderNotPlacedError) as excinfo:
+            cart_summary_node(state)
+
+    assert excinfo.value.__cause__ is error
+    assert any(record.exc_info and record.exc_info[1] is error for record in caplog.records)
 
 
 # render_order_summary(summary) called without an order_id is byte-identical
@@ -496,3 +526,28 @@ def test_ticket_gen_node_refund_branch_handles_no_issue_and_no_refund(monkeypatc
 
     assert result["refund_ticket"]["issue"] is None
     assert result["refund_ticket"]["refund_created"] is False
+
+
+# If the complaint lookup fails while building a refund ticket, the ticket is still
+# produced with decision None and the failure is logged, so a store hiccup at the end
+# doesn't hide a conversation that already finished. (error)
+def test_refund_ticket_node_degrades_when_complaint_lookup_fails(monkeypatch, caplog):
+    _patch_ticket_gen_llm(monkeypatch, None)
+
+    def _store_down(*args, **kwargs):
+        raise db.OrderStoreError("database is locked")
+
+    monkeypatch.setattr(db, "list_complaints", _store_down)
+    state = _refund_base_state()
+    state["order_lookup"] = {"order_id": "K7QP3M9X", "total": 22.0, "lines": []}
+    state["complaint_ids"] = {"K7QP3M9X": 5}
+
+    with caplog.at_level(logging.WARNING):
+        result = ticket_gen_node(state)
+
+    assert result["refund_ticket"]["decision"] is None
+    assert result["refund_ticket"]["complaint_ids"] == [5]
+    assert any(
+        record.exc_info and isinstance(record.exc_info[1], db.OrderStoreError)
+        for record in caplog.records
+    )

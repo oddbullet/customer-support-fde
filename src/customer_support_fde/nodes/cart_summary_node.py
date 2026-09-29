@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from langchain_core.messages import AIMessage
@@ -5,6 +6,14 @@ from langchain_core.messages import AIMessage
 from customer_support_fde import db
 from customer_support_fde.state import SupportState
 from customer_support_fde.tools.menu_tools import MenuItem, cart_total, price_for_item
+
+_logger = logging.getLogger(__name__)
+
+
+class OrderNotPlacedError(Exception):
+    # record_order is a single transaction, so when it fails nothing was saved and the
+    # CLI can tell the customer their order was not placed.
+    pass
 
 
 def build_order_summary(cart_items: dict[str, int], menu: list[MenuItem]) -> dict:
@@ -41,7 +50,12 @@ def render_order_summary(summary: dict, order_id: str | None = None) -> str:
     total_line = f"Total: ${summary['total']:.2f}"
     rendered = "\n".join(body_lines) + "\n\n" + total_line
     if order_id is not None:
-        rendered += f"\nOrder ID: {db.format_order_id(order_id)}"
+        rendered = (
+            "Your order has been placed.\n\n"
+            + rendered
+            + f"\nOrder ID: {db.format_order_id(order_id)}"
+            + "\nPlease show this ID when you pick up your order."
+        )
     return rendered
 
 
@@ -50,7 +64,11 @@ def cart_summary_node(state: SupportState) -> SupportState:
 
     order_id = None
     if summary["lines"]:
-        order_id = db.record_order(summary)
+        try:
+            order_id = db.record_order(summary)
+        except (db.OrderStoreError, db.MenuStoreError) as exc:
+            _logger.error("Failed to record confirmed order", exc_info=exc)
+            raise OrderNotPlacedError() from exc
 
     rendered = render_order_summary(summary, order_id)
     return {

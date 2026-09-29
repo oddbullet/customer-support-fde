@@ -87,9 +87,16 @@ def _refund_ticket_node(state: SupportState) -> SupportState:
     else:
         complaint_id = complaint_ids.get(order_id or "")
         if complaint_id is not None:
-            complaint = next(
-                (c for c in db.list_complaints() if c["id"] == complaint_id), None
-            )
+            try:
+                complaints = db.list_complaints()
+            except db.OrderStoreError:
+                # The conversation already finished; write the ticket without the
+                # decision rather than failing the customer at the last step.
+                _logger.warning(
+                    "Failed to read complaint for refund ticket", exc_info=True
+                )
+                complaints = []
+            complaint = next((c for c in complaints if c["id"] == complaint_id), None)
             if complaint is not None:
                 decision = complaint["policy_reason"]
 

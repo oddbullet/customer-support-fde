@@ -1,13 +1,17 @@
 import io
+import logging
 import sqlite3
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import pytest
+from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 from rich.console import Console
 
-from customer_support_fde import db, interactive
+from customer_support_fde import db, interactive, messages
+from customer_support_fde.circuit_breaker import ModelUnavailableError
+from customer_support_fde.nodes.cart_summary_node import OrderNotPlacedError
 
 from _cli_fakes import RESOLVED_STATE as _RESOLVED_STATE
 from _cli_fakes import record_warnings
@@ -440,32 +444,6 @@ def test_run_interactive_does_not_exit_on_blank_line_or_word_exit(monkeypatch):
     assert conversation_calls == ["", "how do I exit a subscription refund request?"]
 
 
-# A mid-conversation error raised by _run_conversation is caught, printed as a
-# distinctly styled error line, and the loop returns to a fresh prompt instead of
-# crashing the process. (error)
-def test_run_interactive_recovers_from_mid_conversation_error(monkeypatch, capsys):
-    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
-
-    calls = {"n": 0}
-
-    def _fake_run_conversation(console, graph, query):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise RuntimeError("boom")
-        return _RESOLVED_STATE
-
-    monkeypatch.setattr(interactive, "_run_conversation", _fake_run_conversation)
-    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("first\nsecond\n/exit\n"))
-
-    exit_code = interactive.run_interactive()
-
-    assert exit_code == 0
-    assert calls["n"] == 2
-    captured = capsys.readouterr()
-    assert "Error" in captured.out
-    assert "boom" in captured.out
-
-
 def _color_console() -> Console:
     return Console(file=io.StringIO(), force_terminal=True, color_system="standard")
 
@@ -554,42 +532,100 @@ def test_run_interactive_exits_with_remedy_when_menu_cannot_load(
     assert any("--init-db" in message for message in warnings)
 
 
-# The store-unavailable warning is a fixed, friendly message with no internal
-# details. (base)
-def test_store_unavailable_warning_text():
-    assert interactive.STORE_UNAVAILABLE_WARNING == (
-        "Sorry, our system is having some issues right now. Please try again later."
+
+
+# The generic error message is one fixed, friendly text that tells the customer to
+# exit and try again, with a counter fallback. (base)
+def test_generic_error_message_text():
+    assert messages.GENERIC_ERROR_MESSAGE == (
+        "Sorry, something went wrong on our end. Please exit the application and try "
+        "again. If the problem continues, please order at the counter."
     )
 
 
-# When a database failure stops the workflow (e.g. the account lookup or sign-up
-# fails), the red store-unavailable warning is shown, the loop waits for Enter
-# before starting a new conversation, and neither the generic error line nor the
-# raw database error is printed. (error)
-def test_run_interactive_shows_warning_and_stops_on_store_error(monkeypatch, capsys):
-    events = []
-    monkeypatch.setattr(
-        interactive,
-        "print_warning",
-        lambda message, console=None: events.append(("warning", message)),
+# The order-not-placed message states plainly that the order was not placed, with the
+# same recovery guidance. (base)
+def test_order_not_placed_message_text():
+    assert messages.ORDER_NOT_PLACED_MESSAGE == (
+        "Sorry, something went wrong on our end and your order was not placed. Please "
+        "exit the application and try again. If the problem continues, please order at "
+        "the counter."
     )
-    monkeypatch.setattr(interactive.Console, "clear", lambda self: events.append(("clear",)))
+
+
+# Every unrecoverable failure that escapes a conversation shows only the generic
+# message, waits for Enter, and exits with code 1 without running another
+# conversation or printing the raw error. (error)
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeError("boom secret detail"),
+        db.OrderStoreError("Failed to read account: database is locked"),
+        db.MenuStoreError("Menu database not found at 'C:/secret/support.db'"),
+        GraphRecursionError("Recursion limit of 100 reached without hitting a stop"),
+        ModelUnavailableError("primary and fallback models unavailable"),
+    ],
+    ids=["unexpected", "order_store", "menu_store", "recursion", "model_unavailable"],
+)
+def test_run_interactive_shows_generic_message_and_exits_on_unrecoverable_error(
+    monkeypatch, capsys, error
+):
+    warnings = record_warnings(monkeypatch)
     monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
-
-    def _store_down(console, graph, query):
-        raise db.OrderStoreError("Failed to read account: database is locked")
-
-    monkeypatch.setattr(interactive, "_run_conversation", _store_down)
-    stdin = io.StringIO("hi\n\n/exit\n")
+    run_conversation = MagicMock(side_effect=error)
+    monkeypatch.setattr(interactive, "_run_conversation", run_conversation)
+    stdin = io.StringIO("hi\n\nsecond question\n")
     monkeypatch.setattr(interactive.sys, "stdin", stdin)
 
     exit_code = interactive.run_interactive()
 
-    assert exit_code == 0
-    assert events == [("warning", interactive.STORE_UNAVAILABLE_WARNING), ("clear",)]
+    assert exit_code == 1
+    assert warnings == [messages.GENERIC_ERROR_MESSAGE]
+    assert run_conversation.call_count == 1
     captured = capsys.readouterr()
-    assert "Press Enter to start a new conversation." in captured.out
+    assert "Press Enter to exit." in captured.out
     assert "Error:" not in captured.out
-    assert "database is locked" not in captured.out
-    # The blank line was consumed by the Enter pause, so /exit ends the session.
-    assert stdin.read() == ""
+    assert str(error) not in captured.out
+    # Only the Enter pause was consumed after the first question.
+    assert stdin.read() == "second question\n"
+
+
+# A failure to record a confirmed order tells the customer their order was not
+# placed, then exits. (error)
+def test_run_interactive_shows_order_not_placed_message(monkeypatch, capsys):
+    warnings = record_warnings(monkeypatch)
+    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
+
+    def _order_failed(console, graph, query):
+        raise OrderNotPlacedError() from db.OrderStoreError("disk I/O error")
+
+    monkeypatch.setattr(interactive, "_run_conversation", _order_failed)
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("order\n\n"))
+
+    exit_code = interactive.run_interactive()
+
+    assert exit_code == 1
+    assert warnings == [messages.ORDER_NOT_PLACED_MESSAGE]
+    captured = capsys.readouterr()
+    assert "Press Enter to exit." in captured.out
+    assert "disk I/O error" not in captured.out
+
+
+# The unrecoverable failure is logged at ERROR with its exception, so the handler
+# sends the traceback to Phoenix. (error)
+def test_run_interactive_logs_unrecoverable_error_with_exception(monkeypatch, caplog):
+    record_warnings(monkeypatch)
+    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
+    error = RuntimeError("boom")
+    monkeypatch.setattr(
+        interactive, "_run_conversation", MagicMock(side_effect=error)
+    )
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("hi\n\n"))
+
+    with caplog.at_level(logging.ERROR, logger="customer_support_fde.interactive"):
+        interactive.run_interactive()
+
+    logged = [r for r in caplog.records if r.name == "customer_support_fde.interactive"]
+    assert len(logged) == 1
+    assert logged[0].levelno == logging.ERROR
+    assert logged[0].exc_info[1] is error

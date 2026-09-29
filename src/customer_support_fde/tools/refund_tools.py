@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated
@@ -8,8 +9,19 @@ from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from customer_support_fde import db, refund_policy
+from customer_support_fde import db, messages, refund_policy
 from customer_support_fde.state import SupportState
+
+_logger = logging.getLogger(__name__)
+
+
+def _store_failure(content: str, tool_call_id: str) -> Command:
+    # Called from an except block: the real error goes to Phoenix via the log, and
+    # the agent only gets the fixed customer-facing text.
+    _logger.warning("Refund store operation failed", exc_info=True)
+    return Command(
+        update={"messages": [ToolMessage(content=content, tool_call_id=tool_call_id)]}
+    )
 
 
 class UndeliveredItem(BaseModel):
@@ -44,19 +56,7 @@ def lookup_order(
     try:
         order = db.get_order(order_id)
     except db.OrderStoreError:
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=(
-                            "I couldn't look up that order right now. Please try "
-                            "again shortly."
-                        ),
-                        tool_call_id=tool_call_id,
-                    )
-                ],
-            }
-        )
+        return _store_failure(messages.ORDER_LOOKUP_FAILED, tool_call_id)
     if order is None:
         return Command(
             update={
@@ -178,7 +178,10 @@ def process_refund_request(
 
     order_id = order["order_id"]
 
-    existing = db.get_refund_request_for_order(order_id)
+    try:
+        existing = db.get_refund_request_for_order(order_id)
+    except db.OrderStoreError:
+        return _store_failure(messages.REFUND_NOT_SUBMITTED, tool_call_id)
     if existing is not None:
         return Command(
             update={
@@ -210,7 +213,7 @@ def process_refund_request(
 
     if decision.eligible:
         try:
-            db.record_refund_request(
+            request_id = db.record_refund_request(
                 order_id,
                 lines=matched,
                 amount=amount,
@@ -218,24 +221,28 @@ def process_refund_request(
                 return_confirmed=return_confirmed,
             )
         except db.OrderStoreError:
-            return Command(
-                update={
-                    "messages": [
-                        ToolMessage(
-                            content=(
-                                "Your refund request could not be recorded. "
-                                "Please try again shortly."
-                            ),
-                            tool_call_id=tool_call_id,
-                        )
-                    ],
-                }
-            )
+            return _store_failure(messages.REFUND_NOT_SUBMITTED, tool_call_id)
 
-        refund_request = db.get_refund_request_for_order(order_id)
+        try:
+            refund_request = db.get_refund_request_for_order(order_id)
+        except db.OrderStoreError:
+            # The refund is already saved, so the customer must still hear it was
+            # submitted; build the record from what was just written.
+            _logger.warning("Failed to re-read recorded refund request", exc_info=True)
+            refund_request = {
+                "id": request_id,
+                "order_id": order_id,
+                "amount": amount,
+                "substitute_dishes": substitute_dishes or None,
+                "return_confirmed": return_confirmed,
+                "status": "pending",
+                "created_at": None,
+                "lines": matched,
+            }
         message = (
             f"Your refund request for ${amount:.2f} has been submitted and is "
-            "awaiting review."
+            "awaiting review by our staff. "
+            f"Order ID: {db.format_order_id(order_id)}."
         )
         if substitute_dishes:
             message += " Please return: " + ", ".join(substitute_dishes) + "."
@@ -259,19 +266,7 @@ def process_refund_request(
                 customer_issue, order_id, decision.reason
             )
     except db.OrderStoreError:
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=(
-                            "Your issue could not be recorded. Please try again "
-                            "shortly."
-                        ),
-                        tool_call_id=tool_call_id,
-                    )
-                ],
-            }
-        )
+        return _store_failure(messages.COMPLAINT_NOT_RECORDED, tool_call_id)
 
     message = _annotate(decision.message, clamped_names, unmatched_names)
     return Command(
@@ -304,19 +299,7 @@ def log_complaint(
         else:
             complaint_ids[key] = db.record_complaint(description, order_id, None)
     except db.OrderStoreError:
-        return Command(
-            update={
-                "messages": [
-                    ToolMessage(
-                        content=(
-                            "Your complaint could not be recorded. Please try "
-                            "again shortly."
-                        ),
-                        tool_call_id=tool_call_id,
-                    )
-                ],
-            }
-        )
+        return _store_failure(messages.COMPLAINT_NOT_RECORDED, tool_call_id)
 
     return Command(
         update={

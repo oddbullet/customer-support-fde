@@ -1,8 +1,10 @@
+import logging
+
 import pytest
 from langgraph.types import Command
 from pydantic import ValidationError
 
-from customer_support_fde import db
+from customer_support_fde import db, messages
 from customer_support_fde.tools.refund_tools import (
     UndeliveredItem,
     conclude_refund_conversation,
@@ -163,6 +165,8 @@ def test_process_refund_request_eligible_writes_request_and_reports_pending(
     assert "$20.00" in message
     assert "submitted" in message.lower()
     assert "complete" not in message.lower()
+    assert "our staff" in message
+    assert f"Order ID: {db.format_order_id(order['order_id'])}" in message
     stored = db.get_refund_request_for_order(order["order_id"], refund_db)
     assert stored is not None
     assert stored["amount"] == 20.0
@@ -250,10 +254,10 @@ def test_process_refund_request_existing_request_reports_status_not_duplicate(
     assert len(db.list_refund_requests(refund_db)) == 1
 
 
-# An OrderStoreError during the write yields an explicit "could not be recorded"
-# message rather than a confirmation (FR-025). (error)
-def test_process_refund_request_store_error_yields_not_recorded_message(
-    refund_db, monkeypatch
+# An OrderStoreError during the write yields the standard "not submitted" message
+# rather than a confirmation, and logs the error for Phoenix (FR-025). (error)
+def test_process_refund_request_store_error_yields_not_submitted_message(
+    refund_db, monkeypatch, caplog
 ):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     order = _order_with_lines(refund_db)
@@ -263,13 +267,94 @@ def test_process_refund_request_store_error_yields_not_recorded_message(
         lambda *a, **k: (_ for _ in ()).throw(db.OrderStoreError("boom")),
     )
 
+    with caplog.at_level(logging.WARNING):
+        result = _invoke_process_refund(
+            order, [UndeliveredItem(name="Mapo Tofu", quantity=2)]
+        )
+
+    assert "refund_request" not in result.update
+    assert result.update["messages"][0].content == messages.REFUND_NOT_SUBMITTED
+    assert any(
+        record.exc_info and isinstance(record.exc_info[1], db.OrderStoreError)
+        for record in caplog.records
+    )
+
+
+# An OrderStoreError while checking for an existing request yields the "not submitted"
+# message and writes nothing. (error)
+def test_process_refund_request_existing_check_failure_yields_not_submitted(
+    refund_db, monkeypatch
+):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+    order = _order_with_lines(refund_db)
+
+    def _store_down(*args, **kwargs):
+        raise db.OrderStoreError("database is locked")
+
+    monkeypatch.setattr(db, "get_refund_request_for_order", _store_down)
+
     result = _invoke_process_refund(
         order, [UndeliveredItem(name="Mapo Tofu", quantity=2)]
     )
 
     assert "refund_request" not in result.update
-    message = result.update["messages"][0].content
-    assert "could not be recorded" in message.lower()
+    assert result.update["messages"][0].content == messages.REFUND_NOT_SUBMITTED
+    assert db.list_refund_requests(refund_db) == []
+
+
+# If the refund is recorded but re-reading it fails, the customer is still told it was
+# submitted, and refund_request is built from the values just written. (error)
+def test_process_refund_request_reread_failure_still_reports_submitted(
+    refund_db, monkeypatch
+):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+    order = _order_with_lines(refund_db)
+    real_get = db.get_refund_request_for_order
+    calls = {"n": 0}
+
+    def _fail_after_write(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return real_get(*args, **kwargs)
+        raise db.OrderStoreError("database is locked")
+
+    monkeypatch.setattr(db, "get_refund_request_for_order", _fail_after_write)
+
+    result = _invoke_process_refund(
+        order, [UndeliveredItem(name="Mapo Tofu", quantity=2)]
+    )
+
+    refund_request = result.update["refund_request"]
+    stored = real_get(order["order_id"], refund_db)
+    assert refund_request["id"] == stored["id"]
+    assert refund_request["order_id"] == order["order_id"]
+    assert refund_request["amount"] == 20.0
+    assert refund_request["status"] == "pending"
+    assert refund_request["lines"] == [
+        {"name": "Mapo Tofu", "quantity": 2, "unit_price": 10.0, "line_total": 20.0}
+    ]
+    assert "submitted" in result.update["messages"][0].content.lower()
+
+
+# An OrderStoreError while recording a denial's complaint yields the standard
+# "complaint not recorded" message. (error)
+def test_process_refund_request_denial_store_error_yields_complaint_not_recorded(
+    refund_db, monkeypatch
+):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+    order = _order_with_lines(refund_db, hours_old=49)
+
+    def _store_down(*args, **kwargs):
+        raise db.OrderStoreError("database is locked")
+
+    monkeypatch.setattr(db, "record_complaint", _store_down)
+
+    result = _invoke_process_refund(
+        order, [UndeliveredItem(name="Mapo Tofu", quantity=2)]
+    )
+
+    assert "complaint_ids" not in result.update
+    assert result.update["messages"][0].content == messages.COMPLAINT_NOT_RECORDED
 
 
 # --- Denial path (US2) ---
@@ -439,8 +524,8 @@ def test_log_complaint_extends_rather_than_duplicates(refund_db, monkeypatch):
     assert second.update["complaint_ids"] == first.update["complaint_ids"]
 
 
-# An OrderStoreError yields a "could not be recorded" message rather than a
-# confirmation (FR-025). (error)
+# An OrderStoreError yields the standard "complaint not recorded" message rather than
+# a confirmation (FR-025). (error)
 def test_log_complaint_store_error_yields_not_recorded_message(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     monkeypatch.setattr(
@@ -451,8 +536,7 @@ def test_log_complaint_store_error_yields_not_recorded_message(refund_db, monkey
 
     result = _invoke_log_complaint("Rude service.")
 
-    message = result.update["messages"][0].content
-    assert "could not be recorded" in message.lower()
+    assert result.update["messages"][0].content == messages.COMPLAINT_NOT_RECORDED
 
 
 # An OrderStoreError while looking up the order leaves order_lookup unchanged and
@@ -471,5 +555,24 @@ def test_lookup_order_store_error_yields_lookup_failed_message(refund_db, monkey
 
     assert "order_lookup" not in result.update
     message = result.update["messages"][0].content
-    assert "couldn't look up" in message.lower()
+    assert message == messages.ORDER_LOOKUP_FAILED
     assert "database is locked" not in message
+
+
+# The refund-agent store-failure texts say plainly that nothing went through and give
+# the same exit-and-retry / counter guidance. (base)
+def test_refund_store_failure_message_texts():
+    guidance = (
+        "Please exit the application and try again. If the problem continues, please "
+        "ask at the counter."
+    )
+    assert messages.ORDER_LOOKUP_FAILED == (
+        "I couldn't look up that order because of a problem on our end. " + guidance
+    )
+    assert messages.REFUND_NOT_SUBMITTED == (
+        "Your refund request was not submitted because of a problem on our end. "
+        + guidance
+    )
+    assert messages.COMPLAINT_NOT_RECORDED == (
+        "Your complaint was not recorded because of a problem on our end. " + guidance
+    )
