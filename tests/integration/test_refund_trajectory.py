@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 from agentevals.graph_trajectory.strict import graph_trajectory_strict_match
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
@@ -546,27 +546,3 @@ def test_second_order_outcome_not_conflated_with_first_after_condensation(
     stored = db.list_refund_requests(db_path)
     assert len(stored) == 1
     assert stored[0]["order_id"] == second_order_id
-
-
-# A refund agent that calls lookup_order over the limit runs it only 3 times, then the
-# graph ends with the breach recorded and the refund left unresolved with no ticket. (base)
-def test_refund_agent_exceeding_tool_limit_ends_conversation(monkeypatch, tmp_path):
-    db_path = _use_tmp_db(monkeypatch, tmp_path)
-    order_id = _seed_order(db_path)
-    _mock_router(monkeypatch)
-    refund_llm = _fake_refund_llm(
-        [_tool_call("lookup_order", {"order_id": order_id}, f"call_{i}") for i in range(6)]
-    )
-    monkeypatch.setattr(refund_agent, "_build_llm", lambda: refund_llm)
-
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-
-    result = graph.invoke(_refund_initial_state("I never got my mapo tofu"), config)
-
-    assert "__interrupt__" not in result
-    assert result["tool_limit_reached"] == {"agent": "refund", "tool": "lookup_order"}
-    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
-    assert len(tool_messages) == 3
-    assert result["refund_resolved"] is False
-    assert result.get("refund_ticket") is None

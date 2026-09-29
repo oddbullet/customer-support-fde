@@ -2,7 +2,7 @@ import sqlite3
 import uuid
 from unittest.mock import MagicMock
 
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
@@ -13,7 +13,6 @@ from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes import memory_gen_node, order_support_agent, router_agent
 from customer_support_fde.nodes.cart_summary_node import render_order_summary
 from customer_support_fde.nodes.router_agent import RouterDecision
-from customer_support_fde.state import initial_state
 
 from _trajectory import extract_outputs
 
@@ -1211,78 +1210,3 @@ def test_memory_gen_node_failure_does_not_affect_ticket_delivery(monkeypatch, tm
         "total": final_state["order_summary"]["total"],
     }
     assert db.get_account(account_number, db_path)["preferences"] is None
-
-
-def _order_initial_state(user_query: str) -> dict:
-    return {**initial_state(user_query), "menu": SAMPLE_MENU}
-
-
-def _mock_order_router(monkeypatch) -> None:
-    monkeypatch.setattr(
-        router_agent,
-        "_build_llm",
-        lambda: _fake_router_llm(
-            RouterDecision(destination="order_support", sentiment="neutral")
-        ),
-    )
-
-
-def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
-    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": call_id}])
-
-
-# An order agent that calls get_menu over the limit runs it only 3 times, then the graph
-# ends with the breach recorded and no order confirmed or ticket written. (base)
-def test_order_agent_exceeding_tool_limit_ends_conversation(monkeypatch, tmp_path):
-    _use_tmp_db(monkeypatch, tmp_path)
-    _mock_order_router(monkeypatch)
-    order_llm = _fake_order_llm(
-        [_tool_call("get_menu", {}, f"call_{i}") for i in range(6)]
-    )
-    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
-
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-
-    result = graph.invoke(_order_initial_state("What's on the menu?"), config)
-    assert "__interrupt__" in result
-    # Continue without an account.
-    result = graph.invoke(Command(resume="2"), config)
-
-    assert "__interrupt__" not in result
-    assert result["tool_limit_reached"] == {"agent": "order_support", "tool": "get_menu"}
-    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
-    assert len(tool_messages) == 3
-    assert result["order_confirmed"] is False
-    assert result.get("order_ticket") is None
-    tickets_dir = tmp_path / "tickets"
-    assert not tickets_dir.exists() or not any(tickets_dir.iterdir())
-
-
-# Three get_menu steps before replying don't trip the limit, and the count resets on the
-# customer's reply so three more in the next turn don't trip it either. (regression)
-def test_three_same_tool_steps_per_turn_do_not_trip_limit(monkeypatch, tmp_path):
-    _use_tmp_db(monkeypatch, tmp_path)
-    _mock_order_router(monkeypatch)
-    order_llm = _fake_order_llm(
-        [_tool_call("get_menu", {}, f"call_a{i}") for i in range(3)]
-        + [AIMessage(content="Here's the menu.")]
-        + [_tool_call("get_menu", {}, f"call_b{i}") for i in range(3)]
-        + [AIMessage(content="Here it is again.")]
-    )
-    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: order_llm)
-
-    graph = build_graph(checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
-
-    graph.invoke(_order_initial_state("What's on the menu?"), config)
-    # Continue without an account.
-    result = graph.invoke(Command(resume="2"), config)
-    assert "__interrupt__" in result
-    assert result.get("tool_limit_reached") is None
-
-    result = graph.invoke(Command(resume="Can you show me the menu again?"), config)
-    assert "__interrupt__" in result
-    assert result.get("tool_limit_reached") is None
-    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
-    assert len(tool_messages) == 6

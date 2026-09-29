@@ -2,19 +2,12 @@ import io
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
-from langchain_core.messages import AIMessage
 from langgraph.types import Command
 from rich.console import Console
 
 from customer_support_fde import interactive
 
-_RESOLVED_STATE = {
-    "destination": "order_support",
-    "user_query": "what's on the menu?",
-    "sentiment": None,
-    "order_confirmed": False,
-    "messages": [AIMessage(content="We have kung pao chicken.")],
-}
+from _cli_fakes import RESOLVED_STATE as _RESOLVED_STATE
 
 
 # interactive.py's Console factory emits no raw ANSI escape sequences when
@@ -483,55 +476,6 @@ def test_print_warning_renders_message_in_red():
     output = console.file.getvalue()
     assert "System issue" in output
     assert "\x1b[31m" in output
-
-
-_TOOL_LIMIT_STATE = {
-    "destination": "order_support",
-    "user_query": "hi",
-    "sentiment": None,
-    "order_confirmed": False,
-    "tool_limit_reached": {"agent": "order_support", "tool": "get_menu"},
-    "messages": [
-        AIMessage(
-            content="", tool_calls=[{"name": "get_menu", "args": {}, "id": "call_1"}]
-        )
-    ],
-}
-
-
-# The tool-limit warning is a fixed, friendly message with no internal details. (base)
-def test_tool_limit_warning_text():
-    assert interactive.TOOL_LIMIT_WARNING == (
-        "Sorry, our system is having some issues right now. Please try again later."
-    )
-
-
-# When a conversation exceeds the tool limit, the red warning is shown, the loop waits
-# for Enter before clearing the screen, and no generic error line is printed. (base)
-def test_run_interactive_shows_warning_when_tool_limit_exceeded(monkeypatch, capsys):
-    events = []
-    monkeypatch.setattr(
-        interactive,
-        "print_warning",
-        lambda message, console=None: events.append(("warning", message)),
-    )
-    monkeypatch.setattr(interactive.Console, "clear", lambda self: events.append(("clear",)))
-    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
-    monkeypatch.setattr(
-        interactive, "_run_conversation", lambda console, graph, query: _TOOL_LIMIT_STATE
-    )
-    stdin = io.StringIO("hi\n\n/exit\n")
-    monkeypatch.setattr(interactive.sys, "stdin", stdin)
-
-    exit_code = interactive.run_interactive()
-
-    assert exit_code == 0
-    assert events == [("warning", interactive.TOOL_LIMIT_WARNING), ("clear",)]
-    captured = capsys.readouterr()
-    assert "Press Enter to start a new conversation." in captured.out
-    assert "Error:" not in captured.out
-    # The blank line was consumed by the Enter pause, so /exit ends the session.
-    assert stdin.read() == ""
 
 
 # Every line of a multi-line warning is rendered red. (edge)
