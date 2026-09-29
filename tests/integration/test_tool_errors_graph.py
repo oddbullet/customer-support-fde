@@ -8,6 +8,7 @@ from langgraph.types import Command
 from customer_support_fde import db
 from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes import order_support_agent, refund_agent, router_agent
+from customer_support_fde.nodes.common import TOOL_ERROR_MESSAGE
 from customer_support_fde.nodes.router_agent import RouterDecision
 from customer_support_fde.tools import menu_tools
 
@@ -119,28 +120,46 @@ def _tool_messages(result) -> list[ToolMessage]:
     return [m for m in result["messages"] if isinstance(m, ToolMessage)]
 
 
-# A single unexpected exception inside an order tool is returned to the order agent
-# as a generic error ToolMessage (no internal details), and the agent replies
-# normally: no warning, no crash. (error)
-def test_order_tool_single_exception_is_reported_back_to_the_agent(
-    monkeypatch, tmp_path
-):
-    monkeypatch.setattr(menu_tools, "resolve_menu_item", _raise_internal_error)
+def _fail_once(real):
+    # Raises on the first call, then behaves like the real function.
+    calls = {"n": 0}
+
+    def _flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            _raise_internal_error()
+        return real(*args, **kwargs)
+
+    return _flaky
+
+
+# A single unexpected exception inside an order tool is sent back to the order agent
+# only as the fixed retry instruction (no internal details); the agent retries the
+# same call, it succeeds, and the conversation carries on with no warning. (error)
+def test_order_tool_single_exception_is_retried_by_the_agent(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        menu_tools, "resolve_menu_item", _fail_once(menu_tools.resolve_menu_item)
+    )
     result, bound = _start_order_conversation(
         monkeypatch,
         tmp_path,
         [
             _tool_call("get_menu_item", {"name": "kung pao"}, "call_1"),
-            AIMessage(content="Sorry, I couldn't look that up just now."),
+            _tool_call("get_menu_item", {"name": "kung pao"}, "call_2"),
+            AIMessage(content="Kung Pao Chicken is $12.95."),
         ],
     )
 
-    assert result["__interrupt__"][0].value == "Sorry, I couldn't look that up just now."
+    assert result["__interrupt__"][0].value == "Kung Pao Chicken is $12.95."
     assert result.get("tool_limit_reached") is None
-    tool_message = _last_tool_message(bound, 1)
-    assert tool_message.tool_call_id == "call_1"
-    assert tool_message.status == "error"
-    assert INTERNAL_DETAIL not in tool_message.content
+    failed = _last_tool_message(bound, 1)
+    assert failed.tool_call_id == "call_1"
+    assert failed.status == "error"
+    assert failed.content == TOOL_ERROR_MESSAGE
+    retried = _last_tool_message(bound, 2)
+    assert retried.tool_call_id == "call_2"
+    assert retried.status != "error"
+    assert "Kung Pao Chicken" in retried.content
 
 
 # An order agent that keeps retrying a tool that keeps raising is stopped by the
@@ -162,6 +181,7 @@ def test_order_tool_repeated_exceptions_end_at_tool_limit(monkeypatch, tmp_path)
     tool_messages = _tool_messages(result)
     assert len(tool_messages) == 3
     assert all(m.status == "error" for m in tool_messages)
+    assert all(m.content == TOOL_ERROR_MESSAGE for m in tool_messages)
     assert result.get("order_ticket") is None
 
 
@@ -177,27 +197,47 @@ def _start_refund_conversation(monkeypatch, tmp_path, responses):
     return result, bound
 
 
-# A single unexpected exception inside a refund tool is returned to the refund agent
-# as a generic error ToolMessage (no internal details), and the agent replies
-# normally: no warning, no crash. (error)
-def test_refund_tool_single_exception_is_reported_back_to_the_agent(
-    monkeypatch, tmp_path
-):
-    result, bound = _start_refund_conversation(
-        monkeypatch,
-        tmp_path,
-        [
-            _tool_call("lookup_order", {"order_id": "K7QP3M9X"}, "call_1"),
-            AIMessage(content="Sorry, I couldn't find that order just now."),
-        ],
+# A single unexpected exception inside a refund tool is sent back to the refund agent
+# only as the fixed retry instruction (no internal details); the agent retries the
+# same call, it succeeds, and the conversation carries on with no warning. (error)
+def test_refund_tool_single_exception_is_retried_by_the_agent(monkeypatch, tmp_path):
+    db_path = _use_tmp_db(monkeypatch, tmp_path)
+    order_id = db.record_order(
+        {
+            "lines": [
+                {
+                    "name": "Kung Pao Chicken",
+                    "quantity": 1,
+                    "unit_price": 12.95,
+                    "line_total": 12.95,
+                }
+            ],
+            "total": 12.95,
+        },
+        db_path,
     )
+    monkeypatch.setattr(db, "get_order", _fail_once(db.get_order))
+    monkeypatch.setattr(router_agent, "_build_llm", lambda: _fake_router_llm("refund"))
+    llm, bound = _fake_agent_llm(
+        [
+            _tool_call("lookup_order", {"order_id": order_id}, "call_1"),
+            _tool_call("lookup_order", {"order_id": order_id}, "call_2"),
+            AIMessage(content="I found your order. What went wrong?"),
+        ]
+    )
+    monkeypatch.setattr(refund_agent, "_build_llm", lambda: llm)
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
 
-    assert result["__interrupt__"][0].value == "Sorry, I couldn't find that order just now."
+    result = graph.invoke(_initial_state(f"I never got my order {order_id}"), config)
+
+    assert result["__interrupt__"][0].value == "I found your order. What went wrong?"
     assert result.get("tool_limit_reached") is None
-    tool_message = _last_tool_message(bound, 1)
-    assert tool_message.tool_call_id == "call_1"
-    assert tool_message.status == "error"
-    assert INTERNAL_DETAIL not in tool_message.content
+    assert result["order_lookup"]["order_id"] == order_id
+    failed = _last_tool_message(bound, 1)
+    assert failed.tool_call_id == "call_1"
+    assert failed.status == "error"
+    assert failed.content == TOOL_ERROR_MESSAGE
 
 
 # A refund agent that keeps retrying a tool that keeps raising is stopped by the
@@ -215,4 +255,5 @@ def test_refund_tool_repeated_exceptions_end_at_tool_limit(monkeypatch, tmp_path
     tool_messages = _tool_messages(result)
     assert len(tool_messages) == 3
     assert all(m.status == "error" for m in tool_messages)
+    assert all(m.content == TOOL_ERROR_MESSAGE for m in tool_messages)
     assert result.get("refund_ticket") is None

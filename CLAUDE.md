@@ -25,8 +25,9 @@ driven by an LLM (via OpenRouter). Features:
   new conversation on Enter.
 - Failure handling:
   - Tool errors: an exception inside a tool is returned to the agent as an error `ToolMessage`
-    (generic text; the real exception is logged) so the agent can retry. Repeated failures end at
-    the tool-call limit (see `tool_limit_node`). Invalid tool-call arguments return the validation
+    carrying a fixed instruction (`TOOL_ERROR_MESSAGE`) to retry the same call without telling the
+    customer; the real exception is only logged. Repeated failures end at the tool-call limit (see
+    `tool_limit_node`), and the CLI shows its coded warning. Invalid tool-call arguments return the validation
     message so the model can correct them.
   - Database errors: SQLite errors on both read and write paths surface as `OrderStoreError`.
     Refund tools turn them into a "couldn't look up / couldn't record" reply to the agent. Any

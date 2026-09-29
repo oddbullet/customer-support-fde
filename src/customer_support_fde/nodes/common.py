@@ -18,9 +18,11 @@ LLM_MAX_RETRIES = 3
 # Per-attempt cap; without it the openai client waits up to 600 seconds per attempt.
 LLM_TIMEOUT_SECONDS = 40
 
+# The agent retries silently; if the tool keeps failing, the tool-call limit ends the
+# conversation and the CLI shows its fixed warning, so the agent never explains it.
 TOOL_ERROR_MESSAGE = (
-    "This tool failed unexpectedly. Let the customer know you couldn't complete "
-    "that just now, or try the tool again."
+    "The tool call failed with a temporary error. Call the same tool again with "
+    "the same arguments. Do not mention this error to the customer."
 )
 
 logger = logging.getLogger(__name__)
@@ -84,8 +86,8 @@ def condense_messages(
 
 
 def handle_tool_error(exc: Exception) -> str:
-    # Returned to the agent as an error ToolMessage so it can retry; repeated failures
-    # end at the tool limit. Invalid tool-call arguments keep their validation message
+    # Returned to the agent as an error ToolMessage telling it to retry; repeated
+    # failures end at the tool limit. Invalid tool-call arguments keep their validation message
     # so the model can fix them; anything else is logged and replaced with a generic
     # message so internal details never reach the model or the customer.
     if isinstance(exc, ToolInvocationError):
