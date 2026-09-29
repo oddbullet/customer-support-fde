@@ -7,7 +7,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 from pydantic import BaseModel, ValidationError
 
-from customer_support_fde import circuit_breaker, interactive
+from customer_support_fde import circuit_breaker, interactive, messages
 from customer_support_fde.nodes import common
 
 from _cli_fakes import (
@@ -454,15 +454,20 @@ def test_build_llm_circuit_breaker_primary_defaults_to_default_model(monkeypatch
     assert llm.probe.model_name == common.DEFAULT_MODEL
 
 
-# The model-unavailable warning is a fixed, friendly message with no internal details.
-# (base)
-def test_model_unavailable_warning_text():
-    assert interactive.MODEL_UNAVAILABLE_WARNING == (
-        "Sorry, our system is having some issues right now. Please try again later."
+# The model-retry prompt is a fixed, friendly message that asks for Enter to retry,
+# with no internal details. (base)
+def test_model_retry_prompt_text():
+    assert messages.MODEL_RETRY_PROMPT == (
+        "Sorry, something went wrong on our end. Press Enter to try again."
     )
 
 
-# When both models are unavailable, the retry warning is shown, one Enter is read, and
+# The CLI allows 2 manual retries per step when both models are unavailable. (base)
+def test_model_retry_limit_is_2():
+    assert interactive.MODEL_RETRY_LIMIT == 2
+
+
+# When both models are unavailable, the retry prompt is shown, one Enter is read, and
 # the failed step is replayed with invoke(None) on the same thread. (base)
 def test_run_conversation_retries_failed_step_after_model_unavailable(monkeypatch):
     warnings = record_warnings(monkeypatch)
@@ -476,16 +481,15 @@ def test_run_conversation_retries_failed_step_after_model_unavailable(monkeypatc
     result = interactive._run_conversation(console, graph, "what's on the menu?")
 
     assert result is RESOLVED_STATE
-    assert warnings == [interactive.MODEL_UNAVAILABLE_WARNING]
-    assert "Press Enter to try again." in console.file.getvalue()
+    assert warnings == [messages.MODEL_RETRY_PROMPT]
     assert stdin.read() == ""
     assert calls[1][0] is None
     assert calls[0][1] == calls[1][1]
 
 
-# Repeated model outages keep the conversation open: each one shows the warning again
-# and replays the same step. (edge)
-def test_run_conversation_retries_repeatedly_while_models_stay_unavailable(monkeypatch):
+# Two outages in a row are both retried on the same thread, and the step succeeds on
+# the second retry. (edge)
+def test_run_conversation_retries_up_to_the_limit(monkeypatch):
     warnings = record_warnings(monkeypatch)
     monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("\n\n"))
     graph, calls = scripted_graph(
@@ -499,9 +503,31 @@ def test_run_conversation_retries_repeatedly_while_models_stay_unavailable(monke
     result = interactive._run_conversation(buffer_console(), graph, "hi")
 
     assert result is RESOLVED_STATE
-    assert warnings == [interactive.MODEL_UNAVAILABLE_WARNING] * 2
+    assert warnings == [messages.MODEL_RETRY_PROMPT] * 2
     assert [call[0] for call in calls[1:]] == [None, None]
     assert len({call[1] for call in calls}) == 1
+
+
+# Once the 2 manual retries are used up, the next outage is re-raised instead of
+# prompting again, so run_interactive shows the generic message. (error)
+def test_run_conversation_gives_up_after_retry_limit(monkeypatch):
+    warnings = record_warnings(monkeypatch)
+    stdin = io.StringIO("\n\nleftover\n")
+    monkeypatch.setattr(interactive.sys, "stdin", stdin)
+    graph, calls = scripted_graph(
+        [
+            interactive.ModelUnavailableError("down"),
+            interactive.ModelUnavailableError("still down"),
+            interactive.ModelUnavailableError("down for good"),
+        ]
+    )
+
+    with pytest.raises(interactive.ModelUnavailableError):
+        interactive._run_conversation(buffer_console(), graph, "hi")
+
+    assert len(calls) == 3
+    assert warnings == [messages.MODEL_RETRY_PROMPT] * 2
+    assert stdin.read() == "leftover\n"
 
 
 # A model outage while resuming an interrupt is retried the same way, and the
@@ -549,5 +575,5 @@ def test_run_conversation_hides_model_unavailable_details(monkeypatch):
     interactive._run_conversation(console, graph, "hi")
 
     output = console.file.getvalue()
-    assert interactive.MODEL_UNAVAILABLE_WARNING in output
+    assert messages.MODEL_RETRY_PROMPT in output
     assert "internal provider detail" not in output

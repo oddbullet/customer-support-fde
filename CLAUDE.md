@@ -21,25 +21,39 @@ driven by an LLM (via OpenRouter). Features:
   The order summary also feeds `memory_gen_node`, so preferences stated in condensed turns are
   still stored.
 - OpenTelemetry tracing via Arize Phoenix when a collector endpoint is configured.
+- Logging goes to Phoenix only: `setup_tracing()` always installs `PhoenixLogHandler`
+  (`tracing.py`) on the root logger, which attaches each WARNING+ record (ours and libraries') to
+  the current span as a `log` event, records any exception, and marks the span ERROR. Nothing is
+  ever printed to the terminal; without a Phoenix endpoint, log records are dropped.
 - LLM circuit breaker: after the primary model exhausts its retries, requests fall back to
   `FALLBACK_MODEL` for a 60-second cool-down, then a single-attempt probe tries the primary
-  again; if both models fail, the CLI shows a retry warning and replays the failed step on Enter.
+  again; if both models fail, the CLI shows `MODEL_RETRY_PROMPT` and replays the failed step on
+  Enter, up to `MODEL_RETRY_LIMIT` (2) times per step, then treats it as unrecoverable.
   Each LLM request attempt times out after 40 seconds (`LLM_TIMEOUT_SECONDS`).
 - Workflow iteration limit: each `graph.invoke()` is capped at 100 graph steps
-  (`WORKFLOW_ITERATION_LIMIT` in `interactive.py`, passed as LangGraph's `recursion_limit`). When
-  it is hit, the CLI shows a red warning asking the customer to find a staff member, then starts a
-  new conversation on Enter.
+  (`WORKFLOW_ITERATION_LIMIT` in `interactive.py`, passed as LangGraph's `recursion_limit`).
+  Hitting it is unrecoverable (see Failure handling).
+- Transaction status: a placed order's recap starts "Your order has been placed." and ends with
+  the Order ID and "Please show this ID when you pick up your order." A submitted refund names the
+  amount, says it awaits staff review, and gives the Order ID.
 - Failure handling:
+  - Customer-facing texts live in `messages.py`. Technical details are only logged (→ Phoenix).
+  - Unrecoverable failures (tool-call limit, iteration limit, models down after the manual
+    retries, any store error or other exception escaping a conversation) are logged at ERROR and
+    the CLI shows only `GENERIC_ERROR_MESSAGE` ("…Please exit the application and try again. If
+    the problem continues, please order at the counter."), waits for Enter, and exits 1. If
+    recording a confirmed order fails, `cart_summary_node` raises `OrderNotPlacedError` and the CLI
+    shows `ORDER_NOT_PLACED_MESSAGE` instead.
   - Tool errors: an exception inside a tool is returned to the agent as an error `ToolMessage`
     carrying a fixed instruction (`TOOL_ERROR_MESSAGE`) to retry the same call without telling the
     customer; the real exception is only logged. Repeated failures end at the tool-call limit (see
-    `tool_limit_node`), and the CLI shows its coded warning. Invalid tool-call arguments return the validation
-    message so the model can correct them.
+    `tool_limit_node`). Invalid tool-call arguments return the validation message so the model can
+    correct them.
   - Database errors: SQLite errors on both read and write paths surface as `OrderStoreError`.
-    Refund tools turn them into a "couldn't look up / couldn't record" reply to the agent. Any
-    `OrderStoreError` that escapes a conversation (e.g. an account lookup or sign-up failure)
-    makes the CLI show a red "try again later" warning (`STORE_UNAVAILABLE_WARNING`) and start a
-    new conversation on Enter; the raw error is never shown.
+    Refund tools log them and reply to the agent with `ORDER_LOOKUP_FAILED`,
+    `REFUND_NOT_SUBMITTED`, or `COMPLAINT_NOT_RECORDED`. If a refund was saved but re-reading it
+    fails, the tool still reports it submitted. A complaint-lookup failure while writing the
+    refund ticket is logged and the ticket is written without a decision.
   - Broken menu database: at startup the CLI loads the menu; if the database or `menu_items`
     table is missing, it shows a red warning with the `uv run start --init-db` fix and exits 1.
   - Malformed router output (not matching `RouterDecision`) falls back to `unclear`, so
@@ -66,7 +80,7 @@ Each item below is a LangGraph node (see `src/customer_support_fde/graph.py`):
 - **account_identification_node** — on the order/support path, identifies an existing account,
   continues without one, or signs up a new one; loads any stored preferences. An account "not
   found" shows a recovery menu; a database failure (`OrderStoreError`) propagates and stops the
-  workflow (the CLI shows the store-unavailable warning).
+  workflow (the CLI shows the generic error message and exits).
 - **call_model** — the order/support agent. Answers menu and ingredient/allergy questions and
   manages the cart via tool calls; condenses older messages into a running summary once history
   grows too large. Its tool calls are guarded by the tool-call limit (see `tool_limit_node`).
@@ -75,7 +89,8 @@ Each item below is a LangGraph node (see `src/customer_support_fde/graph.py`):
   (`nodes/common.py`).
 - **await_customer** — interrupts to collect the customer's next reply during ordering, looping
   back to `call_model` until the order is confirmed.
-- **cart_summary_node** — renders the confirmed cart into an order summary and records the order.
+- **cart_summary_node** — renders the confirmed cart into an order summary and records the order;
+  a store failure while recording raises `OrderNotPlacedError`.
 - **ticket_gen_node** — produces the final ticket artifact: an order ticket (order/support path)
   or a refund ticket (refund path).
 - **memory_gen_node** — after an order, extracts and persists updated account preferences
@@ -90,8 +105,8 @@ Each item below is a LangGraph node (see `src/customer_support_fde/graph.py`):
   conversation, looping back to `refund_agent` until resolved.
 - **tool_limit_node** — ends the conversation when `call_model` or `refund_agent` asks for the
   same tool in more than 3 consecutive steps within one customer turn (a runaway tool loop). The
-  tool is not run; the node records `{agent, tool}` in `tool_limit_reached`, and the CLI shows a
-  red "please try again later" warning.
+  tool is not run; the node logs and records `{agent, tool}` in `tool_limit_reached`, and the CLI
+  shows the generic error message and exits.
 
 Every model call made by these nodes goes through `build_llm()` in `nodes/common.py`. When
 `FALLBACK_MODEL` is set, it returns a `CircuitBreakerLLM` (`circuit_breaker.py`) that shares one

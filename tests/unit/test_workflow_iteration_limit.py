@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from langgraph.errors import GraphRecursionError
 
-from customer_support_fde import interactive
+from customer_support_fde import interactive, messages
 
 from _cli_fakes import (
     RESOLVED_STATE,
@@ -47,15 +47,6 @@ def test_run_conversation_passes_iteration_limit_on_every_invoke(monkeypatch):
     assert limits == [interactive.WORKFLOW_ITERATION_LIMIT] * 3
 
 
-# The iteration-limit warning is a fixed, friendly message that directs the customer
-# to a human staff member, with no internal details. (base)
-def test_iteration_limit_warning_text():
-    assert interactive.ITERATION_LIMIT_WARNING == (
-        "Sorry, we weren't able to finish handling your request. "
-        "Please ask a member of our staff for help."
-    )
-
-
 # GraphRecursionError is not retried by _run_conversation: replaying the step would
 # only hit the limit again. (regression)
 def test_run_conversation_does_not_retry_iteration_limit(monkeypatch):
@@ -69,35 +60,27 @@ def test_run_conversation_does_not_retry_iteration_limit(monkeypatch):
     assert warnings == []
 
 
-# When a conversation hits the iteration limit, the red staff-help warning is shown,
-# the loop waits for Enter before clearing the screen, and neither the generic error
-# line nor the raw LangGraph message is printed. (base)
-def test_run_interactive_shows_staff_warning_when_iteration_limit_reached(
+# When a conversation hits the iteration limit, only the generic message is shown,
+# the CLI waits for Enter and exits with code 1, and the raw LangGraph message is
+# never printed. (base)
+def test_run_interactive_shows_generic_message_and_exits_when_iteration_limit_reached(
     monkeypatch, capsys
 ):
-    events = []
-    monkeypatch.setattr(
-        interactive,
-        "print_warning",
-        lambda message, console=None: events.append(("warning", message)),
-    )
-    monkeypatch.setattr(interactive.Console, "clear", lambda self: events.append(("clear",)))
+    warnings = record_warnings(monkeypatch)
     monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
 
     def _hit_limit(console, graph, query):
         raise GraphRecursionError("Recursion limit of 100 reached without hitting a stop")
 
     monkeypatch.setattr(interactive, "_run_conversation", _hit_limit)
-    stdin = io.StringIO("hi\n\n/exit\n")
+    stdin = io.StringIO("hi\n\nsecond question\n")
     monkeypatch.setattr(interactive.sys, "stdin", stdin)
 
     exit_code = interactive.run_interactive()
 
-    assert exit_code == 0
-    assert events == [("warning", interactive.ITERATION_LIMIT_WARNING), ("clear",)]
+    assert exit_code == 1
+    assert warnings == [messages.GENERIC_ERROR_MESSAGE]
     captured = capsys.readouterr()
-    assert "Press Enter to start a new conversation." in captured.out
-    assert "Error:" not in captured.out
+    assert "Press Enter to exit." in captured.out
     assert "Recursion limit" not in captured.out
-    # The blank line was consumed by the Enter pause, so /exit ends the session.
-    assert stdin.read() == ""
+    assert stdin.read() == "second question\n"

@@ -1,17 +1,20 @@
 import io
+import logging
 from itertools import count
 
 import pytest
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
 
-from customer_support_fde import interactive
+from customer_support_fde import interactive, messages
 from customer_support_fde.nodes.tool_limit import (
     MAX_CONSECUTIVE_TOOL_CALLS,
     find_repeated_tool,
     route_after_agent,
     tool_limit_node,
 )
+
+from _cli_fakes import record_warnings
 
 _call_ids = count(1)
 
@@ -181,36 +184,49 @@ _TOOL_LIMIT_STATE = {
 }
 
 
-# The tool-limit warning is a fixed, friendly message with no internal details. (base)
-def test_tool_limit_warning_text():
-    assert interactive.TOOL_LIMIT_WARNING == (
-        "Sorry, our system is having some issues right now. Please try again later."
-    )
-
-
-# When a conversation exceeds the tool limit, the red warning is shown, the loop waits
-# for Enter before clearing the screen, and no generic error line is printed. (base)
-def test_run_interactive_shows_warning_when_tool_limit_exceeded(monkeypatch, capsys):
-    events = []
-    monkeypatch.setattr(
-        interactive,
-        "print_warning",
-        lambda message, console=None: events.append(("warning", message)),
-    )
-    monkeypatch.setattr(interactive.Console, "clear", lambda self: events.append(("clear",)))
+# When a conversation exceeds the tool limit, only the generic message is shown, the
+# CLI waits for Enter and exits with code 1, and the tool-limit details are logged at
+# ERROR for Phoenix rather than printed. (base)
+def test_run_interactive_shows_generic_message_and_exits_when_tool_limit_exceeded(
+    monkeypatch, capsys, caplog
+):
+    warnings = record_warnings(monkeypatch)
     monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
     monkeypatch.setattr(
         interactive, "_run_conversation", lambda console, graph, query: _TOOL_LIMIT_STATE
     )
-    stdin = io.StringIO("hi\n\n/exit\n")
+    stdin = io.StringIO("hi\n\nsecond question\n")
     monkeypatch.setattr(interactive.sys, "stdin", stdin)
 
-    exit_code = interactive.run_interactive()
+    with caplog.at_level(logging.ERROR, logger="customer_support_fde.interactive"):
+        exit_code = interactive.run_interactive()
 
-    assert exit_code == 0
-    assert events == [("warning", interactive.TOOL_LIMIT_WARNING), ("clear",)]
+    assert exit_code == 1
+    assert warnings == [messages.GENERIC_ERROR_MESSAGE]
     captured = capsys.readouterr()
-    assert "Press Enter to start a new conversation." in captured.out
-    assert "Error:" not in captured.out
-    # The blank line was consumed by the Enter pause, so /exit ends the session.
-    assert stdin.read() == ""
+    assert "Press Enter to exit." in captured.out
+    assert "get_menu" not in captured.out
+    assert stdin.read() == "second question\n"
+    logged = [r for r in caplog.records if r.name == "customer_support_fde.interactive"]
+    assert len(logged) == 1
+    assert "get_menu" in logged[0].getMessage()
+
+
+# tool_limit_node logs a warning naming the agent and the repeated tool, so the
+# runaway loop is visible in Phoenix. (base)
+def test_tool_limit_node_logs_agent_and_tool(caplog):
+    messages_so_far = [HumanMessage(content="hi")]
+    for _ in range(MAX_CONSECUTIVE_TOOL_CALLS):
+        messages_so_far += _step("get_menu")
+    messages_so_far += _step("get_menu")[:1]
+    state = {"destination": "order_support", "messages": messages_so_far}
+
+    with caplog.at_level(logging.WARNING, logger="customer_support_fde.nodes.tool_limit"):
+        tool_limit_node(state)
+
+    logged = [
+        r for r in caplog.records if r.name == "customer_support_fde.nodes.tool_limit"
+    ]
+    assert len(logged) == 1
+    assert "order_support" in logged[0].getMessage()
+    assert "get_menu" in logged[0].getMessage()

@@ -1,3 +1,4 @@
+import logging
 from typing import Literal
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
@@ -6,6 +7,8 @@ from langgraph.prebuilt import tools_condition
 from customer_support_fde.state import SupportState
 
 MAX_CONSECUTIVE_TOOL_CALLS = 3
+
+_logger = logging.getLogger(__name__)
 
 
 def _current_turn_steps_newest_first(messages: list[AnyMessage]) -> list[AIMessage]:
@@ -49,9 +52,7 @@ def route_after_agent(state: SupportState) -> Literal["tools", "tool_limit", "__
 
 
 def tool_limit_node(state: SupportState) -> SupportState:
-    return {
-        "tool_limit_reached": {
-            "agent": state["destination"],
-            "tool": find_repeated_tool(state["messages"]),
-        }
-    }
+    agent = state["destination"]
+    tool = find_repeated_tool(state["messages"])
+    _logger.warning("Tool-call limit reached: agent=%s tool=%s", agent, tool)
+    return {"tool_limit_reached": {"agent": agent, "tool": tool}}
