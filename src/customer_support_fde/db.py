@@ -141,11 +141,16 @@ def _connect(path: Path, *, create: bool = False) -> sqlite3.Connection:
 
 @contextlib.contextmanager
 def _connection(path: Path, *, create: bool = False):
-    conn = _connect(path, create=create)
+    # Any sqlite3.Error not already translated by the caller surfaces as
+    # OrderStoreError, so no raw database error escapes this module.
     try:
-        yield conn
-    finally:
-        conn.close()
+        conn = _connect(path, create=create)
+        try:
+            yield conn
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise OrderStoreError(f"Database error at '{path}': {exc}") from exc
 
 
 def init_database(path: Path | str | None = None) -> int:
@@ -315,26 +320,21 @@ def get_order(order_id: str, path: Path | str | None = None) -> dict | None:
     normalized = normalize_order_id(order_id)
 
     with _connection(resolved) as conn:
-        try:
-            order_row = conn.execute(
-                "SELECT id, total, created_at FROM orders WHERE id = ?", (normalized,)
-            ).fetchone()
-            if order_row is None:
-                return None
+        order_row = conn.execute(
+            "SELECT id, total, created_at FROM orders WHERE id = ?", (normalized,)
+        ).fetchone()
+        if order_row is None:
+            return None
 
-            line_rows = conn.execute(
-                """
-                SELECT name, quantity, unit_price, line_total
-                FROM order_lines
-                WHERE order_id = ?
-                ORDER BY name
-                """,
-                (normalized,),
-            ).fetchall()
-        except sqlite3.Error as exc:
-            raise OrderStoreError(
-                f"Failed to read order from database at '{resolved}': {exc}"
-            ) from exc
+        line_rows = conn.execute(
+            """
+            SELECT name, quantity, unit_price, line_total
+            FROM order_lines
+            WHERE order_id = ?
+            ORDER BY name
+            """,
+            (normalized,),
+        ).fetchall()
 
         return {
             "order_id": order_row[0],
@@ -377,16 +377,11 @@ def get_account(account_number: str, path: Path | str | None = None) -> dict | N
     normalized = normalize_account_number(account_number)
 
     with _connection(resolved) as conn:
-        try:
-            row = conn.execute(
-                "SELECT account_number, preferences, created_at FROM accounts "
-                "WHERE account_number = ?",
-                (normalized,),
-            ).fetchone()
-        except sqlite3.Error as exc:
-            raise OrderStoreError(
-                f"Failed to read account from database at '{resolved}': {exc}"
-            ) from exc
+        row = conn.execute(
+            "SELECT account_number, preferences, created_at FROM accounts "
+            "WHERE account_number = ?",
+            (normalized,),
+        ).fetchone()
         if row is None:
             return None
         return {

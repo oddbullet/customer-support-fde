@@ -1,18 +1,13 @@
+import itertools
 import shutil
 import sqlite3
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from customer_support_fde import circuit_breaker, db
-
-
-@pytest.fixture
-def refund_db(tmp_path) -> Path:
-    path = tmp_path / "refund.db"
-    db.init_database(path)
-    return path
 
 
 @pytest.fixture(scope="session")
@@ -22,13 +17,28 @@ def _seeded_db_template(tmp_path_factory) -> Path:
     return path
 
 
+@pytest.fixture
+def refund_db(tmp_path, _seeded_db_template) -> Path:
+    path = tmp_path / "refund.db"
+    shutil.copyfile(_seeded_db_template, path)
+    return path
+
+
+@pytest.fixture(scope="session")
+def _isolated_db_paths(tmp_path_factory) -> Iterator[Path]:
+    # One session directory with numbered files; tmp_path_factory.mktemp per test
+    # rescans an ever-growing base directory to pick the next number.
+    root = tmp_path_factory.mktemp("isolated-dbs")
+    return (root / f"{n}.db" for n in itertools.count())
+
+
 # Point every unit test at its own freshly seeded database, so nothing depends on
 # (or writes to) a customer_support.db in the working directory. Tests that need a
 # specific database still override CUSTOMER_SUPPORT_DB themselves.
 @pytest.fixture(autouse=True)
-def _isolate_database(monkeypatch, tmp_path_factory, _seeded_db_template):
-    # A separate directory from tmp_path, which some tests assert stays empty.
-    path = tmp_path_factory.mktemp("db") / "isolated.db"
+def _isolate_database(monkeypatch, _isolated_db_paths, _seeded_db_template):
+    # Kept out of tmp_path, which some tests assert stays empty.
+    path = next(_isolated_db_paths)
     shutil.copyfile(_seeded_db_template, path)
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
 

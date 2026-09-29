@@ -7,9 +7,10 @@ import pytest
 from langgraph.types import Command
 from rich.console import Console
 
-from customer_support_fde import interactive
+from customer_support_fde import db, interactive
 
 from _cli_fakes import RESOLVED_STATE as _RESOLVED_STATE
+from _cli_fakes import record_warnings
 
 
 # interactive.py's Console factory emits no raw ANSI escape sequences when
@@ -536,25 +537,15 @@ def test_print_warning_defaults_to_stdout_console(capsys):
 # conversation. (error)
 @pytest.mark.parametrize("db_state", ["missing_file", "missing_table"])
 def test_run_interactive_exits_with_remedy_when_menu_cannot_load(
-    monkeypatch, capsys, tmp_path, db_state
+    monkeypatch, tmp_path, db_state
 ):
     path = tmp_path / "support.db"
     if db_state == "missing_table":
         sqlite3.connect(path).close()
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
-    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
     run_conversation = MagicMock(return_value=_RESOLVED_STATE)
     monkeypatch.setattr(interactive, "_run_conversation", run_conversation)
-    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("hello\n/exit\n"))
-
-    warnings = []
-    real_print_warning = interactive.print_warning
-
-    def _spy_print_warning(message, console=None):
-        warnings.append(message)
-        real_print_warning(message, console)
-
-    monkeypatch.setattr(interactive, "print_warning", _spy_print_warning)
+    warnings = record_warnings(monkeypatch)
 
     exit_code = interactive.run_interactive()
 
@@ -575,14 +566,7 @@ def test_store_unavailable_warning_text():
 # fails), the red store-unavailable warning is shown, the loop waits for Enter
 # before starting a new conversation, and neither the generic error line nor the
 # raw database error is printed. (error)
-def test_run_interactive_shows_warning_and_stops_on_store_error(
-    monkeypatch, capsys, tmp_path
-):
-    from customer_support_fde import db
-
-    path = tmp_path / "support.db"
-    db.init_database(path)
-    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
+def test_run_interactive_shows_warning_and_stops_on_store_error(monkeypatch, capsys):
     events = []
     monkeypatch.setattr(
         interactive,
