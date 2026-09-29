@@ -1,13 +1,16 @@
 import io
+import sqlite3
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
+import pytest
 from langgraph.types import Command
 from rich.console import Console
 
-from customer_support_fde import interactive
+from customer_support_fde import db, interactive
 
 from _cli_fakes import RESOLVED_STATE as _RESOLVED_STATE
+from _cli_fakes import record_warnings
 
 
 # interactive.py's Console factory emits no raw ANSI escape sequences when
@@ -526,3 +529,67 @@ def test_print_warning_defaults_to_stdout_console(capsys):
     interactive.print_warning("System issue")
 
     assert "System issue" in capsys.readouterr().out
+
+
+# If the menu can't be loaded at startup (database file missing, or present without
+# the dishes table), the CLI shows a red warning that includes the --init-db fix and
+# exits with 1 before taking any customer message, instead of failing every
+# conversation. (error)
+@pytest.mark.parametrize("db_state", ["missing_file", "missing_table"])
+def test_run_interactive_exits_with_remedy_when_menu_cannot_load(
+    monkeypatch, tmp_path, db_state
+):
+    path = tmp_path / "support.db"
+    if db_state == "missing_table":
+        sqlite3.connect(path).close()
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
+    run_conversation = MagicMock(return_value=_RESOLVED_STATE)
+    monkeypatch.setattr(interactive, "_run_conversation", run_conversation)
+    warnings = record_warnings(monkeypatch)
+
+    exit_code = interactive.run_interactive()
+
+    assert exit_code == 1
+    run_conversation.assert_not_called()
+    assert any("--init-db" in message for message in warnings)
+
+
+# The store-unavailable warning is a fixed, friendly message with no internal
+# details. (base)
+def test_store_unavailable_warning_text():
+    assert interactive.STORE_UNAVAILABLE_WARNING == (
+        "Sorry, our system is having some issues right now. Please try again later."
+    )
+
+
+# When a database failure stops the workflow (e.g. the account lookup or sign-up
+# fails), the red store-unavailable warning is shown, the loop waits for Enter
+# before starting a new conversation, and neither the generic error line nor the
+# raw database error is printed. (error)
+def test_run_interactive_shows_warning_and_stops_on_store_error(monkeypatch, capsys):
+    events = []
+    monkeypatch.setattr(
+        interactive,
+        "print_warning",
+        lambda message, console=None: events.append(("warning", message)),
+    )
+    monkeypatch.setattr(interactive.Console, "clear", lambda self: events.append(("clear",)))
+    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
+
+    def _store_down(console, graph, query):
+        raise db.OrderStoreError("Failed to read account: database is locked")
+
+    monkeypatch.setattr(interactive, "_run_conversation", _store_down)
+    stdin = io.StringIO("hi\n\n/exit\n")
+    monkeypatch.setattr(interactive.sys, "stdin", stdin)
+
+    exit_code = interactive.run_interactive()
+
+    assert exit_code == 0
+    assert events == [("warning", interactive.STORE_UNAVAILABLE_WARNING), ("clear",)]
+    captured = capsys.readouterr()
+    assert "Press Enter to start a new conversation." in captured.out
+    assert "Error:" not in captured.out
+    assert "database is locked" not in captured.out
+    # The blank line was consumed by the Enter pause, so /exit ends the session.
+    assert stdin.read() == ""

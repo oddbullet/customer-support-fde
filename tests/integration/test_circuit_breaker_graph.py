@@ -10,6 +10,7 @@ from langgraph.types import Command
 from customer_support_fde import circuit_breaker, db
 from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes.account_identification_node import PRIMARY_MENU
+from customer_support_fde.nodes.clarify_intent import QUESTION as CLARIFY_QUESTION
 from customer_support_fde.nodes.router_agent import RouterDecision
 from customer_support_fde.state import initial_state
 
@@ -22,18 +23,23 @@ CONFIG = {"configurable": {"thread_id": "circuit-breaker-test"}}
 
 class FakeOpenRouter:
     # Stands in for the HTTP transport under ChatOpenAI: requests for a model in
-    # `failing` get a 503, everything else gets a canned chat completion.
+    # `failing` get a 503, requests for a model in `timing_out` raise a read timeout,
+    # and everything else gets a canned chat completion.
     def __init__(self):
         self.failing: set[str] = {PRIMARY}
+        self.timing_out: set[str] = set()
+        self.router_reply: str = ROUTER_REPLY
         self.models: list[str] = []
 
     def send(self, request, **kwargs):
         body = json.loads(request.content)
         model = body["model"]
         self.models.append(model)
+        if model in self.timing_out:
+            raise httpx2.ReadTimeout("timed out", request=request)
         if model in self.failing:
             return httpx2.Response(503, json={"error": {"message": "down"}}, request=request)
-        content = ROUTER_REPLY if "response_format" in body else AGENT_REPLY
+        content = self.router_reply if "response_format" in body else AGENT_REPLY
         return httpx2.Response(
             200,
             json={
@@ -150,3 +156,46 @@ def test_open_circuit_skips_primary_on_next_message(openrouter):
 
     assert _interrupt_value(result) == AGENT_REPLY
     assert PRIMARY not in openrouter.models
+
+
+# A primary that times out at the transport layer is retried like any other
+# retryable failure, and the fallback answers once those retries are spent. (error)
+def test_router_falls_back_when_primary_times_out(openrouter):
+    openrouter.failing = set()
+    openrouter.timing_out = {PRIMARY}
+    graph = build_graph(checkpointer=MemorySaver())
+
+    result = graph.invoke(initial_state("Do you have dumplings?"), CONFIG)
+
+    assert _interrupt_value(result) == PRIMARY_MENU
+    assert openrouter.models == [PRIMARY] * 4 + [FALLBACK]
+
+
+# When both models time out, the graph raises ModelUnavailableError so the CLI can
+# offer a retry, rather than surfacing a raw timeout. (error)
+def test_both_models_timing_out_raises_model_unavailable(openrouter):
+    openrouter.failing = set()
+    openrouter.timing_out = {PRIMARY, FALLBACK}
+    graph = build_graph(checkpointer=MemorySaver())
+
+    with pytest.raises(circuit_breaker.ModelUnavailableError):
+        graph.invoke(initial_state("Do you have dumplings?"), CONFIG)
+
+
+# A router reply that doesn't fit RouterDecision (unknown destination, or not JSON
+# at all) falls back to asking the customer what they want. (error)
+@pytest.mark.parametrize(
+    "router_reply",
+    [
+        json.dumps({"destination": "kitchen", "sentiment": "neutral"}),
+        "Sure! I think this is an order question.",
+    ],
+)
+def test_malformed_router_reply_asks_customer_to_clarify(openrouter, router_reply):
+    openrouter.failing = set()
+    openrouter.router_reply = router_reply
+    graph = build_graph(checkpointer=MemorySaver())
+
+    result = graph.invoke(initial_state("Do you have dumplings?"), CONFIG)
+
+    assert _interrupt_value(result) == CLARIFY_QUESTION

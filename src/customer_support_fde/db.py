@@ -141,11 +141,16 @@ def _connect(path: Path, *, create: bool = False) -> sqlite3.Connection:
 
 @contextlib.contextmanager
 def _connection(path: Path, *, create: bool = False):
-    conn = _connect(path, create=create)
+    # Any sqlite3.Error not already translated by the caller surfaces as
+    # OrderStoreError, so no raw database error escapes this module.
     try:
-        yield conn
-    finally:
-        conn.close()
+        conn = _connect(path, create=create)
+        try:
+            yield conn
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise OrderStoreError(f"Database error at '{path}': {exc}") from exc
 
 
 def init_database(path: Path | str | None = None) -> int:

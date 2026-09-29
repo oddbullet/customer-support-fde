@@ -7,6 +7,7 @@ from langgraph.types import Command
 from rich.console import Console
 from rich.text import Text
 
+from customer_support_fde import db
 from customer_support_fde.circuit_breaker import ModelUnavailableError
 from customer_support_fde.graph import build_graph
 from customer_support_fde.state import SupportState, initial_state
@@ -31,13 +32,15 @@ def _print_turn(console: Console, speaker: str, content: str) -> None:
     console.print(Text(f"{label}:{separator}{content}", style=style))
 
 
-TOOL_LIMIT_WARNING = (
+_SYSTEM_ISSUE_WARNING = (
     "Sorry, our system is having some issues right now. Please try again later."
 )
 
-MODEL_UNAVAILABLE_WARNING = (
-    "Sorry, our system is having some issues right now. Please try again later."
-)
+TOOL_LIMIT_WARNING = _SYSTEM_ISSUE_WARNING
+
+MODEL_UNAVAILABLE_WARNING = _SYSTEM_ISSUE_WARNING
+
+STORE_UNAVAILABLE_WARNING = _SYSTEM_ISSUE_WARNING
 
 ITERATION_LIMIT_WARNING = (
     "Sorry, we weren't able to finish handling your request. "
@@ -53,6 +56,12 @@ def print_warning(message: str, console: Console | None = None) -> None:
     if console is None:
         console = _make_console()
     console.print(Text(message, style="red"))
+
+
+def _warn_and_wait_for_new_conversation(message: str, console: Console) -> None:
+    print_warning(message, console)
+    console.print("Press Enter to start a new conversation.")
+    sys.stdin.readline()
 
 
 def _invoke_with_status(console: Console, graph, state_or_command, config) -> SupportState:
@@ -102,6 +111,15 @@ _WELCOME_MESSAGE = (
 
 def run_interactive() -> int:
     console = _make_console()
+
+    # Every conversation starts by loading the menu, so a missing or broken menu
+    # database would fail every message; stop up front with the fix instead.
+    try:
+        db.load_menu()
+    except db.MenuStoreError as exc:
+        print_warning(str(exc), console)
+        return 1
+
     graph = build_graph(checkpointer=MemorySaver())
 
     console.print(_WELCOME_MESSAGE)
@@ -118,16 +136,14 @@ def run_interactive() -> int:
             result = _run_conversation(console, graph, query)
 
             if result.get("tool_limit_reached"):
-                print_warning(TOOL_LIMIT_WARNING, console)
-                console.print("Press Enter to start a new conversation.")
-                sys.stdin.readline()
+                _warn_and_wait_for_new_conversation(TOOL_LIMIT_WARNING, console)
             else:
                 content = result["messages"][-1].content if result.get("messages") else ""
                 _print_turn(console, "ai", content)
         except GraphRecursionError:
-            print_warning(ITERATION_LIMIT_WARNING, console)
-            console.print("Press Enter to start a new conversation.")
-            sys.stdin.readline()
+            _warn_and_wait_for_new_conversation(ITERATION_LIMIT_WARNING, console)
+        except db.OrderStoreError:
+            _warn_and_wait_for_new_conversation(STORE_UNAVAILABLE_WARNING, console)
         except KeyboardInterrupt:
             console.print()
             return 0

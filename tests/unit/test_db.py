@@ -865,3 +865,29 @@ def test_update_account_preferences_sqlite_error_surfaces_as_order_store_error(
 
     with pytest.raises(db.OrderStoreError):
         db.update_account_preferences(account_number, "Loves spicy food.", path)
+
+
+def _db_without_tables(tmp_path):
+    # The file exists (so no MenuStoreError), but every query fails with
+    # sqlite3.OperationalError: no such table.
+    path = tmp_path / "broken.db"
+    sqlite3.connect(path).close()
+    return path
+
+
+# A sqlite3.Error while reading an order or account, or creating an account, surfaces
+# as OrderStoreError, matching the write paths. (error)
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda path: db.get_order("K7QP3M9X", path),
+        lambda path: db.get_account("K7QP3M9X", path),
+        db.create_account,
+    ],
+    ids=["get_order", "get_account", "create_account"],
+)
+def test_sqlite_error_surfaces_as_order_store_error(tmp_path, call):
+    path = _db_without_tables(tmp_path)
+
+    with pytest.raises(db.OrderStoreError):
+        call(path)

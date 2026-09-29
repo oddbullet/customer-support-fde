@@ -23,6 +23,21 @@ driven by an LLM (via OpenRouter). Features:
   (`WORKFLOW_ITERATION_LIMIT` in `interactive.py`, passed as LangGraph's `recursion_limit`). When
   it is hit, the CLI shows a red warning asking the customer to find a staff member, then starts a
   new conversation on Enter.
+- Failure handling:
+  - Tool errors: an exception inside a tool is returned to the agent as an error `ToolMessage`
+    carrying a fixed instruction (`TOOL_ERROR_MESSAGE`) to retry the same call without telling the
+    customer; the real exception is only logged. Repeated failures end at the tool-call limit (see
+    `tool_limit_node`), and the CLI shows its coded warning. Invalid tool-call arguments return the validation
+    message so the model can correct them.
+  - Database errors: SQLite errors on both read and write paths surface as `OrderStoreError`.
+    Refund tools turn them into a "couldn't look up / couldn't record" reply to the agent. Any
+    `OrderStoreError` that escapes a conversation (e.g. an account lookup or sign-up failure)
+    makes the CLI show a red "try again later" warning (`STORE_UNAVAILABLE_WARNING`) and start a
+    new conversation on Enter; the raw error is never shown.
+  - Broken menu database: at startup the CLI loads the menu; if the database or `menu_items`
+    table is missing, it shows a red warning with the `uv run start --init-db` fix and exits 1.
+  - Malformed router output (not matching `RouterDecision`) falls back to `unclear`, so
+    `clarify_intent` asks the customer.
 
 A `.env` file is used for configuration, including the OpenRouter API key, model id, and optional
 fallback model id (see `.env.example`).
@@ -43,12 +58,15 @@ Each item below is a LangGraph node (see `src/customer_support_fde/graph.py`):
 - **clarify_intent** — asks the customer to disambiguate when the router's destination is
   `unclear`, then routes to `order_support` or `refund`.
 - **account_identification_node** — on the order/support path, identifies an existing account,
-  continues without one, or signs up a new one; loads any stored preferences.
+  continues without one, or signs up a new one; loads any stored preferences. An account "not
+  found" shows a recovery menu; a database failure (`OrderStoreError`) propagates and stops the
+  workflow (the CLI shows the store-unavailable warning).
 - **call_model** — the order/support agent. Answers menu and ingredient/allergy questions and
   manages the cart via tool calls; condenses older messages into a running summary once history
   grows too large. Its tool calls are guarded by the tool-call limit (see `tool_limit_node`).
 - **order_tools** — tool node backing `call_model`: menu lookup, add/remove cart items, cart
-  total, mark order confirmed.
+  total, mark order confirmed. Tool exceptions go back to the agent via `handle_tool_error`
+  (`nodes/common.py`).
 - **await_customer** — interrupts to collect the customer's next reply during ordering, looping
   back to `call_model` until the order is confirmed.
 - **cart_summary_node** — renders the confirmed cart into an order summary and records the order.
@@ -60,7 +78,8 @@ Each item below is a LangGraph node (see `src/customer_support_fde/graph.py`):
   refund policy needs, and calls tools to apply the policy or log a complaint. Its tool calls are
   guarded by the tool-call limit (see `tool_limit_node`).
 - **refund_tools** — tool node backing `refund_agent`: `lookup_order`, `process_refund_request`,
-  `log_complaint`, `conclude_refund_conversation`.
+  `log_complaint`, `conclude_refund_conversation`. Tool exceptions go back to the agent via
+  `handle_tool_error` (`nodes/common.py`).
 - **refund_await_customer** — interrupts to collect the customer's next reply during the refund
   conversation, looping back to `refund_agent` until resolved.
 - **tool_limit_node** — ends the conversation when `call_model` or `refund_agent` asks for the
@@ -77,6 +96,8 @@ retry prompt.
 # Development
 
 Write or modified the test first before writing the actual code. Use Test Driven Development.
+
+Always ask before committing.
 
 # Commands
 
