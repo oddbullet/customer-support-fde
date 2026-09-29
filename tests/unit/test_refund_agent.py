@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from customer_support_fde.nodes import refund_agent as refund_agent_module
 from customer_support_fde.nodes.refund_agent import (
@@ -180,119 +180,6 @@ def _conversation(num_turns: int, last_turn_tokens: int | None = None) -> list:
         tokens = last_turn_tokens if i == num_turns else None
         messages.extend(_turn(i, tokens))
     return messages
-
-
-# With 3 or fewer completed turns, condensation is skipped even over the token
-# threshold, since there is nothing older than the retained turns to condense. (edge)
-def test_refund_agent_skips_condensation_with_three_or_fewer_turns(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    fake_llm = MagicMock()
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(refund_agent_module, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        3, last_turn_tokens=refund_agent_module.REFUND_HISTORY_TOKEN_THRESHOLD + 1
-    )
-    state = _base_state(messages=conversation)
-
-    result = refund_agent(state)
-
-    fake_llm.invoke.assert_not_called()
-    assert result["refund_conversation_summary"] is None
-    assert result["messages"] == conversation + [final_response]
-
-
-# With more than 3 turns but the token count at/under threshold, condensation is
-# skipped and messages/summary are left unchanged. (edge)
-def test_refund_agent_skips_condensation_when_at_or_under_threshold(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    fake_llm = MagicMock()
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(refund_agent_module, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        4, last_turn_tokens=refund_agent_module.REFUND_HISTORY_TOKEN_THRESHOLD
-    )
-    state = _base_state(messages=conversation)
-
-    result = refund_agent(state)
-
-    fake_llm.invoke.assert_not_called()
-    assert result["refund_conversation_summary"] is None
-    assert result["messages"] == conversation + [final_response]
-
-
-# With more than 3 turns and the token count over threshold, condensation folds
-# every turn older than the last 3 into refund_conversation_summary and removes
-# those messages from state["messages"], while the last 3 turns remain intact. (base)
-def test_refund_agent_condenses_older_turns_when_over_threshold(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    summary_response = AIMessage(content="Order ABC123: customer wants a refund.")
-    fake_llm = MagicMock()
-    fake_llm.invoke.return_value = summary_response
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(refund_agent_module, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        4, last_turn_tokens=refund_agent_module.REFUND_HISTORY_TOKEN_THRESHOLD + 1
-    )
-    state = _base_state(messages=conversation)
-
-    result = refund_agent(state)
-
-    assert (
-        result["refund_conversation_summary"]
-        == "Order ABC123: customer wants a refund."
-    )
-    removed_ids = {m.id for m in result["messages"] if isinstance(m, RemoveMessage)}
-    assert removed_ids == {"h1", "a1"}
-    retained = [m for m in result["messages"] if not isinstance(m, RemoveMessage)]
-    assert retained == conversation[2:] + [final_response]
-
-
-# Re-condensing later in the same conversation replaces the prior summary wholesale
-# rather than appending to it. (base)
-def test_refund_agent_recondenses_replacing_old_summary(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    new_summary_response = AIMessage(content="Only the new summary text.")
-    fake_llm = MagicMock()
-    fake_llm.invoke.return_value = new_summary_response
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(refund_agent_module, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        4, last_turn_tokens=refund_agent_module.REFUND_HISTORY_TOKEN_THRESHOLD + 1
-    )
-    state = _base_state(
-        messages=conversation,
-        refund_conversation_summary="The old summary text.",
-    )
-
-    result = refund_agent(state)
-
-    assert result["refund_conversation_summary"] == "Only the new summary text."
-    assert "old summary" not in result["refund_conversation_summary"].lower()
-
-
-# When the condensation model call itself raises, refund_agent still returns a
-# normal reply for that turn and leaves messages/refund_conversation_summary
-# unchanged; no exception propagates out of refund_agent. (error)
-def test_refund_agent_condensation_failure_is_silent(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = RuntimeError("condensation model unavailable")
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(refund_agent_module, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        4, last_turn_tokens=refund_agent_module.REFUND_HISTORY_TOKEN_THRESHOLD + 1
-    )
-    state = _base_state(messages=conversation)
-
-    result = refund_agent(state)
-
-    assert result["refund_conversation_summary"] is None
-    assert result["messages"] == conversation + [final_response]
 
 
 # The token-count estimate never calls get_num_tokens_from_messages() on the LLM

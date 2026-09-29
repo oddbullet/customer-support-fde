@@ -2,16 +2,29 @@ import logging
 import os
 from typing import Callable
 
-from langchain_core.messages import AIMessage, AnyMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt.tool_node import ToolInvocationError
 
 from customer_support_fde import circuit_breaker
-from customer_support_fde.circuit_breaker import CircuitBreakerLLM
+from customer_support_fde.circuit_breaker import CircuitBreakerLLM, ModelUnavailableError
 
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 HISTORY_TOKEN_THRESHOLD = 40_000
+
+# Condensation keeps this many of the newest messages (of any type) verbatim.
+CONDENSATION_KEEP_MESSAGES = 3
+
+# One retry, then the agent keeps the full history. Each attempt already retries
+# network errors LLM_MAX_RETRIES times inside the client.
+CONDENSATION_MAX_ATTEMPTS = 2
 
 LLM_MAX_RETRIES = 3
 
@@ -59,12 +72,44 @@ def build_llm() -> ChatOpenAI | CircuitBreakerLLM:
 def estimate_token_count(messages: list[AnyMessage]) -> int:
     # get_num_tokens_from_messages() raises NotImplementedError for OpenRouter-style
     # "vendor/model" names regardless of the underlying model, so estimate from the
-    # last real reply's provider-reported prompt size instead, falling back to a
-    # rough per-character estimate before any usage data exists.
-    for message in reversed(messages):
+    # last real reply's provider-reported prompt size, plus a rough per-character
+    # estimate of everything added since (a long customer message or tool result).
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
         if isinstance(message, AIMessage) and message.usage_metadata:
-            return message.usage_metadata.get("input_tokens", 0)
+            newer_chars = sum(len(str(m.content)) for m in messages[index + 1 :])
+            return message.usage_metadata.get("input_tokens", 0) + newer_chars // 4
     return sum(len(str(message.content)) for message in messages) // 4
+
+
+def select_messages_to_condense(messages: list[AnyMessage]) -> int | None:
+    # Returns the cutoff index: messages before it are condensed. Only runs at a turn
+    # boundary (the customer's message is newest), so a turn's own tool steps, which
+    # the tool-call limit counts, are never trimmed mid-turn.
+    if len(messages) <= CONDENSATION_KEEP_MESSAGES:
+        return None
+    if not isinstance(messages[-1], HumanMessage):
+        return None
+    cutoff = len(messages) - CONDENSATION_KEEP_MESSAGES
+    # A tool result must stay with the assistant message that made the call.
+    while cutoff > 0 and isinstance(messages[cutoff], ToolMessage):
+        cutoff -= 1
+    return cutoff or None
+
+
+def _render_transcript(messages: list[AnyMessage]) -> str:
+    lines = []
+    for message in messages:
+        if isinstance(message, HumanMessage):
+            lines.append(f"Customer: {message.content}")
+        elif isinstance(message, ToolMessage):
+            lines.append(f"Tool result: {message.content}")
+        elif isinstance(message, AIMessage):
+            if message.content:
+                lines.append(f"Assistant: {message.content}")
+            for call in message.tool_calls:
+                lines.append(f"Assistant called tool {call['name']} with {call['args']}")
+    return "\n".join(lines)
 
 
 def condense_messages(
@@ -73,16 +118,44 @@ def condense_messages(
     instructions: str,
     previous_summary: str | None,
 ) -> str | None:
-    try:
-        condense_input: list[AnyMessage] = [SystemMessage(content=instructions)]
-        if previous_summary is not None:
-            condense_input.append(
-                SystemMessage(content=f"Previous summary:\n{previous_summary}")
+    # Returns None when every attempt fails, and the caller keeps the full history.
+    # The older messages go in as one plain-text transcript: given raw tool calls and
+    # results, models continue the conversation (even emitting tool-call markup)
+    # instead of summarizing it.
+    condense_input: list[AnyMessage] = [SystemMessage(content=instructions)]
+    if previous_summary is not None:
+        condense_input.append(
+            SystemMessage(content=f"Previous summary:\n{previous_summary}")
+        )
+    condense_input.append(
+        HumanMessage(
+            content=f"Conversation to summarize:\n{_render_transcript(older_messages)}"
+        )
+    )
+
+    for attempt in range(1, CONDENSATION_MAX_ATTEMPTS + 1):
+        try:
+            content = llm.invoke(condense_input).content
+        except ModelUnavailableError:
+            # Both models are down; the agent's own call will surface it.
+            logger.warning("Failed to condense conversation history", exc_info=True)
+            return None
+        except Exception:
+            logger.warning(
+                "Failed to condense conversation history (attempt %d of %d)",
+                attempt,
+                CONDENSATION_MAX_ATTEMPTS,
+                exc_info=True,
             )
-        condense_input.extend(older_messages)
-        return llm.invoke(condense_input).content
-    except Exception:
-        return None
+            continue
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        logger.warning(
+            "Failed to condense conversation history: blank summary (attempt %d of %d)",
+            attempt,
+            CONDENSATION_MAX_ATTEMPTS,
+        )
+    return None
 
 
 def handle_tool_error(exc: Exception) -> str:
@@ -107,6 +180,8 @@ def prompt_until(
 
 __all__ = [
     "DEFAULT_MODEL",
+    "CONDENSATION_KEEP_MESSAGES",
+    "CONDENSATION_MAX_ATTEMPTS",
     "HISTORY_TOKEN_THRESHOLD",
     "LLM_MAX_RETRIES",
     "LLM_TIMEOUT_SECONDS",
@@ -115,5 +190,6 @@ __all__ = [
     "handle_tool_error",
     "estimate_token_count",
     "condense_messages",
+    "select_messages_to_condense",
     "prompt_until",
 ]

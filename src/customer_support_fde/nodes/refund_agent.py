@@ -11,6 +11,7 @@ from customer_support_fde.nodes.common import HISTORY_TOKEN_THRESHOLD
 from customer_support_fde.nodes.common import build_llm as _build_llm
 from customer_support_fde.nodes.common import condense_messages
 from customer_support_fde.nodes.common import handle_tool_error
+from customer_support_fde.nodes.common import select_messages_to_condense
 from customer_support_fde.nodes.common import estimate_token_count as _estimate_token_count
 from customer_support_fde.state import SupportState
 from customer_support_fde.tools.refund_tools import (
@@ -106,11 +107,10 @@ def refund_agent(state: SupportState) -> SupportState:
     llm = _build_llm()
     removals: list[AnyMessage] = []
 
-    human_indices = [i for i, m in enumerate(messages) if isinstance(m, HumanMessage)]
-    if len(human_indices) > 3:
+    cutoff = select_messages_to_condense(messages)
+    if cutoff is not None:
         token_count = _estimate_token_count(_build_context_messages(state) + messages)
         if token_count > REFUND_HISTORY_TOKEN_THRESHOLD:
-            cutoff = human_indices[-3]
             older_messages = messages[:cutoff]
             new_summary = condense_messages(
                 llm,

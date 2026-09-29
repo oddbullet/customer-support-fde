@@ -12,8 +12,14 @@ driven by an LLM (via OpenRouter). Features:
   (`refund_policy.py`), with sentiment-aware tone in the refund conversation.
 - A generated support ticket (order ticket or refund ticket) for every resolved conversation,
   written to the `tickets/` directory.
-- Conversation history condensation once a conversation grows past a token threshold, so long
-  order/refund conversations stay within context.
+- Conversation history condensation once a conversation grows past 40,000 tokens
+  (`HISTORY_TOKEN_THRESHOLD`), so long order/refund conversations stay within context. At the
+  start of a customer turn, everything but the last 3 messages (of any type; a tool result is
+  never kept without the tool call before it) is folded into a running summary; the summarizer
+  receives those messages as a plain-text transcript, not raw chat/tool messages. A failed or
+  blank summary is retried once; if both attempts fail, the full history is kept for that turn.
+  The order summary also feeds `memory_gen_node`, so preferences stated in condensed turns are
+  still stored.
 - OpenTelemetry tracing via Arize Phoenix when a collector endpoint is configured.
 - LLM circuit breaker: after the primary model exhausts its retries, requests fall back to
   `FALLBACK_MODEL` for a 60-second cool-down, then a single-attempt probe tries the primary

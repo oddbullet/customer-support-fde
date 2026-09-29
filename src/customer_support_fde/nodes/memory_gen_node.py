@@ -31,6 +31,9 @@ explicitly contradicts it, in which case the newer statement wins. When the \
 conversation itself contains contradictory statements about the same \
 thing, keep only the customer's most recent statement.
 
+If you are given a summary of the earlier conversation, treat the customer \
+statements it records as part of the conversation.
+
 Distinguish allergies from everything else in your reply — lead with an \
 explicit "Allergies: ..." clause when one or more allergies exist, followed \
 by likes/dislikes/customizations, so a future feature reading this text \
@@ -69,6 +72,11 @@ def memory_gen_node(state: SupportState) -> SupportState:
             SystemMessage(
                 content=f"Customer's current stored preferences: {prior_preferences}"
             )
+        )
+    summary = state.get("order_conversation_summary")
+    if summary is not None:
+        context.append(
+            SystemMessage(content=f"Summary of earlier conversation:\n{summary}")
         )
     context.extend(state["messages"])
 
