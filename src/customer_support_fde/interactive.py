@@ -2,6 +2,7 @@ import sys
 import uuid
 
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 from rich.console import Console
 from rich.text import Text
@@ -38,6 +39,15 @@ MODEL_UNAVAILABLE_WARNING = (
     "Sorry, our system is having some issues right now. Please try again later."
 )
 
+ITERATION_LIMIT_WARNING = (
+    "Sorry, we weren't able to finish handling your request. "
+    "Please ask a member of our staff for help."
+)
+
+# Max graph steps per invoke (LangGraph's recursion_limit). The counter resets on each
+# customer reply, so this only stops a runaway loop within a single turn.
+WORKFLOW_ITERATION_LIMIT = 100
+
 
 def print_warning(message: str, console: Console | None = None) -> None:
     if console is None:
@@ -66,7 +76,10 @@ def _invoke_with_retry(console: Console, graph, state_or_command, config) -> Sup
 
 def _run_conversation(console: Console, graph, query: str) -> SupportState:
     thread_id = str(uuid.uuid4())
-    config = {"configurable": {"thread_id": thread_id}}
+    config = {
+        "configurable": {"thread_id": thread_id},
+        "recursion_limit": WORKFLOW_ITERATION_LIMIT,
+    }
 
     result = _invoke_with_retry(console, graph, initial_state(query), config)
 
@@ -111,6 +124,10 @@ def run_interactive() -> int:
             else:
                 content = result["messages"][-1].content if result.get("messages") else ""
                 _print_turn(console, "ai", content)
+        except GraphRecursionError:
+            print_warning(ITERATION_LIMIT_WARNING, console)
+            console.print("Press Enter to start a new conversation.")
+            sys.stdin.readline()
         except KeyboardInterrupt:
             console.print()
             return 0

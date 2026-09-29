@@ -18,6 +18,11 @@ driven by an LLM (via OpenRouter). Features:
 - LLM circuit breaker: after the primary model exhausts its retries, requests fall back to
   `FALLBACK_MODEL` for a 60-second cool-down, then a single-attempt probe tries the primary
   again; if both models fail, the CLI shows a retry warning and replays the failed step on Enter.
+  Each LLM request attempt times out after 40 seconds (`LLM_TIMEOUT_SECONDS`).
+- Workflow iteration limit: each `graph.invoke()` is capped at 100 graph steps
+  (`WORKFLOW_ITERATION_LIMIT` in `interactive.py`, passed as LangGraph's `recursion_limit`). When
+  it is hit, the CLI shows a red warning asking the customer to find a staff member, then starts a
+  new conversation on Enter.
 
 A `.env` file is used for configuration, including the OpenRouter API key, model id, and optional
 fallback model id (see `.env.example`).

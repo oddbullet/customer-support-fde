@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage
+from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 from rich.console import Console
 
@@ -719,3 +720,91 @@ def test_run_conversation_hides_model_unavailable_details(monkeypatch):
     output = console.file.getvalue()
     assert interactive.MODEL_UNAVAILABLE_WARNING in output
     assert "internal provider detail" not in output
+
+
+# The workflow iteration limit is 100 graph steps per invoke. (base)
+def test_workflow_iteration_limit_is_100():
+    assert interactive.WORKFLOW_ITERATION_LIMIT == 100
+
+
+# Every graph.invoke call (the first message, interrupt resumes, and model-outage
+# replays) carries the workflow iteration limit as its recursion_limit. (base)
+def test_run_conversation_passes_iteration_limit_on_every_invoke(monkeypatch):
+    _record_warnings(monkeypatch)
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("2\n\n"))
+    limits = []
+    remaining = [
+        {"__interrupt__": [_FakeInterrupt("Reply with 1, 2, or 3.")]},
+        interactive.ModelUnavailableError("down"),
+        _RESOLVED_STATE,
+    ]
+
+    def _invoke(state_or_command, config):
+        limits.append(config.get("recursion_limit"))
+        outcome = remaining.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    graph = MagicMock()
+    graph.invoke.side_effect = _invoke
+
+    interactive._run_conversation(_buffer_console(), graph, "hi")
+
+    assert limits == [interactive.WORKFLOW_ITERATION_LIMIT] * 3
+
+
+# The iteration-limit warning is a fixed, friendly message that directs the customer
+# to a human staff member, with no internal details. (base)
+def test_iteration_limit_warning_text():
+    assert interactive.ITERATION_LIMIT_WARNING == (
+        "Sorry, we weren't able to finish handling your request. "
+        "Please ask a member of our staff for help."
+    )
+
+
+# GraphRecursionError is not retried by _run_conversation: replaying the step would
+# only hit the limit again. (regression)
+def test_run_conversation_does_not_retry_iteration_limit(monkeypatch):
+    warnings = _record_warnings(monkeypatch)
+    graph, calls = _scripted_graph([GraphRecursionError("Recursion limit of 100 reached")])
+
+    with pytest.raises(GraphRecursionError):
+        interactive._run_conversation(_buffer_console(), graph, "hi")
+
+    assert len(calls) == 1
+    assert warnings == []
+
+
+# When a conversation hits the iteration limit, the red staff-help warning is shown,
+# the loop waits for Enter before clearing the screen, and neither the generic error
+# line nor the raw LangGraph message is printed. (base)
+def test_run_interactive_shows_staff_warning_when_iteration_limit_reached(
+    monkeypatch, capsys
+):
+    events = []
+    monkeypatch.setattr(
+        interactive,
+        "print_warning",
+        lambda message, console=None: events.append(("warning", message)),
+    )
+    monkeypatch.setattr(interactive.Console, "clear", lambda self: events.append(("clear",)))
+    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
+
+    def _hit_limit(console, graph, query):
+        raise GraphRecursionError("Recursion limit of 100 reached without hitting a stop")
+
+    monkeypatch.setattr(interactive, "_run_conversation", _hit_limit)
+    stdin = io.StringIO("hi\n\n/exit\n")
+    monkeypatch.setattr(interactive.sys, "stdin", stdin)
+
+    exit_code = interactive.run_interactive()
+
+    assert exit_code == 0
+    assert events == [("warning", interactive.ITERATION_LIMIT_WARNING), ("clear",)]
+    captured = capsys.readouterr()
+    assert "Press Enter to start a new conversation." in captured.out
+    assert "Error:" not in captured.out
+    assert "Recursion limit" not in captured.out
+    # The blank line was consumed by the Enter pause, so /exit ends the session.
+    assert stdin.read() == ""
