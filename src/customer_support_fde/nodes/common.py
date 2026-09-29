@@ -37,7 +37,7 @@ def build_llm() -> ChatOpenAI | CircuitBreakerLLM:
         fallback=_chat_model(fallback_model, LLM_MAX_RETRIES),
         primary_model=primary_model,
         fallback_model=fallback_model,
-        breaker=circuit_breaker._BREAKER,
+        breaker=circuit_breaker.SHARED_BREAKER,
     )
 
 

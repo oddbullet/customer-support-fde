@@ -507,6 +507,14 @@ def test_tool_limit_warning_text():
     )
 
 
+# The model-unavailable warning is a fixed, friendly message with no internal details.
+# (base)
+def test_model_unavailable_warning_text():
+    assert interactive.MODEL_UNAVAILABLE_WARNING == (
+        "Sorry, our system is having some issues right now. Please try again later."
+    )
+
+
 # When a conversation exceeds the tool limit, the red warning is shown, the loop waits
 # for Enter before clearing the screen, and no generic error line is printed. (base)
 def test_run_interactive_shows_warning_when_tool_limit_exceeded(monkeypatch, capsys):
@@ -617,7 +625,9 @@ def _record_warnings(monkeypatch):
 
 
 def _buffer_console() -> Console:
-    return Console(file=io.StringIO(), force_terminal=False)
+    console = interactive._make_console(force_terminal=False)
+    console.file = io.StringIO()
+    return console
 
 
 # When both models are unavailable, the retry warning is shown, one Enter is read, and
@@ -634,7 +644,7 @@ def test_run_conversation_retries_failed_step_after_model_unavailable(monkeypatc
     result = interactive._run_conversation(console, graph, "what's on the menu?")
 
     assert result is _RESOLVED_STATE
-    assert warnings == [interactive.TOOL_LIMIT_WARNING]
+    assert warnings == [interactive.MODEL_UNAVAILABLE_WARNING]
     assert "Press Enter to try again." in console.file.getvalue()
     assert stdin.read() == ""
     assert calls[1][0] is None
@@ -657,7 +667,7 @@ def test_run_conversation_retries_repeatedly_while_models_stay_unavailable(monke
     result = interactive._run_conversation(_buffer_console(), graph, "hi")
 
     assert result is _RESOLVED_STATE
-    assert warnings == [interactive.TOOL_LIMIT_WARNING] * 2
+    assert warnings == [interactive.MODEL_UNAVAILABLE_WARNING] * 2
     assert [call[0] for call in calls[1:]] == [None, None]
     assert len({call[1] for call in calls}) == 1
 
@@ -707,5 +717,5 @@ def test_run_conversation_hides_model_unavailable_details(monkeypatch):
     interactive._run_conversation(console, graph, "hi")
 
     output = console.file.getvalue()
-    assert interactive.TOOL_LIMIT_WARNING in output
+    assert interactive.MODEL_UNAVAILABLE_WARNING in output
     assert "internal provider detail" not in output

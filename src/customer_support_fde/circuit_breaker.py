@@ -33,31 +33,29 @@ class CircuitBreaker:
     ):
         self.cooldown_seconds = cooldown_seconds
         self.clock = clock
-        self.state: Literal["closed", "open"] = "closed"
+        # None while closed; otherwise when the circuit last opened.
         self.opened_at: float | None = None
 
     def effective_state(self) -> Literal["closed", "open", "half_open"]:
-        if self.state == "closed":
+        if self.opened_at is None:
             return "closed"
         if self.clock() - self.opened_at >= self.cooldown_seconds:
             return "half_open"
         return "open"
 
     def record_open(self) -> None:
-        self.state = "open"
         self.opened_at = self.clock()
 
     def record_close(self) -> None:
-        self.state = "closed"
         self.opened_at = None
 
 
-_BREAKER = CircuitBreaker()
+# One in-process circuit shared by every agent's CircuitBreakerLLM.
+SHARED_BREAKER = CircuitBreaker()
 
 
 def reset_circuit() -> None:
-    _BREAKER.record_close()
-    _BREAKER.clock = time.monotonic
+    SHARED_BREAKER.record_close()
 
 
 class CircuitBreakerLLM:
@@ -98,14 +96,14 @@ class CircuitBreakerLLM:
     def invoke(self, input, config=None, **kwargs):
         # The span's default exception handling records the error and sets ERROR status.
         with _get_tracer().start_as_current_span("llm.circuit_breaker") as span:
-            span.set_attribute("circuit.state_before", self.breaker.effective_state())
+            state = self.breaker.effective_state()
+            span.set_attribute("circuit.state_before", state)
             try:
-                return self._invoke(span, input, config, **kwargs)
+                return self._invoke(span, state, input, config, **kwargs)
             finally:
                 span.set_attribute("circuit.state_after", self.breaker.effective_state())
 
-    def _invoke(self, span, input, config=None, **kwargs):
-        state = self.breaker.effective_state()
+    def _invoke(self, span, state, input, config=None, **kwargs):
         if state == "open":
             return self._invoke_fallback(span, input, config, **kwargs)
 

@@ -10,11 +10,12 @@ from langgraph.types import Command
 from customer_support_fde import circuit_breaker, db
 from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes.account_identification_node import PRIMARY_MENU
+from customer_support_fde.nodes.router_agent import RouterDecision
 from customer_support_fde.state import initial_state
 
 PRIMARY = "primary/model"
 FALLBACK = "fallback/model"
-ROUTER_REPLY = '{"destination": "order_support", "sentiment": "neutral"}'
+ROUTER_REPLY = RouterDecision(destination="order_support", sentiment="neutral").model_dump_json()
 AGENT_REPLY = "What would you like to order?"
 CONFIG = {"configurable": {"thread_id": "circuit-breaker-test"}}
 

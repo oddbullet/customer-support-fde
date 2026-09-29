@@ -34,6 +34,10 @@ TOOL_LIMIT_WARNING = (
     "Sorry, our system is having some issues right now. Please try again later."
 )
 
+MODEL_UNAVAILABLE_WARNING = (
+    "Sorry, our system is having some issues right now. Please try again later."
+)
+
 
 def print_warning(message: str, console: Console | None = None) -> None:
     if console is None:
@@ -54,7 +58,7 @@ def _invoke_with_retry(console: Console, graph, state_or_command, config) -> Sup
         try:
             return _invoke_with_status(console, graph, state_or_command, config)
         except ModelUnavailableError:
-            print_warning(TOOL_LIMIT_WARNING, console)
+            print_warning(MODEL_UNAVAILABLE_WARNING, console)
             console.print("Press Enter to try again.")
             sys.stdin.readline()
             state_or_command = None

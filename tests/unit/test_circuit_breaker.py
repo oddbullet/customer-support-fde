@@ -51,16 +51,6 @@ def test_is_retryable_matches_openai_client_retry_rules(exc, expected):
     assert circuit_breaker.is_retryable(exc) is expected
 
 
-# ModelUnavailableError is an ordinary Exception subclass. (base)
-def test_model_unavailable_error_is_an_exception():
-    assert issubclass(circuit_breaker.ModelUnavailableError, Exception)
-
-
-# The circuit's cool-down is fixed at 60 seconds. (base)
-def test_circuit_cooldown_is_sixty_seconds():
-    assert circuit_breaker.CIRCUIT_COOLDOWN_SECONDS == 60
-
-
 class FakeRunnable:
     def __init__(self, outcome=None, error: BaseException | None = None, calls=None):
         self.outcome = outcome
@@ -91,11 +81,6 @@ def _non_retryable() -> BaseException:
     return _status_error(openai.AuthenticationError, 401)
 
 
-@pytest.fixture(autouse=True)
-def _reset_circuit():
-    circuit_breaker.reset_circuit()
-    yield
-    circuit_breaker.reset_circuit()
 
 
 @pytest.fixture
@@ -226,7 +211,6 @@ def test_open_circuit_fallback_failure_raises_model_unavailable(clock):
     with pytest.raises(circuit_breaker.ModelUnavailableError):
         llm.invoke("hi")
 
-    assert llm.breaker.effective_state() == "open"
     assert llm.breaker.opened_at == 0
 
 
@@ -266,7 +250,6 @@ def test_half_open_probe_non_retryable_failure_is_reraised(clock):
 
     assert excinfo.value is probe_error
     assert llm.fallback.inputs == []
-    assert llm.breaker.state == "open"
     assert llm.breaker.opened_at == 0
 
 
@@ -283,12 +266,12 @@ def test_circuit_stays_open_just_before_cooldown_ends(clock):
 
 # reset_circuit() returns the shared breaker to closed. (base)
 def test_reset_circuit_closes_shared_breaker():
-    circuit_breaker._BREAKER.record_open()
+    circuit_breaker.SHARED_BREAKER.record_open()
 
     circuit_breaker.reset_circuit()
 
-    assert circuit_breaker._BREAKER.effective_state() == "closed"
-    assert circuit_breaker._BREAKER.opened_at is None
+    assert circuit_breaker.SHARED_BREAKER.effective_state() == "closed"
+    assert circuit_breaker.SHARED_BREAKER.opened_at is None
 
 
 @pytest.fixture

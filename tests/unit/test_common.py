@@ -6,13 +6,6 @@ from customer_support_fde import circuit_breaker
 from customer_support_fde.nodes import common
 
 
-@pytest.fixture(autouse=True)
-def _reset_circuit():
-    circuit_breaker.reset_circuit()
-    yield
-    circuit_breaker.reset_circuit()
-
-
 # Without a fallback configured, build_llm() keeps ChatOpenAI's built-in retries and
 # raises once they are exhausted, exactly as before the circuit breaker. (regression)
 def test_build_llm_retries_failing_api_calls_before_giving_up(monkeypatch):
@@ -67,7 +60,7 @@ def test_build_llm_returns_circuit_breaker_when_fallback_set(monkeypatch):
     assert llm.fallback.model_name == "fallback/model"
     assert llm.fallback.max_retries == 3
     assert (llm.primary_model, llm.fallback_model) == ("primary/model", "fallback/model")
-    assert llm.breaker is circuit_breaker._BREAKER
+    assert llm.breaker is circuit_breaker.SHARED_BREAKER
 
 
 # With OPENROUTER_MODEL unset, the circuit breaker's primary and probe fall back to
