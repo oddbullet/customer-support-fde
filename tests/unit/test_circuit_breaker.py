@@ -1,9 +1,22 @@
+import io
+
 import httpx
 import openai
 import pytest
+from langchain_openai import ChatOpenAI
+from langgraph.types import Command
 from pydantic import BaseModel, ValidationError
 
-from customer_support_fde import circuit_breaker
+from customer_support_fde import circuit_breaker, interactive
+from customer_support_fde.nodes import common
+
+from _cli_fakes import (
+    RESOLVED_STATE,
+    FakeInterrupt,
+    buffer_console,
+    record_warnings,
+    scripted_graph,
+)
 
 _REQUEST = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
 
@@ -371,3 +384,170 @@ def test_span_records_open_circuit_request(clock, spans):
     assert span.attributes["circuit.state_before"] == "open"
     assert span.attributes["circuit.fallback_used"] is True
     assert "circuit.primary_error" not in span.attributes
+
+
+# Without a fallback configured, build_llm() keeps ChatOpenAI's built-in retries and
+# raises once they are exhausted, exactly as before the circuit breaker. (regression)
+def test_build_llm_retries_failing_api_calls_before_giving_up(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.delenv("FALLBACK_MODEL", raising=False)
+    monkeypatch.setattr(openai._base_client.time, "sleep", lambda _seconds: None)
+
+    llm = common.build_llm()
+
+    attempts = []
+
+    def _always_fail(self, request, **kwargs):
+        attempts.append(request)
+        raise RuntimeError("OpenRouter unreachable")
+
+    monkeypatch.setattr(type(llm.root_client._client), "send", _always_fail)
+
+    with pytest.raises(openai.APIConnectionError):
+        llm.invoke("hello")
+
+    # One initial attempt plus at least three retries.
+    assert len(attempts) >= 4
+
+
+# An unset, empty, or whitespace-only FALLBACK_MODEL disables the circuit breaker, so
+# build_llm() returns a plain ChatOpenAI. (regression)
+@pytest.mark.parametrize("fallback", [None, "", "   "])
+def test_build_llm_returns_plain_chat_model_without_fallback(monkeypatch, fallback):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    if fallback is None:
+        monkeypatch.delenv("FALLBACK_MODEL", raising=False)
+    else:
+        monkeypatch.setenv("FALLBACK_MODEL", fallback)
+
+    assert isinstance(common.build_llm(), ChatOpenAI)
+
+# With FALLBACK_MODEL set, build_llm() wraps a retrying primary, a single-attempt
+# probe of the same model, and a retrying fallback around the shared breaker. (base)
+def test_build_llm_returns_circuit_breaker_when_fallback_set(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_MODEL", "primary/model")
+    monkeypatch.setenv("FALLBACK_MODEL", "fallback/model")
+
+    llm = common.build_llm()
+
+    assert isinstance(llm, circuit_breaker.CircuitBreakerLLM)
+    assert llm.primary.model_name == "primary/model"
+    assert llm.primary.max_retries == common.LLM_MAX_RETRIES == 3
+    assert llm.probe.model_name == "primary/model"
+    assert llm.probe.max_retries == 0
+    assert llm.fallback.model_name == "fallback/model"
+    assert llm.fallback.max_retries == 3
+    assert (llm.primary_model, llm.fallback_model) == ("primary/model", "fallback/model")
+    assert llm.breaker is circuit_breaker.SHARED_BREAKER
+
+# With OPENROUTER_MODEL unset, the circuit breaker's primary and probe fall back to
+# DEFAULT_MODEL. (edge)
+def test_build_llm_circuit_breaker_primary_defaults_to_default_model(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.setenv("FALLBACK_MODEL", "fallback/model")
+
+    llm = common.build_llm()
+
+    assert llm.primary.model_name == common.DEFAULT_MODEL
+    assert llm.probe.model_name == common.DEFAULT_MODEL
+
+
+# The model-unavailable warning is a fixed, friendly message with no internal details.
+# (base)
+def test_model_unavailable_warning_text():
+    assert interactive.MODEL_UNAVAILABLE_WARNING == (
+        "Sorry, our system is having some issues right now. Please try again later."
+    )
+
+
+# When both models are unavailable, the retry warning is shown, one Enter is read, and
+# the failed step is replayed with invoke(None) on the same thread. (base)
+def test_run_conversation_retries_failed_step_after_model_unavailable(monkeypatch):
+    warnings = record_warnings(monkeypatch)
+    stdin = io.StringIO("\n")
+    monkeypatch.setattr(interactive.sys, "stdin", stdin)
+    console = buffer_console()
+    graph, calls = scripted_graph(
+        [interactive.ModelUnavailableError("down"), RESOLVED_STATE]
+    )
+
+    result = interactive._run_conversation(console, graph, "what's on the menu?")
+
+    assert result is RESOLVED_STATE
+    assert warnings == [interactive.MODEL_UNAVAILABLE_WARNING]
+    assert "Press Enter to try again." in console.file.getvalue()
+    assert stdin.read() == ""
+    assert calls[1][0] is None
+    assert calls[0][1] == calls[1][1]
+
+
+# Repeated model outages keep the conversation open: each one shows the warning again
+# and replays the same step. (edge)
+def test_run_conversation_retries_repeatedly_while_models_stay_unavailable(monkeypatch):
+    warnings = record_warnings(monkeypatch)
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("\n\n"))
+    graph, calls = scripted_graph(
+        [
+            interactive.ModelUnavailableError("down"),
+            interactive.ModelUnavailableError("still down"),
+            RESOLVED_STATE,
+        ]
+    )
+
+    result = interactive._run_conversation(buffer_console(), graph, "hi")
+
+    assert result is RESOLVED_STATE
+    assert warnings == [interactive.MODEL_UNAVAILABLE_WARNING] * 2
+    assert [call[0] for call in calls[1:]] == [None, None]
+    assert len({call[1] for call in calls}) == 1
+
+
+# A model outage while resuming an interrupt is retried the same way, and the
+# conversation then continues through its next interrupt normally. (base)
+def test_run_conversation_retries_after_outage_on_interrupt_resume(monkeypatch):
+    record_warnings(monkeypatch)
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("2\n\nyes\n"))
+    graph, calls = scripted_graph(
+        [
+            {"__interrupt__": [FakeInterrupt("Reply with 1, 2, or 3.")]},
+            interactive.ModelUnavailableError("down"),
+            {"__interrupt__": [FakeInterrupt("What would you like to order?")]},
+            RESOLVED_STATE,
+        ]
+    )
+
+    result = interactive._run_conversation(buffer_console(), graph, "I'd like to order")
+
+    assert result is RESOLVED_STATE
+    assert isinstance(calls[1][0], Command) and calls[1][0].resume == "2"
+    assert calls[2][0] is None
+    assert isinstance(calls[3][0], Command) and calls[3][0].resume == "yes"
+
+
+# Errors other than ModelUnavailableError are not caught by _run_conversation, so they
+# still reach run_interactive's generic error handler. (regression)
+def test_run_conversation_does_not_catch_other_errors(monkeypatch):
+    warnings = record_warnings(monkeypatch)
+    graph, _calls = scripted_graph([RuntimeError("boom")])
+
+    with pytest.raises(RuntimeError, match="boom"):
+        interactive._run_conversation(buffer_console(), graph, "hi")
+
+    assert warnings == []
+
+
+# The raw ModelUnavailableError text is never shown to the customer. (error)
+def test_run_conversation_hides_model_unavailable_details(monkeypatch):
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("\n"))
+    console = buffer_console()
+    graph, _calls = scripted_graph(
+        [interactive.ModelUnavailableError("internal provider detail"), RESOLVED_STATE]
+    )
+
+    interactive._run_conversation(console, graph, "hi")
+
+    output = console.file.getvalue()
+    assert interactive.MODEL_UNAVAILABLE_WARNING in output
+    assert "internal provider detail" not in output
