@@ -891,3 +891,18 @@ def test_sqlite_error_surfaces_as_order_store_error(tmp_path, call):
 
     with pytest.raises(db.OrderStoreError):
         call(path)
+
+
+# A fresh database has no restaurant timezone until one is set; setting it twice keeps
+# only the latest value, and re-running init_database leaves it in place. (base)
+def test_restaurant_timezone_round_trip_and_survives_reinit(tmp_path):
+    path = tmp_path / "tz.db"
+    db.init_database(path)
+
+    assert db.get_restaurant_timezone(path) is None
+
+    db.set_restaurant_timezone("America/New_York", path)
+    db.set_restaurant_timezone("America/Chicago", path)
+    db.init_database(path)
+
+    assert db.get_restaurant_timezone(path) == "America/Chicago"

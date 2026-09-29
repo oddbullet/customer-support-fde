@@ -7,13 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from customer_support_fde import circuit_breaker, db
+from customer_support_fde import circuit_breaker, clock, db, restaurant_time
 
 
 @pytest.fixture(scope="session")
 def _seeded_db_template(tmp_path_factory) -> Path:
     path = tmp_path_factory.mktemp("db-template") / "support.db"
     db.init_database(path)
+    db.set_restaurant_timezone("America/Los_Angeles", path)
     return path
 
 
@@ -46,6 +47,18 @@ def _isolate_database(monkeypatch, _isolated_db_paths, _seeded_db_template):
 @pytest.fixture(autouse=True)
 def _isolate_tickets_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path / "tickets"))
+
+
+@pytest.fixture(autouse=True)
+def _reset_restaurant_timezone(monkeypatch):
+    # Reloaded from each test's own database rather than cached across tests.
+    monkeypatch.setattr(restaurant_time, "_timezone", None)
+
+
+@pytest.fixture(autouse=True)
+def _local_trusted_clock(monkeypatch):
+    # Tests never reach the real NTP server; test_clock.py covers trusted_now itself.
+    monkeypatch.setattr(clock, "trusted_now", lambda: datetime.now(timezone.utc))
 
 
 @pytest.fixture(autouse=True)

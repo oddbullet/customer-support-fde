@@ -7,7 +7,7 @@ from langgraph.types import Command
 from rich.console import Console
 from rich.text import Text
 
-from customer_support_fde import db, messages
+from customer_support_fde import db, messages, restaurant_time
 from customer_support_fde.circuit_breaker import ModelUnavailableError
 from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes.cart_summary_node import OrderNotPlacedError
@@ -118,6 +118,14 @@ def run_interactive() -> int:
     except db.MenuStoreError as exc:
         # Operator setup check before any customer interaction, so it shows the fix.
         logger.error("Menu database unavailable at startup", exc_info=exc)
+        print_warning(str(exc), console)
+        return 1
+
+    # Every time shown to the customer or agent is in the restaurant's timezone.
+    try:
+        restaurant_time.load()
+    except restaurant_time.RestaurantTimezoneError as exc:
+        logger.error("Restaurant timezone unavailable at startup", exc_info=exc)
         print_warning(str(exc), console)
         return 1
 

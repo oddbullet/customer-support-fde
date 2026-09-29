@@ -9,8 +9,9 @@ from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 from rich.console import Console
 
-from customer_support_fde import db, interactive, messages
+from customer_support_fde import db, interactive, messages, restaurant_time
 from customer_support_fde.circuit_breaker import ModelUnavailableError
+from customer_support_fde.clock import ClockUnavailableError
 from customer_support_fde.nodes.cart_summary_node import OrderNotPlacedError
 
 from _cli_fakes import RESOLVED_STATE as _RESOLVED_STATE
@@ -532,6 +533,22 @@ def test_run_interactive_exits_with_remedy_when_menu_cannot_load(
     assert any("--init-db" in message for message in warnings)
 
 
+# When the restaurant timezone isn't configured, the CLI shows a red warning with the
+# --set-tz fix and exits 1 before taking any customer message. (error)
+def test_run_interactive_exits_with_remedy_when_timezone_not_set(monkeypatch):
+    monkeypatch.setattr(restaurant_time, "_timezone", None)
+    monkeypatch.setattr(db, "get_restaurant_timezone", lambda *a, **k: None)
+    run_conversation = MagicMock(return_value=_RESOLVED_STATE)
+    monkeypatch.setattr(interactive, "_run_conversation", run_conversation)
+    warnings = record_warnings(monkeypatch)
+
+    exit_code = interactive.run_interactive()
+
+    assert exit_code == 1
+    run_conversation.assert_not_called()
+    assert any("--set-tz" in message for message in warnings)
+
+
 
 
 # The generic error message is one fixed, friendly text that tells the customer to
@@ -564,8 +581,16 @@ def test_order_not_placed_message_text():
         db.MenuStoreError("Menu database not found at 'C:/secret/support.db'"),
         GraphRecursionError("Recursion limit of 100 reached without hitting a stop"),
         ModelUnavailableError("primary and fallback models unavailable"),
+        ClockUnavailableError("Could not reach time server pool.ntp.org"),
     ],
-    ids=["unexpected", "order_store", "menu_store", "recursion", "model_unavailable"],
+    ids=[
+        "unexpected",
+        "order_store",
+        "menu_store",
+        "recursion",
+        "model_unavailable",
+        "clock_unavailable",
+    ],
 )
 def test_run_interactive_shows_generic_message_and_exits_on_unrecoverable_error(
     monkeypatch, capsys, error

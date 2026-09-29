@@ -15,6 +15,7 @@ from langgraph.prebuilt.tool_node import ToolInvocationError
 
 from customer_support_fde import circuit_breaker
 from customer_support_fde.circuit_breaker import CircuitBreakerLLM, ModelUnavailableError
+from customer_support_fde.clock import ClockUnavailableError
 from customer_support_fde.state import SupportState
 
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -199,6 +200,9 @@ def handle_tool_error(exc: Exception) -> str:
     # message so internal details never reach the model or the customer.
     if isinstance(exc, ToolInvocationError):
         return exc.message
+    # Retrying can't fix an unreachable time server; let it end the conversation.
+    if isinstance(exc, ClockUnavailableError):
+        raise exc
     logger.warning("Tool call failed", exc_info=exc)
     return TOOL_ERROR_MESSAGE
 

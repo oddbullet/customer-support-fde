@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from importlib import resources
 from pathlib import Path
 
+from customer_support_fde import clock
+
 DEFAULT_DB_FILENAME = "customer_support.db"
 
 ID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford base32: no I, L, O, U
@@ -95,6 +97,12 @@ CREATE TABLE IF NOT EXISTS accounts (
     preferences    TEXT,
     created_at     TEXT NOT NULL
 );
+
+-- Restaurant-wide settings, one row per key (e.g. 'timezone' → an IANA name).
+CREATE TABLE IF NOT EXISTS restaurant_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 MenuItem = dict[str, object]
@@ -108,8 +116,13 @@ class OrderStoreError(RuntimeError):
     pass
 
 
+def _format_iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    # Every stored timestamp comes from the trusted (NTP) clock, never the host clock.
+    return _format_iso(clock.trusted_now())
 
 
 def database_path() -> Path:
@@ -207,6 +220,28 @@ def load_menu(path: Path | str | None = None) -> list[MenuItem]:
         return menu
 
 
+def get_restaurant_timezone(path: Path | str | None = None) -> str | None:
+    resolved = _resolve_path(path)
+    with _connection(resolved) as conn:
+        row = conn.execute(
+            "SELECT value FROM restaurant_settings WHERE key = 'timezone'"
+        ).fetchone()
+        return row[0] if row else None
+
+
+def set_restaurant_timezone(iana_name: str, path: Path | str | None = None) -> None:
+    resolved = _resolve_path(path)
+    with _connection(resolved) as conn:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO restaurant_settings (key, value) VALUES ('timezone', ?)
+                ON CONFLICT (key) DO UPDATE SET value = excluded.value
+                """,
+                (iana_name,),
+            )
+
+
 def _new_id() -> str:
     return "".join(secrets.choice(ID_ALPHABET) for _ in range(ID_LENGTH))
 
@@ -277,13 +312,15 @@ def normalize_account_number(raw: str) -> str:
     return _normalize_id(raw)
 
 
-def record_order(summary: dict, path: Path | str | None = None) -> str:
+def record_order(
+    summary: dict, path: Path | str | None = None, created_at: datetime | None = None
+) -> str:
     lines = summary["lines"]
     if not lines:
         raise ValueError("Cannot record an order with no lines.")
 
     resolved = _resolve_path(path)
-    created_at = _now_iso()
+    created_at = _format_iso(created_at) if created_at else _now_iso()
 
     def insert(conn: sqlite3.Connection, order_id: str) -> None:
         conn.execute(
@@ -424,9 +461,10 @@ def record_refund_request(
     substitute_dishes: list[str] | None,
     return_confirmed: bool,
     path: Path | str | None = None,
+    created_at: datetime | None = None,
 ) -> int:
     resolved = _resolve_path(path)
-    created_at = _now_iso()
+    created_at = _format_iso(created_at) if created_at else _now_iso()
     substitute_json = json.dumps(substitute_dishes) if substitute_dishes else None
 
     with _connection(resolved) as conn:

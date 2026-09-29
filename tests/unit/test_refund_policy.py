@@ -118,6 +118,61 @@ def test_eligible_when_item_never_arrived_and_no_substitute_waives_return():
     assert decision.reason is None
 
 
+# An order dated in the future (even by one second) can't be trusted, so it is
+# auto-rejected rather than treated as inside the window. (negative)
+@pytest.mark.parametrize("hours_ahead", [1 / 3600, 72])
+def test_denied_invalid_order_date_when_created_at_is_in_the_future(hours_ahead):
+    order = _order_aged(-hours_ahead)
+
+    decision = refund_policy.evaluate(
+        order,
+        undelivered=UNDELIVERED,
+        substitute_received=False,
+        return_confirmed=False,
+        now=_NOW,
+    )
+
+    assert decision.eligible is False
+    assert decision.reason == "invalid_order_date"
+    assert "staff" in decision.message
+
+
+# A malformed, empty, missing, or timezone-less created_at is auto-rejected instead of
+# raising. (negative)
+@pytest.mark.parametrize(
+    "created_at", ["not-a-date", "", None, "2026-01-03T10:00:00.000"]
+)
+def test_denied_invalid_order_date_when_created_at_is_unusable(created_at):
+    order = {**ORDER, "created_at": created_at}
+
+    decision = refund_policy.evaluate(
+        order,
+        undelivered=UNDELIVERED,
+        substitute_received=False,
+        return_confirmed=False,
+        now=_NOW,
+    )
+
+    assert decision.eligible is False
+    assert decision.reason == "invalid_order_date"
+
+
+# A timestamp stored with a non-UTC offset is compared by the actual moment, not the
+# wall-clock digits: 20:00+08:00 is 12:00 UTC, one day before _NOW. (edge)
+def test_non_utc_offset_is_compared_by_actual_moment():
+    order = {**ORDER, "created_at": "2026-01-02T20:00:00.000+08:00"}
+
+    decision = refund_policy.evaluate(
+        order,
+        undelivered=UNDELIVERED,
+        substitute_received=False,
+        return_confirmed=False,
+        now=_NOW,
+    )
+
+    assert decision.eligible is True
+
+
 # Identical inputs produce identical PolicyDecision values regardless of any sentiment
 # value held elsewhere — evaluate() takes no sentiment argument at all (SC-009). (regression)
 def test_evaluate_has_no_sentiment_parameter_and_is_deterministic():
