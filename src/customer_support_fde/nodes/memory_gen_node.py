@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from customer_support_fde import db
 from customer_support_fde.nodes.common import build_llm as _build_llm
+from customer_support_fde.nodes.common import summary_messages
 from customer_support_fde.state import SupportState
 
 _logger = logging.getLogger(__name__)
@@ -30,6 +31,9 @@ fact (especially allergies) unless a newer statement in this conversation \
 explicitly contradicts it, in which case the newer statement wins. When the \
 conversation itself contains contradictory statements about the same \
 thing, keep only the customer's most recent statement.
+
+If you are given a summary of the earlier conversation, treat the customer \
+statements it records as part of the conversation.
 
 Distinguish allergies from everything else in your reply — lead with an \
 explicit "Allergies: ..." clause when one or more allergies exist, followed \
@@ -70,6 +74,7 @@ def memory_gen_node(state: SupportState) -> SupportState:
                 content=f"Customer's current stored preferences: {prior_preferences}"
             )
         )
+    context.extend(summary_messages(state.get("order_conversation_summary")))
     context.extend(state["messages"])
 
     try:

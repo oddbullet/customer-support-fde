@@ -46,7 +46,7 @@ def _fake_order_llm(responses: list[AIMessage]) -> MagicMock:
     bound.invoke.side_effect = responses
     llm = MagicMock()
     llm.bind_tools.return_value = bound
-    # These scripted conversations are far shorter than the real 20,000-token
+    # These scripted conversations are far shorter than the real 40,000-token
     # threshold; with no usage_metadata on the responses, the token estimate falls
     # back to a per-character heuristic that stays well under it, keeping the
     # condensation guard a no-op here.

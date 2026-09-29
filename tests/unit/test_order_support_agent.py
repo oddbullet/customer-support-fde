@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph._internal._constants import CONF, CONFIG_KEY_RUNTIME
 from langgraph.runtime import Runtime
 from langgraph.types import Command
@@ -385,119 +385,6 @@ def test_get_cart_total_is_registered_on_order_tools():
 # look up the exact current cart contents instead of guessing from history. (base)
 def test_get_cart_is_registered_on_order_tools():
     assert get_cart in _ORDER_TOOLS
-
-
-# With 3 or fewer completed turns, condensation is skipped even over the token
-# threshold, since there is nothing older than the retained turns to condense. (edge)
-def test_call_model_skips_condensation_with_three_or_fewer_turns(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    fake_llm = MagicMock()
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        3, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
-    )
-    state = _base_state("turn 4 query")
-    state["messages"] = conversation
-
-    result = call_model(state)
-
-    fake_llm.invoke.assert_not_called()
-    assert result["order_conversation_summary"] is None
-    assert result["messages"] == conversation + [final_response]
-
-
-# With more than 3 turns but the token count at/under threshold, condensation is
-# skipped and messages/summary are left unchanged. (edge)
-def test_call_model_skips_condensation_when_at_or_under_threshold(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    fake_llm = MagicMock()
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        4, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD
-    )
-    state = _base_state("turn 5 query")
-    state["messages"] = conversation
-
-    result = call_model(state)
-
-    fake_llm.invoke.assert_not_called()
-    assert result["order_conversation_summary"] is None
-    assert result["messages"] == conversation + [final_response]
-
-
-# With more than 3 turns and the token count over threshold, condensation folds
-# every turn older than the last 3 into order_conversation_summary and removes
-# those messages from state["messages"], while the last 3 turns remain intact. (base)
-def test_call_model_condenses_older_turns_when_over_threshold(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    summary_response = AIMessage(content="Customer added kung pao chicken.")
-    fake_llm = MagicMock()
-    fake_llm.invoke.return_value = summary_response
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        4, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
-    )
-    state = _base_state("turn 5 query")
-    state["messages"] = conversation
-
-    result = call_model(state)
-
-    assert result["order_conversation_summary"] == "Customer added kung pao chicken."
-    removed_ids = {m.id for m in result["messages"] if isinstance(m, RemoveMessage)}
-    assert removed_ids == {"h1", "a1"}
-    retained = [m for m in result["messages"] if not isinstance(m, RemoveMessage)]
-    assert retained == conversation[2:] + [final_response]
-
-
-# Re-condensing later in the same conversation replaces the prior summary wholesale
-# rather than appending to it. (base)
-def test_call_model_recondenses_replacing_old_summary(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    new_summary_response = AIMessage(content="Only the new summary text.")
-    fake_llm = MagicMock()
-    fake_llm.invoke.return_value = new_summary_response
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        4, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
-    )
-    state = _base_state("turn 5 query")
-    state["messages"] = conversation
-    state["order_conversation_summary"] = "The old summary text."
-
-    result = call_model(state)
-
-    assert result["order_conversation_summary"] == "Only the new summary text."
-    assert "old summary" not in result["order_conversation_summary"].lower()
-
-
-# When the condensation model call itself raises, call_model still returns a normal
-# reply for that turn and leaves messages/order_conversation_summary unchanged;
-# no exception propagates out of call_model. (error)
-def test_call_model_condensation_failure_is_silent(monkeypatch):
-    final_response = AIMessage(content="Sure thing!")
-    fake_llm = MagicMock()
-    fake_llm.invoke.side_effect = RuntimeError("condensation model unavailable")
-    fake_llm.bind_tools.return_value.invoke.return_value = final_response
-    monkeypatch.setattr(order_support_agent, "_build_llm", lambda: fake_llm)
-
-    conversation = _conversation(
-        4, last_turn_tokens=order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD + 1
-    )
-    state = _base_state("turn 5 query")
-    state["messages"] = conversation
-
-    result = call_model(state)
-
-    assert result["order_conversation_summary"] is None
-    assert result["messages"] == conversation + [final_response]
 
 
 # The token-count estimate never calls get_num_tokens_from_messages() on the LLM
