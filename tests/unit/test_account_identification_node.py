@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 from customer_support_fde.nodes import account_identification_node as node_module
 from customer_support_fde.nodes.account_identification_node import (
     ACCOUNT_NUMBER_PROMPT,
@@ -172,3 +174,42 @@ def test_recovery_menu_sign_up_matches_primary_menu_sign_up(monkeypatch):
     result = account_identification_node(state)
 
     assert result == {"account_number": "K7QP3M9X", "account_preferences": None}
+
+
+def _raise_store_error(*_args, **_kwargs):
+    raise node_module.db.OrderStoreError("database is locked")
+
+
+# If the account lookup fails with a store error, the node stops the workflow by
+# letting the error propagate (the CLI turns it into a warning) instead of treating
+# the account as not found or continuing without it. (error)
+def test_account_lookup_store_error_stops_the_workflow(monkeypatch):
+    fake_interrupt = MagicMock(side_effect=["1", "K7QP3M9X"])
+    monkeypatch.setattr(node_module, "interrupt", fake_interrupt)
+    monkeypatch.setattr(node_module.db, "get_account", _raise_store_error)
+    state = _base_state()
+
+    with pytest.raises(node_module.db.OrderStoreError):
+        account_identification_node(state)
+
+    prompts = [call.args[0] for call in fake_interrupt.call_args_list]
+    assert prompts == [PRIMARY_MENU, ACCOUNT_NUMBER_PROMPT]
+
+
+# If creating an account fails with a store error, the node stops the workflow by
+# letting the error propagate, without showing an account number. (error)
+def test_sign_up_store_error_stops_the_workflow(monkeypatch):
+    fake_interrupt = MagicMock(side_effect=["3"])
+    monkeypatch.setattr(node_module, "interrupt", fake_interrupt)
+    fake_future = MagicMock()
+    fake_future.result.side_effect = _raise_store_error
+    monkeypatch.setattr(
+        node_module, "_create_account", MagicMock(return_value=fake_future)
+    )
+    state = _base_state()
+
+    with pytest.raises(node_module.db.OrderStoreError):
+        account_identification_node(state)
+
+    prompts = [call.args[0] for call in fake_interrupt.call_args_list]
+    assert prompts == [PRIMARY_MENU]

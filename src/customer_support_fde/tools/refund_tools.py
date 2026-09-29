@@ -41,7 +41,22 @@ def lookup_order(
         order_id: The order id as the customer stated it. Case, spacing, and
             dashes are normalized, and O/I/L are folded to 0/1/1.
     """
-    order = db.get_order(order_id)
+    try:
+        order = db.get_order(order_id)
+    except db.OrderStoreError:
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        content=(
+                            "I couldn't look up that order right now. Please try "
+                            "again shortly."
+                        ),
+                        tool_call_id=tool_call_id,
+                    )
+                ],
+            }
+        )
     if order is None:
         return Command(
             update={

@@ -180,3 +180,27 @@ def test_llm_call_failure_propagates_rather_than_returning_partial_state(monkeyp
 
     with pytest.raises(RuntimeError):
         router_agent.router_agent(state)
+
+
+# A model reply that doesn't fit RouterDecision (pydantic ValidationError) falls back
+# to "unclear" with neutral sentiment instead of raising. (error)
+def test_malformed_structured_output_falls_back_to_unclear(monkeypatch):
+    from pydantic import ValidationError
+
+    try:
+        RouterDecision.model_validate({"destination": "kitchen", "sentiment": "angry"})
+    except ValidationError as exc:
+        validation_error = exc
+    malformed_llm = MagicMock()
+    malformed_llm.invoke.side_effect = validation_error
+    monkeypatch.setattr(router_agent, "_build_llm", lambda: malformed_llm)
+    state: SupportState = {
+        "user_query": "hello",
+        "destination": "order_support",
+        "sentiment": None,
+    }
+
+    result = router_agent.router_agent(state)
+
+    assert result["destination"] == "unclear"
+    assert result["sentiment"] == "neutral"

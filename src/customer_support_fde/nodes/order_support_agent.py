@@ -10,6 +10,7 @@ from langgraph.types import interrupt
 from customer_support_fde.nodes.common import HISTORY_TOKEN_THRESHOLD
 from customer_support_fde.nodes.common import build_llm as _build_llm
 from customer_support_fde.nodes.common import condense_messages
+from customer_support_fde.nodes.common import handle_tool_error
 from customer_support_fde.nodes.common import estimate_token_count as _estimate_token_count
 from customer_support_fde.state import SupportState
 from customer_support_fde.tools.cart_tools import (
@@ -48,7 +49,7 @@ _ORDER_TOOLS = [
     get_cart,
 ]
 
-order_tools = ToolNode(_ORDER_TOOLS)
+order_tools = ToolNode(_ORDER_TOOLS, handle_tool_errors=handle_tool_error)
 
 ORDER_HISTORY_TOKEN_THRESHOLD = HISTORY_TOKEN_THRESHOLD
 

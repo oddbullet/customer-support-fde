@@ -453,3 +453,23 @@ def test_log_complaint_store_error_yields_not_recorded_message(refund_db, monkey
 
     message = result.update["messages"][0].content
     assert "could not be recorded" in message.lower()
+
+
+# An OrderStoreError while looking up the order leaves order_lookup unchanged and
+# tells the model the lookup failed, rather than crashing the conversation. (error)
+def test_lookup_order_store_error_yields_lookup_failed_message(refund_db, monkeypatch):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+    monkeypatch.setattr(
+        db,
+        "get_order",
+        lambda *a, **k: (_ for _ in ()).throw(db.OrderStoreError("database is locked")),
+    )
+
+    result = lookup_order.func(
+        order_id="K7QP3M9X", state={"order_lookup": None}, tool_call_id="call_1"
+    )
+
+    assert "order_lookup" not in result.update
+    message = result.update["messages"][0].content
+    assert "couldn't look up" in message.lower()
+    assert "database is locked" not in message

@@ -1,3 +1,4 @@
+import shutil
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,6 +13,24 @@ def refund_db(tmp_path) -> Path:
     path = tmp_path / "refund.db"
     db.init_database(path)
     return path
+
+
+@pytest.fixture(scope="session")
+def _seeded_db_template(tmp_path_factory) -> Path:
+    path = tmp_path_factory.mktemp("db-template") / "support.db"
+    db.init_database(path)
+    return path
+
+
+# Point every unit test at its own freshly seeded database, so nothing depends on
+# (or writes to) a customer_support.db in the working directory. Tests that need a
+# specific database still override CUSTOMER_SUPPORT_DB themselves.
+@pytest.fixture(autouse=True)
+def _isolate_database(monkeypatch, tmp_path_factory, _seeded_db_template):
+    # A separate directory from tmp_path, which some tests assert stays empty.
+    path = tmp_path_factory.mktemp("db") / "isolated.db"
+    shutil.copyfile(_seeded_db_template, path)
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(path))
 
 
 @pytest.fixture(autouse=True)

@@ -7,6 +7,7 @@ from langgraph.types import Command
 from rich.console import Console
 from rich.text import Text
 
+from customer_support_fde import db
 from customer_support_fde.circuit_breaker import ModelUnavailableError
 from customer_support_fde.graph import build_graph
 from customer_support_fde.state import SupportState, initial_state
@@ -36,6 +37,10 @@ TOOL_LIMIT_WARNING = (
 )
 
 MODEL_UNAVAILABLE_WARNING = (
+    "Sorry, our system is having some issues right now. Please try again later."
+)
+
+STORE_UNAVAILABLE_WARNING = (
     "Sorry, our system is having some issues right now. Please try again later."
 )
 
@@ -102,6 +107,15 @@ _WELCOME_MESSAGE = (
 
 def run_interactive() -> int:
     console = _make_console()
+
+    # Every conversation starts by loading the menu, so a missing or broken menu
+    # database would fail every message; stop up front with the fix instead.
+    try:
+        db.load_menu()
+    except db.MenuStoreError as exc:
+        print_warning(str(exc), console)
+        return 1
+
     graph = build_graph(checkpointer=MemorySaver())
 
     console.print(_WELCOME_MESSAGE)
@@ -126,6 +140,10 @@ def run_interactive() -> int:
                 _print_turn(console, "ai", content)
         except GraphRecursionError:
             print_warning(ITERATION_LIMIT_WARNING, console)
+            console.print("Press Enter to start a new conversation.")
+            sys.stdin.readline()
+        except db.OrderStoreError:
+            print_warning(STORE_UNAVAILABLE_WARNING, console)
             console.print("Press Enter to start a new conversation.")
             sys.stdin.readline()
         except KeyboardInterrupt:
