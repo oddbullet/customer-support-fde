@@ -30,3 +30,34 @@ uv run pytest
 
 Last line of defense: `test_run_interactive_shows_generic_message_and_exits_on_unrecoverable_error` ([test_interactive.py, line 671](tests/unit/test_interactive.py))
 shows that any unexpected error ends with a friendly message and exit code 1, never a stack trace.
+
+# Review: Conversation Condensation
+
+Condensation is tested offline with a fake LLM in
+[test_conversation_condensation.py](tests/integration/test_conversation_condensation.py), and
+with real summarization calls in the e2e suite.
+
+| Area | Example test | What it proves |
+|---|---|---|
+| Token limits | `test_exactly_40000_tokens_does_not_condense` ([test_conversation_condensation.py, line 156](tests/integration/test_conversation_condensation.py)) | A history right at the 40,000-token limit is left alone. |
+| | `test_40001_tokens_condenses_all_but_last_three_messages` ([test_conversation_condensation.py, line 172](tests/integration/test_conversation_condensation.py)) | One token over the limit folds everything but the last 3 messages into the summary. |
+| Large chat histories | `test_long_conversation_condenses_repeatedly_with_bounded_history` ([test_conversation_condensation.py, line 309](tests/integration/test_conversation_condensation.py)) | A long conversation condenses again and again, and the history never grows without bound. |
+| | `test_cutoff_never_orphans_a_tool_result` ([test_conversation_condensation.py, line 251](tests/integration/test_conversation_condensation.py)) | A tool result is never kept without the tool call before it. |
+| Summarization failures | `test_blank_summary_is_retried` ([test_conversation_condensation.py, line 441](tests/integration/test_conversation_condensation.py)) | A blank summary is asked for one more time. |
+| | `test_falls_back_to_full_history_after_two_failed_attempts` ([test_conversation_condensation.py, line 466](tests/integration/test_conversation_condensation.py)) | If both attempts fail, the full history is kept for that turn. |
+| Context retention | `test_allergy_condensed_away_still_reaches_stored_preferences` ([test_conversation_condensation.py, line 548](tests/integration/test_conversation_condensation.py)) | An allergy mentioned in a condensed turn is still saved to the account's preferences. |
+| | `test_refund_ticket_issue_extraction_receives_the_summary` ([test_conversation_condensation.py, line 597](tests/integration/test_conversation_condensation.py)) | The refund ticket still gets the issue from condensed turns. |
+
+Real summarization calls (OpenRouter, LLM-judged) run with:
+
+```
+uv run pytest -m e2e
+```
+
+| Example test | What it proves |
+|---|---|
+| `test_judge_allergy_retained_after_condensation` ([test_condensation_retention_e2e.py, line 35](tests/e2e/test_condensation_retention_e2e.py)) | After the first message ("allergic to peanuts") is condensed away, the agent still recommends a main dish without peanuts. |
+| `test_judge_refund_facts_retained_after_condensation` ([test_condensation_retention_e2e.py, line 73](tests/e2e/test_condensation_retention_e2e.py)) | After the order ID and missing dish are condensed away, the agent doesn't ask for them again and reaches the correct refund outcome. |
+
+To keep them short, these e2e tests lower the threshold to 1 token so every turn condenses. The
+40,000-token limit itself is only tested with the fake LLM.
