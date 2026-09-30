@@ -140,3 +140,35 @@ replace the time server with the local clock and set a restaurant timezone.
 | Cross-region | Happy | `test_format_local_converts_other_region_offset_to_restaurant_time` ([test_restaurant_time.py, line 36](tests/unit/test_restaurant_time.py)) | 08:00 in Shanghai (+08:00) shows as 8:00 PM **the previous day** in New York. |
 | | Edge | `test_non_utc_offset_is_compared_by_actual_moment` ([test_refund_policy.py, line 162](tests/unit/test_refund_policy.py)) | The refund window uses the actual moment, not the clock digits: 20:00+08:00 counts as 12:00 UTC. |
 | | Failure | `test_load_without_valid_timezone_raises_with_fix` ([test_restaurant_time.py, line 91](tests/unit/test_restaurant_time.py)) | A zone outside the supported US list (`Europe/London`), or none at all, is refused with the `--set-tz` fix. |
+
+# Review: Complaint & Ticket Testing
+
+All complaint and ticket tests run offline as part of `uv run pytest`, except the one real-LLM
+special-characters check listed at the end.
+
+| Control | Implemented in |
+|---|---|
+| Large inputs | The CLI refuses customer lines over 1,000 characters: `MAX_INPUT_CHARS`, `_read_customer_input` ([interactive.py, line 45](src/customer_support_fde/interactive.py)). The model writes tool arguments itself, so a complaint can still reach the tools longer than that; it is stored with no length cap by `record_complaint` ([db.py, line 576](src/customer_support_fde/db.py)) and written to the ticket in full by `write_refund_ticket` ([tickets.py, line 70](src/customer_support_fde/tickets.py)). |
+| Special characters | Complaints are saved with `?` placeholders, so SQL-looking text is stored as plain text and never run: `record_complaint` ([db.py, line 576](src/customer_support_fde/db.py)). Ticket files are always written as UTF-8 (the Windows default, cp1252, can't encode Chinese or emoji): `_write_ticket_file` ([tickets.py, line 18](src/customer_support_fde/tickets.py)). |
+| Empty complaints | `NonBlankStr` ([refund_tools.py, line 18](src/customer_support_fde/tools/refund_tools.py)) rejects a blank or spaces-only `description` in `log_complaint` ([refund_tools.py, line 296](src/customer_support_fde/tools/refund_tools.py)) and `customer_issue` in `process_refund_request` ([refund_tools.py, line 147](src/customer_support_fde/tools/refund_tools.py)), and the validation message goes back to the model. The CLI skips blank lines ([interactive.py, line 65](src/customer_support_fde/interactive.py)). A blank issue or sentiment shows in the ticket as `Not recorded` / `unavailable`: `_or_default` ([tickets.py, line 49](src/customer_support_fde/tickets.py)). |
+| Duplicate tickets | Each refund ticket is named `refund-<order_id>-<8 hex>.md`, so a later conversation about the same order never overwrites an earlier ticket: `write_refund_ticket` ([tickets.py, line 70](src/customer_support_fde/tickets.py)). A second complaint about the same order in one conversation updates the first instead of adding a row: `complaint_ids` + `extend_complaint` ([refund_tools.py, line 275](src/customer_support_fde/tools/refund_tools.py), [db.py, line 603](src/customer_support_fde/db.py)). An order that already has a refund request gets no second one ([refund_tools.py, line 185](src/customer_support_fde/tools/refund_tools.py)). |
+
+| Control | Type | Example test | What it proves |
+|---|---|---|---|
+| Large inputs | Happy | `test_log_complaint_stores_large_description_in_full` ([test_large_inputs.py, line 29](tests/unit/test_large_inputs.py)) | A complaint 10 times longer than the CLI limit is stored exactly. It ends with `END-OF-COMPLAINT`, so any cut-off would show up. |
+| | Edge | `test_run_interactive_rejects_input_over_1000_characters` ([test_interactive.py, line 450](tests/unit/test_interactive.py)) | A message of exactly 1,000 characters is accepted; 1,001 is refused with `INPUT_TOO_LONG`. |
+| | Failure | `test_too_long_message_is_refused_before_redaction` ([test_pii.py, line 123](tests/unit/test_pii.py)) | An over-long message is refused before any work is done on it: it is never redacted and never reaches the graph, and the next normal message still goes through. |
+| Special characters | Happy | `test_write_refund_ticket_keeps_chinese_and_emoji` ([test_tickets.py, line 274](tests/unit/test_tickets.py)) | "My 宫保鸡丁 was missing 😊" reaches the ticket file unchanged. |
+| | Edge | `test_log_complaint_stores_special_characters_exactly` ([test_refund_tools.py, line 718](tests/unit/test_refund_tools.py)) | Apostrophes, Chinese, emoji, `$ &`, and `'; DROP TABLE complaints; --` are stored and read back exactly, and the SQL-looking text is never run. |
+| | Failure | `test_shared_write_handles_non_ascii_content` ([test_tickets.py, line 55](tests/unit/test_tickets.py)) | Writing Chinese text to a ticket doesn't crash on Windows, where the default encoding (cp1252) would raise `UnicodeEncodeError`. |
+| Empty complaints | Happy | `test_log_complaint_records_with_null_policy_reason` ([test_refund_tools.py, line 581](tests/unit/test_refund_tools.py)) | A normal complaint ("The service was rude.") is recorded once, as written. |
+| | Edge | `test_write_refund_ticket_renders_blank_fields_as_defaults` ([test_tickets.py, line 262](tests/unit/test_tickets.py)) | An empty `""` or spaces-only `"   "` issue or sentiment shows as `Not recorded` / `unavailable`, so no ticket field is ever blank. |
+| | Failure | `test_log_complaint_rejects_blank_description` ([test_refund_tools.py, line 688](tests/unit/test_refund_tools.py)) | An empty or spaces-only complaint is rejected at the tool-call boundary, so nothing empty is stored and the model is told to fix it. |
+| Duplicate tickets | Happy | `test_write_refund_ticket_same_order_twice_keeps_both_files` ([test_tickets.py, line 247](tests/unit/test_tickets.py)) | Two refund conversations about the same order write two separate ticket files; the second doesn't overwrite the first. |
+| | Edge | `test_process_refund_request_second_denial_same_order_extends_complaint` ([test_refund_tools.py, line 520](tests/unit/test_refund_tools.py)) | A second denied refund for the same order in one conversation updates the existing complaint with the latest wording instead of adding a second row. |
+| | Failure | `test_process_refund_request_existing_request_reports_status_not_duplicate` ([test_refund_tools.py, line 309](tests/unit/test_refund_tools.py)) | Asking again for a refund on an order that already has one writes nothing new and reports the existing request's status. |
+
+The same special characters are also tested with the real LLM (`uv run pytest -m e2e`):
+`test_refund_request_with_special_characters_is_handled` ([test_special_characters_e2e.py, line 19](tests/e2e/test_special_characters_e2e.py))
+runs a full refund conversation with Chinese text, emoji, symbols and SQL-looking text. The refund
+is submitted for the right amount, the database still works, and exactly one ticket is written.
