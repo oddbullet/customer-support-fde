@@ -18,6 +18,12 @@ driven by an LLM (via OpenRouter). Features:
   characters (`MAX_INPUT_CHARS`, shows `INPUT_TOO_LONG`) at every prompt, so neither reaches the
   graph; end of input exits like `/exit`. `log_complaint` and `process_refund_request` reject a
   blank complaint/issue argument, so the model is told to fix it.
+- PII redaction: every accepted customer line is passed through `pii.redact()` (Presidio, small
+  spaCy model) before it reaches the graph, so the LLM, Phoenix traces, tickets and stored
+  preferences never see it. Only pattern-based entities are replaced (`<EMAIL_ADDRESS>`,
+  `<PHONE_NUMBER>`, `<CREDIT_CARD>`, `<US_SSN>`, `<IBAN_CODE>`, `<IP_ADDRESS>`); names, places and
+  dates are not, so dish names and pickup times survive. A redaction error is unrecoverable
+  (`GENERIC_ERROR_MESSAGE`).
 - Conversation history condensation once a conversation grows past 40,000 tokens
   (`HISTORY_TOKEN_THRESHOLD`), so long order/refund conversations stay within context. At the
   start of a customer turn, everything but the last 3 messages (of any type; a tool result is
@@ -90,6 +96,7 @@ fallback model id (see `.env.example`).
 - LangGraph (+ LangChain / `langchain-openai` for the OpenRouter-backed LLM)
 - SQLite (menu, orders, refund requests, complaints, accounts, restaurant settings)
 - `ntplib` (trusted time) and `tzdata` (timezone data for `zoneinfo` on Windows)
+- Presidio + spaCy `en_core_web_sm` (PII redaction of customer input)
 - Arize Phoenix (`arize-phoenix-otel`, OpenTelemetry tracing)
 - Rich (interactive CLI rendering)
 - PyTest (+ `agentevals` for LLM-judged end-to-end tests)

@@ -7,7 +7,7 @@ from langgraph.types import Command
 from rich.console import Console
 from rich.text import Text
 
-from customer_support_fde import db, messages, restaurant_time
+from customer_support_fde import db, messages, pii, restaurant_time
 from customer_support_fde.circuit_breaker import ModelUnavailableError
 from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes.cart_summary_node import OrderNotPlacedError
@@ -64,6 +64,7 @@ def _fail_and_exit(message: str, console: Console) -> int:
 
 def _read_customer_input(console: Console) -> str:
     # Blank lines are skipped and over-long ones refused, so neither reaches the graph.
+    # Every accepted line is PII-redacted before the graph, the LLM or traces see it.
     while True:
         console.print("> ", end="")
         line = sys.stdin.readline()
@@ -75,7 +76,7 @@ def _read_customer_input(console: Console) -> str:
         if len(text) > MAX_INPUT_CHARS:
             print_warning(messages.INPUT_TOO_LONG, console)
             continue
-        return text
+        return pii.redact(text)
 
 
 def _invoke_with_status(console: Console, graph, state_or_command, config) -> SupportState:

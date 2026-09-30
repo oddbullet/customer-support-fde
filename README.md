@@ -160,6 +160,7 @@ src/customer_support_fde/
 ├── clock.py                    # Trusted current time from an NTP server
 ├── restaurant_time.py          # Restaurant timezone (from the database) and local-time display
 ├── interactive.py              # Rich-based interactive conversation loop
+├── pii.py                      # Presidio PII redaction of customer input
 ├── graph.py                    # LangGraph topology (nodes + edges)
 ├── state.py                    # Shared SupportState definition
 ├── db.py                       # SQLite schema, menu/order/refund/account persistence

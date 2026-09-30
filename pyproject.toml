@@ -7,6 +7,7 @@ requires-python = ">=3.14"
 dependencies = [
     "agentevals>=0.0.9",
     "arize-phoenix-otel>=0.17.1",
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
     "langchain>=1.4.0",
     "langchain-openai>=1.6.1",
     "langgraph>=1.2.11",
