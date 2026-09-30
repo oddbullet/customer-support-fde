@@ -11,7 +11,13 @@ driven by an LLM (via OpenRouter). Features:
 - Post-order complaints and refund requests evaluated against restaurant refund policy
   (`refund_policy.py`), with sentiment-aware tone in the refund conversation.
 - A generated support ticket (order ticket or refund ticket) for every resolved conversation,
-  written to the `tickets/` directory.
+  written to the `tickets/` directory. Refund tickets are named `refund-<order_id>-<8 hex>.md` so a
+  later conversation about the same order never overwrites an earlier ticket; a blank issue or
+  sentiment renders as its default (`Not recorded` / `unavailable`).
+- Customer input: the CLI skips blank or spaces-only lines and refuses lines over 1,000
+  characters (`MAX_INPUT_CHARS`, shows `INPUT_TOO_LONG`) at every prompt, so neither reaches the
+  graph; end of input exits like `/exit`. `log_complaint` and `process_refund_request` reject a
+  blank complaint/issue argument, so the model is told to fix it.
 - Conversation history condensation once a conversation grows past 40,000 tokens
   (`HISTORY_TOKEN_THRESHOLD`), so long order/refund conversations stay within context. At the
   start of a customer turn, everything but the last 3 messages (of any type; a tool result is
@@ -29,7 +35,9 @@ driven by an LLM (via OpenRouter). Features:
   `FALLBACK_MODEL` for a 60-second cool-down, then a single-attempt probe tries the primary
   again; if both models fail, the CLI shows `MODEL_RETRY_PROMPT` and replays the failed step on
   Enter, up to `MODEL_RETRY_LIMIT` (2) times per step, then treats it as unrecoverable.
-  Each LLM request attempt times out after 40 seconds (`LLM_TIMEOUT_SECONDS`).
+  Each LLM request attempt times out after 40 seconds (`LLM_TIMEOUT_SECONDS`) and is capped at
+  4,000 output tokens (`LLM_MAX_OUTPUT_TOKENS`), since the timeout alone doesn't stop a runaway
+  generation that keeps streaming.
 - Workflow iteration limit: each `graph.invoke()` is capped at 100 graph steps
   (`WORKFLOW_ITERATION_LIMIT` in `interactive.py`, passed as LangGraph's `recursion_limit`).
   Hitting it is unrecoverable (see Failure handling).

@@ -46,16 +46,23 @@ def write_order_ticket(order_ticket: dict) -> Path | None:
     return _write_ticket_file(path, content)
 
 
+def _or_default(value: str | None, default: str) -> str:
+    # A blank value renders like a missing one, so no ticket field is ever empty.
+    if value is None or not value.strip():
+        return default
+    return value
+
+
 def _render_refund_ticket(refund_ticket: dict) -> str:
-    order_id = refund_ticket["order_id"]
-    issue = refund_ticket["issue"]
-    sentiment = refund_ticket["sentiment"]
+    order_id = _or_default(refund_ticket["order_id"], "Unknown")
+    issue = _or_default(refund_ticket["issue"], "Not recorded")
+    sentiment = _or_default(refund_ticket["sentiment"], "unavailable")
     refund_created = "Yes" if refund_ticket["refund_created"] else "No"
     return (
         "# Refund Ticket\n\n"
-        f"**Order ID:** {order_id if order_id is not None else 'Unknown'}\n\n"
-        f"**Issue:** {issue if issue is not None else 'Not recorded'}\n\n"
-        f"**Customer Sentiment:** {sentiment if sentiment is not None else 'unavailable'}\n\n"
+        f"**Order ID:** {order_id}\n\n"
+        f"**Issue:** {issue}\n\n"
+        f"**Customer Sentiment:** {sentiment}\n\n"
         f"**Refund Request Created:** {refund_created}\n"
     )
 
@@ -63,7 +70,9 @@ def _render_refund_ticket(refund_ticket: dict) -> str:
 def write_refund_ticket(refund_ticket: dict) -> Path | None:
     order_id = refund_ticket["order_id"]
     if order_id is not None:
-        path = tickets_dir() / f"refund-{order_id}.md"
+        # A suffix keeps a later refund conversation about the same order from
+        # overwriting this ticket.
+        path = tickets_dir() / f"refund-{order_id}-{uuid.uuid4().hex[:8]}.md"
     else:
         path = tickets_dir() / f"refund-unknown-{uuid.uuid4().hex}.md"
     content = _render_refund_ticket(refund_ticket)

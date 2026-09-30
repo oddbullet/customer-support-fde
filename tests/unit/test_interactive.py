@@ -421,9 +421,9 @@ def test_run_interactive_exits_cleanly_on_keyboard_interrupt_mid_conversation(mo
     assert exit_code == 0
 
 
-# A blank line, or a question that happens to contain the literal word "exit", does
-# not end the session. (regression)
-def test_run_interactive_does_not_exit_on_blank_line_or_word_exit(monkeypatch):
+# A blank or spaces-only line is skipped (no conversation, no exit), and a question
+# that happens to contain the literal word "exit" does not end the session. (regression)
+def test_run_interactive_skips_blank_lines_and_does_not_exit_on_word_exit(monkeypatch):
     monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
 
     conversation_calls = []
@@ -436,13 +436,89 @@ def test_run_interactive_does_not_exit_on_blank_line_or_word_exit(monkeypatch):
     monkeypatch.setattr(
         interactive.sys,
         "stdin",
-        io.StringIO("\nhow do I exit a subscription refund request?\n/exit\n"),
+        io.StringIO("\n   \n\t\nhow do I exit a subscription refund request?\n/exit\n"),
     )
 
     exit_code = interactive.run_interactive()
 
     assert exit_code == 0
-    assert conversation_calls == ["", "how do I exit a subscription refund request?"]
+    assert conversation_calls == ["how do I exit a subscription refund request?"]
+
+
+# A first message of exactly 1,000 characters is accepted; one of 1,001 is rejected
+# with INPUT_TOO_LONG and never starts a conversation. (edge)
+def test_run_interactive_rejects_input_over_1000_characters(monkeypatch):
+    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
+    warnings = record_warnings(monkeypatch)
+
+    conversation_calls = []
+
+    def _fake_run_conversation(console, graph, query):
+        conversation_calls.append(query)
+        return _RESOLVED_STATE
+
+    monkeypatch.setattr(interactive, "_run_conversation", _fake_run_conversation)
+    monkeypatch.setattr(
+        interactive.sys,
+        "stdin",
+        io.StringIO("x" * 1001 + "\n" + "y" * 1000 + "\n/exit\n"),
+    )
+
+    exit_code = interactive.run_interactive()
+
+    assert exit_code == 0
+    assert conversation_calls == ["y" * 1000]
+    assert warnings == [messages.INPUT_TOO_LONG]
+
+
+# Mid-conversation replies follow the same rules: blank and over-long replies are
+# skipped, and only the next valid reply resumes the graph. (edge)
+def test_run_conversation_skips_blank_and_too_long_replies(monkeypatch):
+    console = interactive._make_console(force_terminal=False)
+    warnings = record_warnings(monkeypatch)
+    monkeypatch.setattr(
+        interactive.sys, "stdin", io.StringIO("\n   \n" + "x" * 1001 + "\n1\n")
+    )
+    resumed = []
+
+    class _FakeInterruptValue:
+        def __init__(self, value):
+            self.value = value
+
+    def _invoke(state_or_command, config):
+        if isinstance(state_or_command, Command):
+            resumed.append(state_or_command.resume)
+            return _RESOLVED_STATE
+        return {"__interrupt__": [_FakeInterruptValue("Confirm? (1/2)")]}
+
+    graph = MagicMock()
+    graph.invoke.side_effect = _invoke
+
+    interactive._run_conversation(console, graph, "hi")
+
+    assert resumed == ["1"]
+    assert warnings == [messages.INPUT_TOO_LONG]
+
+
+# End of input (e.g. Ctrl+Z / Ctrl+D) ends the session like /exit instead of looping
+# on blank reads. (edge)
+def test_run_interactive_exits_cleanly_at_end_of_input(monkeypatch):
+    monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
+    run_conversation = MagicMock(side_effect=AssertionError("should not be called"))
+    monkeypatch.setattr(interactive, "_run_conversation", run_conversation)
+    monkeypatch.setattr(interactive.sys, "stdin", io.StringIO(""))
+
+    exit_code = interactive.run_interactive()
+
+    assert exit_code == 0
+    run_conversation.assert_not_called()
+
+
+# The too-long message tells the customer the limit. (base)
+def test_input_too_long_message_text():
+    assert messages.INPUT_TOO_LONG == (
+        "Sorry, that message is too long. Please keep it to 1,000 characters or fewer."
+    )
 
 
 def _color_console() -> Console:

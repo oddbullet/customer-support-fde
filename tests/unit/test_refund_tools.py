@@ -677,3 +677,48 @@ def test_refund_store_failure_message_texts():
     assert messages.COMPLAINT_NOT_RECORDED == (
         "Your complaint was not recorded because of a problem on our end. " + guidance
     )
+
+
+# --- empty complaints and special characters ---
+
+
+# A blank or spaces-only complaint is rejected at the tool-call boundary, so the model
+# gets the validation message back instead of an empty complaint being stored. (negative)
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_log_complaint_rejects_blank_description(blank):
+    with pytest.raises(ValidationError):
+        log_complaint.tool_call_schema.model_validate({"description": blank})
+
+
+# The same rule applies to the issue passed with a refund request. (negative)
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_process_refund_request_rejects_blank_customer_issue(blank):
+    with pytest.raises(ValidationError):
+        process_refund_request.tool_call_schema.model_validate(
+            {
+                "undelivered_items": [{"name": "Mapo Tofu", "quantity": 1}],
+                "substitute_dishes": [],
+                "return_confirmed": False,
+                "customer_issue": blank,
+            }
+        )
+
+
+# Apostrophes, Chinese characters, emoji, symbols, and SQL-looking text are stored and
+# read back exactly as the customer wrote them. (edge)
+@pytest.mark.parametrize(
+    "text",
+    [
+        "I didn't get my dumplings",
+        "My 宫保鸡丁 was missing 😊",
+        "I paid $12.50 & got nothing",
+        "'; DROP TABLE complaints; --",
+    ],
+)
+def test_log_complaint_stores_special_characters_exactly(refund_db, monkeypatch, text):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
+
+    _invoke_log_complaint(text)
+
+    complaints = db.list_complaints(refund_db)
+    assert [c["description"] for c in complaints] == [text]
