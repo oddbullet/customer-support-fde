@@ -60,6 +60,9 @@ preferences memory.
 Tracing is instrumented with Arize Phoenix (OpenTelemetry) when a collector endpoint is
 configured.
 
+Prompt injection attempts are redacted by OpenRouter before the prompt reaches the model. This
+is set up in OpenRouter, not in this codebase.
+
 ## Prerequisites
 
 - Python 3.14 (see `.python-version`)

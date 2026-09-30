@@ -324,3 +324,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 | `interactive.py` | `interactive.py` | No | CLI loop: input limits, PII redaction, interrupts, model retry prompt, 100-step iteration limit, error messages. |
 | `pii.redact()` | `pii.py` | No | Replaces emails, phone numbers, card numbers, SSNs, IBANs and IP addresses in customer input with placeholders (Presidio) before the graph sees it. |
 | `setup_tracing()` | `tracing.py` | No | Sends spans and WARNING+ logs to Arize Phoenix. |
+
+**Prompt injection:** redacted by OpenRouter before the prompt reaches the model. This is set up in
+OpenRouter, not in this codebase, so no node or tool here checks for it.
