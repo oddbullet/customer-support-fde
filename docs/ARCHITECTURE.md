@@ -115,13 +115,12 @@ flowchart LR
         ticket_gen_model["🧠 ticket_gen_model"]
     end
 
-    build_llm["⚙️ build_llm()<br/><small>+ circuit breaker</small>"]
     openrouter["🌐 OpenRouter<br/><small>primary + fallback model</small>"]
     sqlite[("🗄️ SQLite<br/><small>menu, orders, refunds,<br/>complaints, accounts</small>")]
     ntp["🕒 NTP<br/><small>time.windows.com</small>"]
     tickets["📄 tickets/"]
 
-    router_model & order_agent & refund_agent & memory_gen_model & ticket_gen_model --> build_llm --> openrouter
+    router_model & order_agent & refund_agent & memory_gen_model & ticket_gen_model --> openrouter
 
     account_identification_function["⚙️👤 account_identification_function"] --> sqlite
     order_tools_function["⚙️ order_tools_function"] --> sqlite
@@ -140,7 +139,7 @@ flowchart LR
     classDef ext fill:#fef3c7,stroke:#b45309,color:#451a03
     class order_agent,refund_agent agent
     class router_model,memory_gen_model,ticket_gen_model model
-    class build_llm,order_tools_function,refund_tools_function,cart_summary_function func
+    class order_tools_function,refund_tools_function,cart_summary_function func
     class account_identification_function human
     class openrouter,sqlite,ntp,tickets ext
 ```
@@ -312,22 +311,3 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
   exits
 - **Dependencies:** none (logs a WARNING → Phoenix)
 - **AI usage:** None
-
-## Cross-cutting pieces (not graph nodes)
-
-| Component | File | AI? | Role |
-|---|---|---|---|
-| `build_llm()` | `nodes/common.py` | Yes | Builds every LLM client (OpenRouter). 40 s timeout, 4,000 output-token cap. Wraps in `CircuitBreakerLLM` when `FALLBACK_MODEL` is set. |
-| `invoke_with_retry()` | `nodes/common.py` | No | Structured-output calls: asks once more when the reply is unusable (`BAD_REPLY_ERRORS`), then re-raises. |
-| `CircuitBreakerLLM` | `circuit_breaker.py` | Yes (wrapper) | Switches to the fallback model for 60 s after the primary fails, then probes the primary again. Raises `ModelUnavailableError` when both fail. |
-| `condense_history()` | `nodes/common.py` | Yes | Summarizes old messages for `order_agent` / `refund_agent` once history exceeds 40,000 tokens. |
-| `handle_tool_error()` | `nodes/common.py` | No | Turns a tool exception into a retry instruction for the agent; logs the real error. |
-| `refund_policy.evaluate()` | `refund_policy.py` | No | Decides refund eligibility and amount. |
-| `db` | `db.py` | No | SQLite access. Errors surface as `OrderStoreError` / `MenuStoreError`. |
-| `clock.trusted_now()` | `clock.py` | No | NTP time for every stored timestamp. |
-| `interactive.py` | `interactive.py` | No | CLI loop: input limits, PII redaction, interrupts, model retry prompt, 100-step iteration limit, error messages. |
-| `pii.redact()` | `pii.py` | No | Replaces emails, phone numbers, card numbers, SSNs, IBANs and IP addresses in customer input with placeholders (Presidio) before the graph sees it. |
-| `setup_tracing()` | `tracing.py` | No | Sends spans and WARNING+ logs to Arize Phoenix. |
-
-**Prompt injection:** redacted by OpenRouter before the prompt reaches the model. This is set up in
-OpenRouter, not in this codebase, so no node or tool here checks for it.
