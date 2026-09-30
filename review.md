@@ -61,3 +61,29 @@ uv run pytest -m e2e
 
 To keep them short, these e2e tests lower the threshold to 1 token so every turn condenses. The
 40,000-token limit itself is only tested with the fake LLM.
+
+# Review: Loop Protection Controls
+
+All loop protection tests run offline with fakes as part of `uv run pytest`.
+
+| Control | Implemented in |
+|---|---|
+| Max tool calls (same tool more than 3 steps in a row per customer turn) | `MAX_CONSECUTIVE_TOOL_CALLS`, `find_repeated_tool`, `tool_limit_node` ([tool_limit.py, line 9](src/customer_support_fde/nodes/tool_limit.py)); wired in [graph.py, line 53](src/customer_support_fde/graph.py) |
+| Workflow iteration limit (100 graph steps per `graph.invoke()`) | `WORKFLOW_ITERATION_LIMIT`, passed as `recursion_limit` ([interactive.py, line 38](src/customer_support_fde/interactive.py)) |
+| Circuit breaker (fallback model, 60 s cool-down, probe; 2 manual retries) | `CircuitBreaker`, `CircuitBreakerLLM` ([circuit_breaker.py, line 28](src/customer_support_fde/circuit_breaker.py)); `MODEL_RETRY_LIMIT` ([interactive.py, line 42](src/customer_support_fde/interactive.py)) |
+| Execution timeouts (40 s per LLM request, 4,000 output tokens) | `LLM_TIMEOUT_SECONDS`, `LLM_MAX_OUTPUT_TOKENS`, `_chat_model` ([common.py, line 37](src/customer_support_fde/nodes/common.py)) |
+
+| Control | Type | Example test | What it proves |
+|---|---|---|---|
+| Max tool calls | Happy | `test_three_same_tool_steps_per_turn_do_not_trip_limit` ([test_tool_limit_graph.py, line 52](tests/integration/test_tool_limit_graph.py)) | Normal tool use within a turn is not stopped. |
+| | Edge | `test_find_repeated_tool_allows_legitimate_histories` ([test_tool_limit.py, line 147](tests/unit/test_tool_limit.py)) | Exactly 3 in a row, a run broken by another tool, parallel calls in one step, and a customer reply between calls do not trip the limit. |
+| | Failure | `test_order_agent_exceeding_tool_limit_ends_conversation` ([test_tool_limit_graph.py, line 24](tests/integration/test_tool_limit_graph.py)) | A runaway order agent is stopped and the tool is not run. |
+| Workflow iteration limit | Happy | `test_run_conversation_passes_iteration_limit_on_every_invoke` ([test_workflow_iteration_limit.py, line 25](tests/unit/test_workflow_iteration_limit.py)) | Every `graph.invoke()`, including resumes, runs with the limit. |
+| | Edge | `test_runaway_tool_loop_is_stopped_by_iteration_limit` ([test_workflow_iteration_limit_graph.py, line 37](tests/integration/test_workflow_iteration_limit_graph.py)) | An agent alternating between two tools (which the tool limit never catches) is stopped after about 50 loops. |
+| | Failure | `test_run_interactive_shows_generic_message_and_exits_when_iteration_limit_reached` ([test_workflow_iteration_limit.py, line 66](tests/unit/test_workflow_iteration_limit.py)) | The customer sees the generic error message and the CLI exits 1. |
+| Circuit breaker | Happy | `test_half_open_probe_success_closes_circuit` ([test_circuit_breaker.py, line 232](tests/unit/test_circuit_breaker.py)) | After the cool-down, a successful probe switches back to the primary. |
+| | Edge | `test_circuit_stays_open_just_before_cooldown_ends` ([test_circuit_breaker.py, line 271](tests/unit/test_circuit_breaker.py)) | The primary is not retried a moment before the 60 s cool-down ends. |
+| | Failure | `test_router_falls_back_when_primary_is_down` ([test_circuit_breaker_graph.py, line 90](tests/integration/test_circuit_breaker_graph.py)) | A failing primary (HTTP 503) falls back through the full graph. |
+| Execution timeouts | Happy | `test_build_llm_sets_request_timeout_on_all_circuit_breaker_models` ([test_llm_timeout.py, line 17](tests/unit/test_llm_timeout.py)) | Both the primary and fallback models get the 40 s timeout. |
+| | Edge | `test_build_llm_caps_output_tokens_on_all_circuit_breaker_models` ([test_llm_timeout.py, line 40](tests/unit/test_llm_timeout.py)) | Both models are capped at 4,000 output tokens, so a reply that keeps streaming still ends. |
+| | Failure | `test_router_falls_back_when_primary_times_out` ([test_circuit_breaker_graph.py, line 163](tests/integration/test_circuit_breaker_graph.py)) | A primary that times out falls back to the fallback model. |
