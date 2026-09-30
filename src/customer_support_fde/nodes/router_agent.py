@@ -1,9 +1,9 @@
 from typing import Literal
 
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
-from customer_support_fde.nodes.common import build_llm
+from customer_support_fde.nodes.common import BAD_REPLY_ERRORS, build_llm, invoke_with_retry
 from customer_support_fde.state import SupportState
 
 SYSTEM_PROMPT = """\
@@ -45,17 +45,18 @@ def _build_llm() -> ChatOpenAI:
 
 def router_agent(state: SupportState) -> SupportState:
     try:
-        decision = _build_llm().invoke(
+        decision = invoke_with_retry(
+            _build_llm(),
             [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": state["user_query"]},
-            ]
+            ],
         )
-    except ValidationError:
-        # The model returned a destination/sentiment shape that doesn't match
-        # RouterDecision (research.md §6) — not a call failure (FR-011 still
-        # propagates those), so fall back to the same "ask the customer"
-        # path used for any other ambiguous/mixed-signal request.
+    except BAD_REPLY_ERRORS:
+        # Both replies were unusable (wrong shape, empty, refused, or cut off) —
+        # not a call failure (FR-011 still propagates those), so fall back to the
+        # same "ask the customer" path used for any other ambiguous/mixed-signal
+        # request.
         destination: Literal["order_support", "refund", "unclear"] = "unclear"
         sentiment: Literal["positive", "neutral", "negative"] | None = "neutral"
     else:

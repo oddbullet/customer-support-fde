@@ -85,8 +85,11 @@ driven by an LLM (via OpenRouter). Features:
     `OrderNotPlacedError` (`ORDER_NOT_PLACED_MESSAGE`); inside a refund tool, `handle_tool_error`
     re-raises it instead of asking the agent to retry → `GENERIC_ERROR_MESSAGE`; anywhere else
     (account sign-up, complaints) it escapes the conversation → `GENERIC_ERROR_MESSAGE`. All exit 1.
-  - Malformed router output (not matching `RouterDecision`) falls back to `unclear`, so
-    `clarify_intent_function` asks the customer.
+  - Unusable structured output (wrong shape, empty reply, refusal, or cut off at the token cap;
+    `BAD_REPLY_ERRORS`) is asked for once more by `invoke_with_retry()` (`nodes/common.py`) in
+    the router, `memory_gen_model`, and refund-issue extraction. If the second reply is also
+    unusable, the router falls back to `unclear` (so `clarify_intent_function` asks the
+    customer), preferences are not updated, and the refund ticket's issue is `Not recorded`.
 
 A `.env` file is used for configuration, including the OpenRouter API key, model id, and optional
 fallback model id (see `.env.example`).

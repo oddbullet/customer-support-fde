@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from customer_support_fde import db, tickets
 from customer_support_fde.nodes.common import build_llm as _build_llm
-from customer_support_fde.nodes.common import summary_messages
+from customer_support_fde.nodes.common import invoke_with_retry, summary_messages
 from customer_support_fde.state import SupportState
 
 _EMPTY_SUMMARY = {"lines": [], "total": None}
@@ -43,8 +43,8 @@ def _extract_refund_issue(state: SupportState) -> str | None:
     context.extend(messages)
 
     try:
-        result = _build_llm().with_structured_output(_RefundIssueExtraction).invoke(
-            context
+        result = invoke_with_retry(
+            _build_llm().with_structured_output(_RefundIssueExtraction), context
         )
     except Exception:
         _logger.warning(

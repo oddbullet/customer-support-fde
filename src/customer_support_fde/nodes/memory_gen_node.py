@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from customer_support_fde import db
 from customer_support_fde.nodes.common import build_llm as _build_llm
-from customer_support_fde.nodes.common import summary_messages
+from customer_support_fde.nodes.common import invoke_with_retry, summary_messages
 from customer_support_fde.state import SupportState
 
 _logger = logging.getLogger(__name__)
@@ -78,8 +78,8 @@ def memory_gen_node(state: SupportState) -> SupportState:
     context.extend(state["messages"])
 
     try:
-        result = (
-            _build_llm().with_structured_output(_PreferenceExtraction).invoke(context)
+        result = invoke_with_retry(
+            _build_llm().with_structured_output(_PreferenceExtraction), context
         )
         if result.preferences is None:
             return {}
