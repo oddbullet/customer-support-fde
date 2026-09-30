@@ -38,75 +38,75 @@ def _route_from_refund_await_customer(state: SupportState) -> str:
 def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     graph = StateGraph(SupportState)
 
-    graph.add_node("router_agent", router_agent)
-    graph.add_node("clarify_intent", clarify_intent)
-    graph.add_node("account_identification_node", account_identification_node)
-    graph.add_node("call_model", call_model)
-    graph.add_node("order_tools", order_tools)
-    graph.add_node("await_customer", await_customer)
-    graph.add_node("cart_summary", cart_summary_node)
-    graph.add_node("ticket_gen_node", ticket_gen_node)
-    graph.add_node("memory_gen_node", memory_gen_node)
+    graph.add_node("router_model", router_agent)
+    graph.add_node("clarify_intent_function", clarify_intent)
+    graph.add_node("account_identification_function", account_identification_node)
+    graph.add_node("order_agent", call_model)
+    graph.add_node("order_tools_function", order_tools)
+    graph.add_node("order_await_customer_function", await_customer)
+    graph.add_node("cart_summary_function", cart_summary_node)
+    graph.add_node("ticket_gen_model", ticket_gen_node)
+    graph.add_node("memory_gen_model", memory_gen_node)
     graph.add_node("refund_agent", refund_agent)
-    graph.add_node("refund_tools", refund_tools)
-    graph.add_node("refund_await_customer", refund_await_customer)
-    graph.add_node("tool_limit_node", tool_limit_node)
+    graph.add_node("refund_tools_function", refund_tools)
+    graph.add_node("refund_await_customer_function", refund_await_customer)
+    graph.add_node("tool_limit_function", tool_limit_node)
 
-    graph.set_entry_point("router_agent")
+    graph.set_entry_point("router_model")
     graph.add_conditional_edges(
-        "router_agent",
+        "router_model",
         _route_from_destination,
         {
-            "order_support": "account_identification_node",
+            "order_support": "account_identification_function",
             "refund": "refund_agent",
-            "unclear": "clarify_intent",
+            "unclear": "clarify_intent_function",
         },
     )
     graph.add_conditional_edges(
-        "clarify_intent",
+        "clarify_intent_function",
         _route_from_destination,
         {
-            "order_support": "account_identification_node",
+            "order_support": "account_identification_function",
             "refund": "refund_agent",
         },
     )
-    graph.add_edge("account_identification_node", "call_model")
+    graph.add_edge("account_identification_function", "order_agent")
     graph.add_conditional_edges(
-        "call_model",
+        "order_agent",
         route_after_agent,
         {
-            "tools": "order_tools",
-            "tool_limit": "tool_limit_node",
-            "__end__": "await_customer",
+            "tools": "order_tools_function",
+            "tool_limit": "tool_limit_function",
+            "__end__": "order_await_customer_function",
         },
     )
-    graph.add_edge("order_tools", "call_model")
+    graph.add_edge("order_tools_function", "order_agent")
     graph.add_conditional_edges(
-        "await_customer",
+        "order_await_customer_function",
         _route_from_await_customer,
-        {"continue": "call_model", "confirmed": "cart_summary"},
+        {"continue": "order_agent", "confirmed": "cart_summary_function"},
     )
-    graph.add_edge("cart_summary", "ticket_gen_node")
-    graph.add_edge("ticket_gen_node", END)
-    graph.add_edge("cart_summary", "memory_gen_node")
-    graph.add_edge("memory_gen_node", END)
+    graph.add_edge("cart_summary_function", "ticket_gen_model")
+    graph.add_edge("ticket_gen_model", END)
+    graph.add_edge("cart_summary_function", "memory_gen_model")
+    graph.add_edge("memory_gen_model", END)
 
     graph.add_conditional_edges(
         "refund_agent",
         route_after_agent,
         {
-            "tools": "refund_tools",
-            "tool_limit": "tool_limit_node",
-            "__end__": "refund_await_customer",
+            "tools": "refund_tools_function",
+            "tool_limit": "tool_limit_function",
+            "__end__": "refund_await_customer_function",
         },
     )
-    graph.add_edge("refund_tools", "refund_agent")
+    graph.add_edge("refund_tools_function", "refund_agent")
     graph.add_conditional_edges(
-        "refund_await_customer",
+        "refund_await_customer_function",
         _route_from_refund_await_customer,
-        {"continue": "refund_agent", "resolved": "ticket_gen_node"},
+        {"continue": "refund_agent", "resolved": "ticket_gen_model"},
     )
 
-    graph.add_edge("tool_limit_node", END)
+    graph.add_edge("tool_limit_function", END)
 
     return graph.compile(checkpointer=checkpointer)

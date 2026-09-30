@@ -115,7 +115,7 @@ agent is converted to it; storage and the refund window stay in UTC:
 uv run start --set-tz eastern
 ```
 
-Order and refund times come from an NTP server (`pool.ntp.org`), not the computer's clock, so
+Order and refund times come from an NTP server (`time.windows.com`), not the computer's clock, so
 the app needs internet access to it (UDP port 123).
 
 Then start an interactive conversation:

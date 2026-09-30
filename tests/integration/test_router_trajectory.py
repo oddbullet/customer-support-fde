@@ -95,8 +95,8 @@ def test_order_support_style_request_reaches_call_model_and_pauses(monkeypatch):
         outputs=actual,
         reference_outputs={
             "steps": [
-                ["__start__", "router_agent", "account_identification_node", "__interrupt__"],
-                ["call_model", "await_customer", "__interrupt__"],
+                ["__start__", "router_model", "account_identification_function", "__interrupt__"],
+                ["order_agent", "order_await_customer_function", "__interrupt__"],
             ],
         },
     )
@@ -124,9 +124,9 @@ def test_refund_style_request_routes_through_refund_agent(monkeypatch):
             "steps": [
                 [
                     "__start__",
-                    "router_agent",
+                    "router_model",
                     "refund_agent",
-                    "refund_await_customer",
+                    "refund_await_customer_function",
                     "__interrupt__",
                 ]
             ],
@@ -143,9 +143,9 @@ def test_refund_style_request_routes_through_refund_agent(monkeypatch):
 @pytest.mark.parametrize(
     "answer,expected_segment",
     [
-        ("1", ["call_model", "await_customer", "__interrupt__"]),
-        ("2", ["call_model", "await_customer", "__interrupt__"]),
-        ("3", ["refund_agent", "refund_await_customer", "__interrupt__"]),
+        ("1", ["order_agent", "order_await_customer_function", "__interrupt__"]),
+        ("2", ["order_agent", "order_await_customer_function", "__interrupt__"]),
+        ("3", ["refund_agent", "refund_await_customer_function", "__interrupt__"]),
     ],
 )
 def test_ambiguous_or_mixed_signal_request_resolved_via_clarify_intent(
@@ -171,11 +171,11 @@ def test_ambiguous_or_mixed_signal_request_resolved_via_clarify_intent(
 
     second_result = graph.invoke(Command(resume=answer), config)
 
-    steps = [["__start__", "router_agent", "clarify_intent", "__interrupt__"]]
+    steps = [["__start__", "router_model", "clarify_intent_function", "__interrupt__"]]
     if answer in ("1", "2"):
         assert "__interrupt__" in second_result
         graph.invoke(Command(resume="2"), config)
-        steps.append(["account_identification_node", "__interrupt__"])
+        steps.append(["account_identification_function", "__interrupt__"])
         steps.append(expected_segment)
     else:
         steps.append(expected_segment)

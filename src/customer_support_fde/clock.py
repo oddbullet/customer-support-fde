@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import ntplib
 
-NTP_SERVER = "pool.ntp.org"
+NTP_SERVER = "time.windows.com"
 NTP_TIMEOUT_SECONDS = 3
 
 

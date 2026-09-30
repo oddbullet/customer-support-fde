@@ -4,7 +4,7 @@
 snapshot whose "messages" list is empty (agentevals==0.0.9). SupportState's
 `messages` field is scratch, per-turn state that legitimately stays an empty
 list for conversations that never enter a tool-calling loop at all (e.g. one
-that never leaves `router_agent`) — so we drop an empty "messages" key from
+that never leaves `router_model`) — so we drop an empty "messages" key from
 each snapshot's values before handing it to agentevals, which only touches
 "steps" for `graph_trajectory_strict_match` and doesn't need "results".
 """

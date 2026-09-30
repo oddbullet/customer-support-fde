@@ -24,7 +24,7 @@ driven by an LLM (via OpenRouter). Features:
   never kept without the tool call before it) is folded into a running summary; the summarizer
   receives those messages as a plain-text transcript, not raw chat/tool messages. A failed or
   blank summary is retried once; if both attempts fail, the full history is kept for that turn.
-  The order summary also feeds `memory_gen_node`, so preferences stated in condensed turns are
+  The order summary also feeds `memory_gen_model`, so preferences stated in condensed turns are
   still stored.
 - OpenTelemetry tracing via Arize Phoenix when a collector endpoint is configured.
 - Logging goes to Phoenix only: `setup_tracing()` always installs `PhoenixLogHandler`
@@ -46,7 +46,7 @@ driven by an LLM (via OpenRouter). Features:
   pick up your order." A submitted refund names the amount, says it awaits staff review, gives the
   Order ID, and shows a `Submitted:` local time.
 - Date & time: every stored timestamp (orders, refunds, complaints, accounts) and the refund
-  check's "now" come from an NTP server (`clock.trusted_now()`, `pool.ntp.org`), never the host
+  check's "now" come from an NTP server (`clock.trusted_now()`, `time.windows.com`), never the host
   clock; an order or refund uses one reading for what it stores and shows. Times are
   stored and compared in UTC. The restaurant timezone (a main US zone, stored in the
   `restaurant_settings` table, loaded once by `restaurant_time.load()`) is used only for display
@@ -64,7 +64,7 @@ driven by an LLM (via OpenRouter). Features:
   - Tool errors: an exception inside a tool is returned to the agent as an error `ToolMessage`
     carrying a fixed instruction (`TOOL_ERROR_MESSAGE`) to retry the same call without telling the
     customer; the real exception is only logged. Repeated failures end at the tool-call limit (see
-    `tool_limit_node`). Invalid tool-call arguments return the validation message so the model can
+    `tool_limit_function`). Invalid tool-call arguments return the validation message so the model can
     correct them.
   - Database errors: SQLite errors on both read and write paths surface as `OrderStoreError`.
     Refund tools log them and reply to the agent with `ORDER_LOOKUP_FAILED`,
@@ -80,7 +80,7 @@ driven by an LLM (via OpenRouter). Features:
     re-raises it instead of asking the agent to retry → `GENERIC_ERROR_MESSAGE`; anywhere else
     (account sign-up, complaints) it escapes the conversation → `GENERIC_ERROR_MESSAGE`. All exit 1.
   - Malformed router output (not matching `RouterDecision`) falls back to `unclear`, so
-    `clarify_intent` asks the customer.
+    `clarify_intent_function` asks the customer.
 
 A `.env` file is used for configuration, including the OpenRouter API key, model id, and optional
 fallback model id (see `.env.example`).
@@ -95,42 +95,49 @@ fallback model id (see `.env.example`).
 - PyTest (+ `agentevals` for LLM-judged end-to-end tests)
 
 # Architecture
-Each item below is a LangGraph node (see `src/customer_support_fde/graph.py`):
+Each item below is a LangGraph node (see `src/customer_support_fde/graph.py`). Node names end
+in `_agent` (LLM + tools, AI), `_model` (single LLM call, AI), or `_function` (plain code, no AI);
+the Python functions keep their own names (shown in parentheses). Full per-component docs and the
+icon diagram: `docs/ARCHITECTURE.md` — keep it in sync when the graph changes.
 
-- **router_agent** — entry point for every message. Classifies the request as `order_support`,
-  `refund`, or `unclear`, and separately assesses sentiment (surfaced only to the refund agent).
-- **clarify_intent** — asks the customer to disambiguate when the router's destination is
-  `unclear`, then routes to `order_support` or `refund`.
-- **account_identification_node** — on the order/support path, identifies an existing account,
-  continues without one, or signs up a new one; loads any stored preferences. An account "not
-  found" shows a recovery menu; a database failure (`OrderStoreError`) propagates and stops the
-  workflow (the CLI shows the generic error message and exits).
-- **call_model** — the order/support agent. Answers menu and ingredient/allergy questions and
-  manages the cart via tool calls; condenses older messages into a running summary once history
-  grows too large. Its tool calls are guarded by the tool-call limit (see `tool_limit_node`).
-- **order_tools** — tool node backing `call_model`: menu lookup, add/remove cart items, cart
-  total, mark order confirmed. Tool exceptions go back to the agent via `handle_tool_error`
-  (`nodes/common.py`).
-- **await_customer** — interrupts to collect the customer's next reply during ordering, looping
-  back to `call_model` until the order is confirmed.
-- **cart_summary_node** — renders the confirmed cart into an order summary and records the order;
-  a store failure while recording raises `OrderNotPlacedError`.
-- **ticket_gen_node** — produces the final ticket artifact: an order ticket (order/support path)
-  or a refund ticket (refund path).
-- **memory_gen_node** — after an order, extracts and persists updated account preferences
-  (likes, dislikes, allergies) from the conversation.
-- **refund_agent** — the refund/complaints agent. Looks up the order, gathers the facts the
-  refund policy needs, and calls tools to apply the policy or log a complaint. Its tool calls are
-  guarded by the tool-call limit (see `tool_limit_node`).
-- **refund_tools** — tool node backing `refund_agent`: `lookup_order`, `process_refund_request`,
-  `log_complaint`, `conclude_refund_conversation`. Tool exceptions go back to the agent via
-  `handle_tool_error` (`nodes/common.py`).
-- **refund_await_customer** — interrupts to collect the customer's next reply during the refund
-  conversation, looping back to `refund_agent` until resolved.
-- **tool_limit_node** — ends the conversation when `call_model` or `refund_agent` asks for the
-  same tool in more than 3 consecutive steps within one customer turn (a runaway tool loop). The
-  tool is not run; the node logs and records `{agent, tool}` in `tool_limit_reached`, and the CLI
-  shows the generic error message and exits.
+- **router_model** (`router_agent`) — entry point for every message. Classifies the request as
+  `order_support`, `refund`, or `unclear`, and separately assesses sentiment (surfaced only to the
+  refund agent).
+- **clarify_intent_function** (`clarify_intent`) — asks the customer to disambiguate when the
+  router's destination is `unclear`, then routes to `order_support` or `refund`.
+- **account_identification_function** (`account_identification_node`) — on the order/support
+  path, identifies an existing account, continues without one, or signs up a new one; loads any
+  stored preferences. An account "not found" shows a recovery menu; a database failure
+  (`OrderStoreError`) propagates and stops the workflow (the CLI shows the generic error message
+  and exits).
+- **order_agent** (`call_model`) — the order/support agent. Answers menu and ingredient/allergy
+  questions and manages the cart via tool calls; condenses older messages into a running summary
+  once history grows too large. Its tool calls are guarded by the tool-call limit (see
+  `tool_limit_function`).
+- **order_tools_function** (`order_tools`) — tool node backing `order_agent`: menu lookup,
+  add/remove cart items, cart total, mark order confirmed. Tool exceptions go back to the agent
+  via `handle_tool_error` (`nodes/common.py`).
+- **order_await_customer_function** (`await_customer`) — interrupts to collect the customer's next
+  reply during ordering, looping back to `order_agent` until the order is confirmed.
+- **cart_summary_function** (`cart_summary_node`) — renders the confirmed cart into an order
+  summary and records the order; a store failure while recording raises `OrderNotPlacedError`.
+- **ticket_gen_model** (`ticket_gen_node`) — produces the final ticket artifact: an order ticket
+  (order/support path, no LLM) or a refund ticket (refund path; the LLM extracts the issue).
+- **memory_gen_model** (`memory_gen_node`) — after an order, extracts and persists updated account
+  preferences (likes, dislikes, allergies) from the conversation.
+- **refund_agent** (`refund_agent`) — the refund/complaints agent. Looks up the order, gathers the
+  facts the refund policy needs, and calls tools to apply the policy or log a complaint. Its tool
+  calls are guarded by the tool-call limit (see `tool_limit_function`).
+- **refund_tools_function** (`refund_tools`) — tool node backing `refund_agent`: `lookup_order`,
+  `process_refund_request`, `log_complaint`, `conclude_refund_conversation`. Tool exceptions go
+  back to the agent via `handle_tool_error` (`nodes/common.py`).
+- **refund_await_customer_function** (`refund_await_customer`) — interrupts to collect the
+  customer's next reply during the refund conversation, looping back to `refund_agent` until
+  resolved.
+- **tool_limit_function** (`tool_limit_node`) — ends the conversation when `order_agent` or
+  `refund_agent` asks for the same tool in more than 3 consecutive steps within one customer turn
+  (a runaway tool loop). The tool is not run; the node logs and records `{agent, tool}` in
+  `tool_limit_reached`, and the CLI shows the generic error message and exits.
 
 Every model call made by these nodes goes through `build_llm()` in `nodes/common.py`. When
 `FALLBACK_MODEL` is set, it returns a `CircuitBreakerLLM` (`circuit_breaker.py`) that shares one
