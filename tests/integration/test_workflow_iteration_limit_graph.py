@@ -5,12 +5,16 @@ import pytest
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
+from langgraph.types import Command
 
 from customer_support_fde import db, interactive
 from customer_support_fde.graph import build_graph
 from customer_support_fde.nodes import refund_agent, router_agent
+from customer_support_fde.nodes import ticket_gen_node as ticket_gen_node_module
 from customer_support_fde.nodes.router_agent import RouterDecision
 from customer_support_fde.state import initial_state
+
+from _graph_fakes import fake_agent_llm, mock_router, seed_order, tool_call, use_tmp_db
 
 # Far more tool steps than the iteration limit allows, then a plain reply that would
 # end the turn normally if the limit were not enforced.
@@ -63,3 +67,54 @@ def test_runaway_tool_loop_is_stopped_by_iteration_limit(monkeypatch, tmp_path):
     agent_calls = bound.invoke.call_count
     assert interactive.WORKFLOW_ITERATION_LIMIT // 2 - 5 <= agent_calls
     assert agent_calls <= interactive.WORKFLOW_ITERATION_LIMIT // 2 + 1
+
+
+# Customer turns in the long conversation below. Each turn is an order lookup plus a
+# reply, only a few graph steps, but the whole conversation adds up to far more than
+# WORKFLOW_ITERATION_LIMIT steps.
+_LONG_CONVERSATION_TURNS = 30
+
+
+# A long but normal refund conversation is never cut off: the iteration limit counts the
+# steps of each graph.invoke() (one customer turn), not the whole conversation, so the
+# conversation reaches its ticket even though it takes well over 100 steps in total. (base)
+def test_long_normal_conversation_completes_within_iteration_limit(monkeypatch, tmp_path):
+    db_path = use_tmp_db(monkeypatch, tmp_path)
+    order_id = seed_order(db_path)
+    mock_router(monkeypatch, "refund")
+
+    replies = []
+    for turn in range(_LONG_CONVERSATION_TURNS):
+        replies.append(tool_call("lookup_order", {"order_id": order_id}, f"call_{turn}"))
+        replies.append(AIMessage(content=f"Reply {turn}"))
+    replies.append(tool_call("conclude_refund_conversation", {}, "call_end"))
+    replies.append(AIMessage(content="Thanks for reaching out."))
+    refund_llm = fake_agent_llm(replies)
+    monkeypatch.setattr(refund_agent, "_build_llm", lambda: refund_llm)
+
+    ticket_llm = MagicMock()
+    ticket_llm.with_structured_output.return_value.invoke.return_value = (
+        ticket_gen_node_module._RefundIssueExtraction(issue="Asked about the order.")
+    )
+    monkeypatch.setattr(ticket_gen_node_module, "_build_llm", lambda: ticket_llm)
+
+    graph = build_graph(checkpointer=MemorySaver())
+    config = {
+        "configurable": {"thread_id": str(uuid.uuid4())},
+        "recursion_limit": interactive.WORKFLOW_ITERATION_LIMIT,
+    }
+
+    result = graph.invoke(initial_state("Where is my order?"), config)
+    for turn in range(1, _LONG_CONVERSATION_TURNS):
+        assert "__interrupt__" in result
+        result = graph.invoke(Command(resume=f"Customer turn {turn}"), config)
+    result = graph.invoke(Command(resume="That's all, thanks."), config)
+
+    assert "__interrupt__" not in result
+    assert result.get("tool_limit_reached") is None
+    assert result["refund_ticket"] is not None
+    # Each agent call is at least two graph steps (the agent, then its tools or the wait
+    # for the customer), so the conversation as a whole ran past the limit.
+    agent_calls = refund_llm.bind_tools.return_value.invoke.call_count
+    assert agent_calls == 2 * _LONG_CONVERSATION_TURNS + 2
+    assert agent_calls > interactive.WORKFLOW_ITERATION_LIMIT // 2

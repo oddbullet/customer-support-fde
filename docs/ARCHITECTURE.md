@@ -179,8 +179,9 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 - **Outputs:** `destination` (`order_support` / `refund` / `unclear`), `sentiment` (kept only for
   the refund path; set to `None` for `order_support`)
 - **Dependencies:** `build_llm()` → OpenRouter
-- **AI usage:** One LLM call with structured output (`RouterDecision`). If the output doesn't
-  match the schema, falls back to `unclear` so the customer is asked.
+- **AI usage:** One LLM call with structured output (`RouterDecision`). An unusable reply
+  (wrong shape, empty, refused, or cut off) is asked for once more (`invoke_with_retry()`); if
+  that is unusable too, falls back to `unclear` so the customer is asked.
 
 ### ⚙️👤 `clarify_intent_function`
 - **Code:** `clarify_intent()` in `nodes/clarify_intent.py`
@@ -251,7 +252,8 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 - **Outputs:** none in state; writes preferences to SQLite `accounts`. Skipped for guests.
 - **Dependencies:** `build_llm()` → OpenRouter; `db.update_account_preferences`
 - **AI usage:** One LLM call with structured output (`_PreferenceExtraction`) that merges old and
-  new likes, dislikes, and allergies. A failure is logged, and the order is unaffected.
+  new likes, dislikes, and allergies. An unusable reply is asked for once more
+  (`invoke_with_retry()`). A failure is logged, and the order is unaffected.
 
 ### 🤖 `refund_agent`
 - **Code:** `refund_agent()` in `nodes/refund_agent.py`
@@ -297,7 +299,8 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 - **Dependencies:** `tickets.py`; SQLite `complaints` (to show the policy decision);
   `build_llm()` → OpenRouter (refund path only)
 - **AI usage:** Refund tickets only. One structured-output call (`_RefundIssueExtraction`)
-  summarizes the customer's issue. On failure the issue shows as `Not recorded`. Order tickets
+  summarizes the customer's issue. An unusable reply is asked for once more
+  (`invoke_with_retry()`). On failure the issue shows as `Not recorded`. Order tickets
   use no AI.
 
 ### ⚙️🛑 `tool_limit_function`
@@ -315,6 +318,7 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 | Component | File | AI? | Role |
 |---|---|---|---|
 | `build_llm()` | `nodes/common.py` | Yes | Builds every LLM client (OpenRouter). 40 s timeout, 4,000 output-token cap. Wraps in `CircuitBreakerLLM` when `FALLBACK_MODEL` is set. |
+| `invoke_with_retry()` | `nodes/common.py` | No | Structured-output calls: asks once more when the reply is unusable (`BAD_REPLY_ERRORS`), then re-raises. |
 | `CircuitBreakerLLM` | `circuit_breaker.py` | Yes (wrapper) | Switches to the fallback model for 60 s after the primary fails, then probes the primary again. Raises `ModelUnavailableError` when both fail. |
 | `condense_history()` | `nodes/common.py` | Yes | Summarizes old messages for `order_agent` / `refund_agent` once history exceeds 40,000 tokens. |
 | `handle_tool_error()` | `nodes/common.py` | No | Turns a tool exception into a retry instruction for the agent; logs the real error. |

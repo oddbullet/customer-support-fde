@@ -11,7 +11,9 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_openai import ChatOpenAI
+from langchain_openai.chat_models.base import OpenAIRefusalError
 from langgraph.prebuilt.tool_node import ToolInvocationError
+from openai import LengthFinishReasonError
 
 from customer_support_fde import circuit_breaker
 from customer_support_fde.circuit_breaker import CircuitBreakerLLM, ModelUnavailableError
@@ -37,6 +39,13 @@ LLM_TIMEOUT_SECONDS = 40
 # Per-request output cap. The timeout only bounds the wait between received chunks, so
 # a runaway generation that keeps streaming is stopped by this instead.
 LLM_MAX_OUTPUT_TOKENS = 4000
+
+# A structured-output reply the model got wrong (the model itself is up): a shape that
+# doesn't fit the schema (pydantic's ValidationError is a ValueError), an empty reply
+# (ValueError), a refusal, or a reply cut off at LLM_MAX_OUTPUT_TOKENS.
+BAD_REPLY_ERRORS = (ValueError, OpenAIRefusalError, LengthFinishReasonError)
+
+_STRUCTURED_OUTPUT_MAX_ATTEMPTS = 2
 
 # The agent retries silently; if the tool keeps failing, the tool-call limit ends the
 # conversation and the CLI shows its fixed warning, so the agent never explains it.
@@ -75,6 +84,24 @@ def build_llm() -> ChatOpenAI | CircuitBreakerLLM:
         fallback_model=fallback_model,
         breaker=circuit_breaker.SHARED_BREAKER,
     )
+
+
+def invoke_with_retry(llm, messages):
+    # For structured-output calls: asks once more when the reply is unusable, then
+    # re-raises for the caller's own fallback. Outages aren't retried here; the client
+    # and the circuit breaker already handle those.
+    for attempt in range(1, _STRUCTURED_OUTPUT_MAX_ATTEMPTS + 1):
+        try:
+            return llm.invoke(messages)
+        except BAD_REPLY_ERRORS:
+            logger.warning(
+                "Model reply didn't fit the expected structure (attempt %d of %d)",
+                attempt,
+                _STRUCTURED_OUTPUT_MAX_ATTEMPTS,
+                exc_info=True,
+            )
+            if attempt == _STRUCTURED_OUTPUT_MAX_ATTEMPTS:
+                raise
 
 
 def estimate_token_count(messages: list[AnyMessage]) -> int:
@@ -228,7 +255,9 @@ __all__ = [
     "LLM_TIMEOUT_SECONDS",
     "LLM_MAX_OUTPUT_TOKENS",
     "TOOL_ERROR_MESSAGE",
+    "BAD_REPLY_ERRORS",
     "build_llm",
+    "invoke_with_retry",
     "handle_tool_error",
     "estimate_token_count",
     "condense_messages",
