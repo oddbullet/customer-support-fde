@@ -48,6 +48,12 @@ with real summarization calls in the e2e suite.
 | Context retention | `test_allergy_condensed_away_still_reaches_stored_preferences` ([test_conversation_condensation.py, line 548](tests/integration/test_conversation_condensation.py)) | An allergy mentioned in a condensed turn is still saved to the account's preferences. |
 | | `test_refund_ticket_issue_extraction_receives_the_summary` ([test_conversation_condensation.py, line 597](tests/integration/test_conversation_condensation.py)) | The refund ticket still gets the issue from condensed turns. |
 
+| Type | Example test | What it proves |
+|---|---|---|
+| Happy | `test_long_conversation_condenses_repeatedly_with_bounded_history` ([test_conversation_condensation.py, line 309](tests/integration/test_conversation_condensation.py)) | Over 12 turns through the full graph, each new summary builds on the previous one, the history stays at 7 messages or fewer, and the agent always sees the latest summary. |
+| Edge | `test_does_not_condense_mid_turn` ([test_conversation_condensation.py, line 233](tests/integration/test_conversation_condensation.py)) | Even over the limit, nothing is condensed while the agent is between tool steps, so the current turn's request and tool results are never dropped. |
+| Failure | `test_failed_summarization_recovers_on_the_next_turn` ([test_conversation_condensation.py, line 506](tests/integration/test_conversation_condensation.py)) | When both summary attempts fail, the turn keeps every message and the conversation carries on; the next turn condenses successfully. |
+
 Real summarization calls (OpenRouter, LLM-judged) run with:
 
 ```
