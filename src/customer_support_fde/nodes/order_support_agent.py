@@ -37,6 +37,8 @@ they currently owe), call get_cart_total to look it up rather than adding up \
 prices yourself. \
 Whenever the customer asks what's currently in their cart, call get_cart to \
 look it up rather than relying on your memory of the conversation.
+
+Always show the user the menu during the initial greeting.
 """
 
 _ORDER_TOOLS = [

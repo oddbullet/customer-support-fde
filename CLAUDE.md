@@ -46,7 +46,7 @@ driven by an LLM (via OpenRouter). Features:
   pick up your order." A submitted refund names the amount, says it awaits staff review, gives the
   Order ID, and shows a `Submitted:` local time.
 - Date & time: every stored timestamp (orders, refunds, complaints, accounts) and the refund
-  check's "now" come from an NTP server (`clock.trusted_now()`, `pool.ntp.org`), never the host
+  check's "now" come from an NTP server (`clock.trusted_now()`, `time.windows.com`), never the host
   clock; an order or refund uses one reading for what it stores and shows. Times are
   stored and compared in UTC. The restaurant timezone (a main US zone, stored in the
   `restaurant_settings` table, loaded once by `restaurant_time.load()`) is used only for display

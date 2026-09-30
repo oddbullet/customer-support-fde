@@ -118,7 +118,7 @@ flowchart LR
     build_llm["⚙️ build_llm()<br/><small>+ circuit breaker</small>"]
     openrouter["🌐 OpenRouter<br/><small>primary + fallback model</small>"]
     sqlite[("🗄️ SQLite<br/><small>menu, orders, refunds,<br/>complaints, accounts</small>")]
-    ntp["🕒 NTP<br/><small>pool.ntp.org</small>"]
+    ntp["🕒 NTP<br/><small>time.windows.com</small>"]
     tickets["📄 tickets/"]
 
     router_model & order_agent & refund_agent & memory_gen_model & ticket_gen_model --> build_llm --> openrouter
