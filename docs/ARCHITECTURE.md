@@ -103,50 +103,6 @@ The `reply` edges are LangGraph's `__end__` result from `route_after_agent`: the
 tool call, so its message goes to the customer. `cart_summary_function` fans out:
 `ticket_gen_model` and `memory_gen_model` run in parallel.
 
-## External dependencies
-
-```mermaid
-flowchart LR
-    subgraph AI["AI nodes"]
-        router_model["🧠 router_model"]
-        order_agent["🤖 order_agent"]
-        refund_agent["🤖 refund_agent"]
-        memory_gen_model["🧠 memory_gen_model"]
-        ticket_gen_model["🧠 ticket_gen_model"]
-    end
-
-    openrouter["🌐 OpenRouter<br/><small>primary + fallback model</small>"]
-    sqlite[("🗄️ SQLite<br/><small>menu, orders, refunds,<br/>complaints, accounts</small>")]
-    ntp["🕒 NTP<br/><small>time.windows.com</small>"]
-    tickets["📄 tickets/"]
-
-    router_model & order_agent & refund_agent & memory_gen_model & ticket_gen_model --> openrouter
-
-    account_identification_function["⚙️👤 account_identification_function"] --> sqlite
-    order_tools_function["⚙️ order_tools_function"] --> sqlite
-    refund_tools_function["⚙️ refund_tools_function"] --> sqlite
-    refund_tools_function --> ntp
-    cart_summary_function["⚙️ cart_summary_function"] --> sqlite
-    cart_summary_function --> ntp
-    memory_gen_model --> sqlite
-    ticket_gen_model --> sqlite
-    ticket_gen_model --> tickets
-
-    classDef agent fill:#6d28d9,stroke:#4c1d95,color:#ffffff
-    classDef model fill:#ddd6fe,stroke:#6d28d9,color:#1e1b4b
-    classDef func fill:#e5e7eb,stroke:#6b7280,color:#111827
-    classDef human fill:#dbeafe,stroke:#2563eb,color:#0c1e4a
-    classDef ext fill:#fef3c7,stroke:#b45309,color:#451a03
-    class order_agent,refund_agent agent
-    class router_model,memory_gen_model,ticket_gen_model model
-    class order_tools_function,refund_tools_function,cart_summary_function func
-    class account_identification_function human
-    class openrouter,sqlite,ntp,tickets ext
-```
-
-Not shown: 📡 **Arize Phoenix**. Every node run and every LLM call is traced as a span, and
-every WARNING+ log is attached to the current span (`tracing.py`).
-
 ## AI vs non-AI at a glance
 
 | Node | Kind | AI? | What the LLM does |
@@ -177,7 +133,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 - **Inputs:** `user_query`
 - **Outputs:** `destination` (`order_support` / `refund` / `unclear`), `sentiment` (kept only for
   the refund path; set to `None` for `order_support`)
-- **Dependencies:** `build_llm()` → OpenRouter
 - **AI usage:** One LLM call with structured output (`RouterDecision`). An unusable reply
   (wrong shape, empty, refused, or cut off) is asked for once more (`invoke_with_retry()`); if
   that is unusable too, falls back to `unclear` so the customer is asked.
@@ -188,7 +143,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
   or 3 (refund), repeating until the answer is valid.
 - **Inputs:** `user_query`, `sentiment`; customer reply via `interrupt`
 - **Outputs:** `destination` (`order_support` / `refund`), `sentiment`
-- **Dependencies:** none
 - **AI usage:** None
 
 ### ⚙️👤 `account_identification_function`
@@ -197,8 +151,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
   or sign up. An unknown account number shows a recovery menu.
 - **Inputs:** customer replies via `interrupt`
 - **Outputs:** `account_number`, `account_preferences`
-- **Dependencies:** SQLite `accounts` (`db.get_account`, `db.create_account`); sign-up uses NTP
-  for the timestamp. A database error stops the workflow (generic error message).
 - **AI usage:** None
 
 ### 🤖 `order_agent`
@@ -208,7 +160,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 - **Inputs:** `messages`, `user_query`, `account_preferences`, `order_conversation_summary`
 - **Outputs:** `messages` (new AI message, possibly with tool calls);
   `order_conversation_summary` when history is condensed
-- **Dependencies:** `build_llm()` → OpenRouter; tools in `order_tools_function`
 - **AI usage:** LLM with tools bound. Once history passes 40,000 tokens, an extra LLM call
   condenses older messages into a running summary (`condense_history` in `nodes/common.py`).
   Guarded by `tool_limit_function`.
@@ -221,8 +172,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
   `mark_order_confirmed`.
 - **Inputs:** tool calls on the last AI message; `menu`, `cart_items`
 - **Outputs:** tool result `messages`; `cart_items`, `order_confirmed`
-- **Dependencies:** menu data (loaded from SQLite at start); `handle_tool_error` turns a tool
-  exception into a "retry" message for the agent
 - **AI usage:** None (fuzzy name matching is plain string scoring)
 
 ### ⚙️👤 `order_await_customer_function`
@@ -231,7 +180,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
   `order_agent` until the order is confirmed.
 - **Inputs:** `messages`, `order_confirmed`
 - **Outputs:** `messages` (customer's reply), `user_query`
-- **Dependencies:** none
 - **AI usage:** None
 
 ### ⚙️ `cart_summary_function`
@@ -240,8 +188,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
   ("Your order has been placed.", `Placed:` time, Order ID).
 - **Inputs:** `cart_items`, `menu`
 - **Outputs:** `order_summary`, `order_id`, `messages` (recap)
-- **Dependencies:** SQLite `orders` (`db.record_order`), NTP (`clock.trusted_now`), restaurant
-  timezone for display. Any failure raises `OrderNotPlacedError`.
 - **AI usage:** None
 
 ### 🧠 `memory_gen_model`
@@ -249,7 +195,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 - **Purpose:** After an order, updates the account's saved food preferences.
 - **Inputs:** `account_number`, `account_preferences`, `order_conversation_summary`, `messages`
 - **Outputs:** none in state; writes preferences to SQLite `accounts`. Skipped for guests.
-- **Dependencies:** `build_llm()` → OpenRouter; `db.update_account_preferences`
 - **AI usage:** One LLM call with structured output (`_PreferenceExtraction`) that merges old and
   new likes, dislikes, and allergies. An unusable reply is asked for once more
   (`invoke_with_retry()`). A failure is logged, and the order is unaffected.
@@ -260,7 +205,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
   the facts the policy needs, then submits a refund request or logs a complaint.
 - **Inputs:** `messages`, `user_query`, `sentiment`, `refund_conversation_summary`
 - **Outputs:** `messages`; `refund_conversation_summary` when history is condensed
-- **Dependencies:** `build_llm()` → OpenRouter; tools in `refund_tools_function`
 - **AI usage:** LLM with tools bound; tone adapts to `sentiment`. Never decides eligibility. It
   relays what `process_refund_request` returns. Same history condensation as `order_agent`.
   Guarded by `tool_limit_function`.
@@ -273,9 +217,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 - **Inputs:** tool calls on the last AI message; `order_lookup`, `complaint_ids`
 - **Outputs:** tool result `messages`; `order_lookup`, `refund_request`, `complaint_ids`,
   `refund_resolved`
-- **Dependencies:** SQLite (`orders`, `refund_requests`, `complaints`), NTP (refund "now"),
-  `refund_policy.py`. Store errors become fixed messages (`ORDER_LOOKUP_FAILED`,
-  `REFUND_NOT_SUBMITTED`, `COMPLAINT_NOT_RECORDED`); time-server errors stop the workflow.
 - **AI usage:** None
 
 ### ⚙️👤 `refund_await_customer_function`
@@ -284,7 +225,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
   until the conversation is resolved.
 - **Inputs:** `messages`, `refund_resolved`
 - **Outputs:** `messages` (customer's reply)
-- **Dependencies:** none
 - **AI usage:** None
 
 ### 🧠 `ticket_gen_model`
@@ -295,8 +235,6 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
   `order_lookup`, `refund_request`, `complaint_ids`, `sentiment`, `messages`,
   `refund_conversation_summary`
 - **Outputs:** `order_ticket` or `refund_ticket`; a markdown file in `tickets/`
-- **Dependencies:** `tickets.py`; SQLite `complaints` (to show the policy decision);
-  `build_llm()` → OpenRouter (refund path only)
 - **AI usage:** Refund tickets only. One structured-output call (`_RefundIssueExtraction`)
   summarizes the customer's issue. An unusable reply is asked for once more
   (`invoke_with_retry()`). On failure the issue shows as `Not recorded`. Order tickets
@@ -309,5 +247,4 @@ The LLM never decides money: refund eligibility and amounts come from `refund_po
 - **Inputs:** `messages`, `destination`
 - **Outputs:** `tool_limit_reached` (`{agent, tool}`); the CLI then shows the generic error and
   exits
-- **Dependencies:** none (logs a WARNING → Phoenix)
 - **AI usage:** None

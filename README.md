@@ -81,6 +81,27 @@ uv sync
 `uv sync` creates a virtual environment and installs all dependencies from `pyproject.toml` /
 `uv.lock`.
 
+## Dependencies
+
+Declared in `pyproject.toml` (exact versions pinned in `uv.lock`):
+
+| Package | Used for |
+|---|---|
+| `langgraph` | The support workflow's state machine (nodes, edges, interrupts). |
+| `langchain` | Messages, tools, and structured-output helpers used by the agents. |
+| `langchain-openai` | LLM client pointed at OpenRouter. |
+| `pydantic` | Tool arguments and structured-output schemas. |
+| `presidio` | PII redaction of customer input. |
+| `en-core-web-sm` | Small spaCy English model used by Presidio. |
+| `ntplib` | Trusted current time from an NTP server. |
+| `tzdata` | Timezone data for `zoneinfo` (needed on Windows). |
+| `rich` | Interactive CLI rendering. |
+| `python-dotenv` | Loads configuration from `.env`. |
+| `arize-phoenix-otel` | OpenTelemetry tracing to Arize Phoenix. |
+| `openinference-instrumentation-langchain` | Traces LangChain/LangGraph calls as spans. |
+| `pytest` | Test runner. |
+| `agentevals` | LLM-judged checks in the end-to-end tests. |
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in the values:
