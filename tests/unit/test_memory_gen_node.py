@@ -30,7 +30,7 @@ def _base_state() -> dict:
 
 # memory_gen_node returns {} immediately when account_number is None (guest),
 # without invoking the LLM builder or db.update_account_preferences — a guest
-# never triggers extraction or storage. (base, FR-002, SC-002)
+# never triggers extraction or storage. (happy, FR-002, SC-002)
 def test_memory_gen_node_returns_empty_dict_when_no_account_number(monkeypatch):
     def _raise(*args, **kwargs):
         raise AssertionError("must not be called for a guest")
@@ -68,7 +68,7 @@ def _patch_memory_gen_llm(monkeypatch, preferences):
 
 # Account present, no prior preferences, model finds a like/dislike/allergy →
 # update_account_preferences is called once with the account number and the
-# structured output's preferences field. (base, FR-001, FR-003)
+# structured output's preferences field. (happy, FR-001, FR-003)
 def test_memory_gen_node_calls_update_with_extracted_preferences(monkeypatch):
     _patch_memory_gen_llm(monkeypatch, "Allergies: peanuts. Likes: spicy food.")
     mock_update = MagicMock()
@@ -90,7 +90,7 @@ def test_memory_gen_node_calls_update_with_extracted_preferences(monkeypatch):
 
 # Prior preferences exist → the request sent to the model includes a message
 # carrying that prior text, and update_account_preferences is called with the
-# structured output's combined preferences field. (base, FR-005)
+# structured output's combined preferences field. (happy, FR-005)
 def test_memory_gen_node_includes_prior_preferences_in_request_and_combines(
     monkeypatch,
 ):
@@ -131,7 +131,7 @@ def test_memory_gen_node_null_preferences_skips_write(monkeypatch):
 
 
 # The model call raising an exception → the function returns {} and
-# update_account_preferences is never called. (error, FR-008)
+# update_account_preferences is never called. (failure, FR-008)
 def test_memory_gen_node_model_call_failure_returns_empty_dict(monkeypatch, caplog):
     fake_structured_llm = MagicMock()
     fake_structured_llm.invoke.side_effect = RuntimeError("model unavailable")
@@ -153,7 +153,7 @@ def test_memory_gen_node_model_call_failure_returns_empty_dict(monkeypatch, capl
 
 
 # db.update_account_preferences raising OrderStoreError → the function
-# returns {} and no exception propagates out of memory_gen_node. (error, FR-008)
+# returns {} and no exception propagates out of memory_gen_node. (failure, FR-008)
 def test_memory_gen_node_db_write_failure_returns_empty_dict(monkeypatch, caplog):
     _patch_memory_gen_llm(monkeypatch, "Allergies: peanuts.")
     monkeypatch.setattr(

@@ -55,7 +55,7 @@ def _base_state() -> dict:
     }
 
 
-# A multi-item cart prices each line and sums to the order total. (base)
+# A multi-item cart prices each line and sums to the order total. (happy)
 def test_build_order_summary_multi_item_totals():
     cart = {"Kung Pao Chicken": 2, "Hot and Sour Soup": 1}
 
@@ -78,7 +78,7 @@ def test_build_order_summary_multi_item_totals():
     assert summary["total"] == 31.40
 
 
-# A single-unit cart's line total equals the unit price. (base)
+# A single-unit cart's line total equals the unit price. (happy)
 def test_build_order_summary_single_unit_line_total_equals_unit_price():
     cart = {"Spring Rolls": 1}
 
@@ -88,7 +88,7 @@ def test_build_order_summary_single_unit_line_total_equals_unit_price():
     assert summary["lines"][0]["unit_price"] == 6.95
 
 
-# Lines preserve cart_items insertion order and carry exactly the four documented fields. (base)
+# Lines preserve cart_items insertion order and carry exactly the four documented fields. (happy)
 def test_build_order_summary_preserves_order_and_line_fields():
     cart = {"Spring Rolls": 1, "Kung Pao Chicken": 2, "Hot and Sour Soup": 1}
 
@@ -103,7 +103,7 @@ def test_build_order_summary_preserves_order_and_line_fields():
         assert set(line.keys()) == {"name", "quantity", "unit_price", "line_total"}
 
 
-# build_order_summary does not mutate the cart_items dict it is given. (regression)
+# build_order_summary does not mutate the cart_items dict it is given. (edge, regression)
 def test_build_order_summary_does_not_mutate_input_cart_items():
     cart = {"Kung Pao Chicken": 2, "Spring Rolls": 1}
     original = dict(cart)
@@ -124,7 +124,7 @@ def test_build_order_summary_empty_cart_yields_none_total():
 # build_order_summary's total matches the shared cart_total() helper for the
 # same cart, so a mid-conversation total (get_cart_total) can never drift
 # from the final order total — guards FR-004/SC-003 in
-# specs/006-cart-total-lookup/spec.md. (regression)
+# specs/006-cart-total-lookup/spec.md. (happy, regression)
 def test_build_order_summary_total_matches_shared_cart_total_helper():
     cart = {"Kung Pao Chicken": 2, "Hot and Sour Soup": 1, "Spring Rolls": 3}
 
@@ -134,7 +134,7 @@ def test_build_order_summary_total_matches_shared_cart_total_helper():
 
 
 # render_order_summary names every item, shows unit price and line total
-# formatted as currency, and emits one Total line for a fully-priced order. (base)
+# formatted as currency, and emits one Total line for a fully-priced order. (happy)
 def test_render_order_summary_fully_priced():
     summary = build_order_summary(
         {"Kung Pao Chicken": 2, "Hot and Sour Soup": 1}, SAMPLE_MENU
@@ -175,7 +175,7 @@ _PLACED_AT = datetime(2026, 9, 29, 14, 3, tzinfo=timezone.utc)
 
 # cart_summary_node writes order_summary, records the order, writes order_id,
 # and appends exactly one AIMessage carrying the rendered recap with a
-# hyphenated Order ID line. (base)
+# hyphenated Order ID line. (happy)
 def test_cart_summary_node_writes_summary_and_appends_one_message(
     monkeypatch, tmp_path
 ):
@@ -200,7 +200,7 @@ def test_cart_summary_node_writes_summary_and_appends_one_message(
 
 
 # A placed order's recap leads with an explicit confirmation that the order went
-# through, so the customer never has to infer it. (base)
+# through, so the customer never has to infer it. (happy)
 def test_render_order_summary_with_order_id_confirms_order_placed():
     summary = build_order_summary({"Spring Rolls": 1}, SAMPLE_MENU)
 
@@ -217,7 +217,7 @@ def test_render_order_summary_with_order_id_confirms_order_placed():
 
 
 # A placed order's recap shows when it was placed, in the restaurant's local time,
-# between the total and the Order ID. (base)
+# between the total and the Order ID. (happy)
 def test_render_order_summary_shows_local_placed_time():
     summary = build_order_summary({"Spring Rolls": 1}, SAMPLE_MENU)
 
@@ -234,7 +234,7 @@ def test_render_order_summary_shows_local_placed_time():
     )
 
 
-# The order is stamped with the trusted (NTP) time, not the host clock. (base)
+# The order is stamped with the trusted (NTP) time, not the host clock. (happy)
 def test_cart_summary_node_stamps_order_with_trusted_time(monkeypatch, tmp_path):
     path = _use_tmp_db(monkeypatch, tmp_path)
     monkeypatch.setattr(clock, "trusted_now", lambda: _PLACED_AT)
@@ -246,7 +246,7 @@ def test_cart_summary_node_stamps_order_with_trusted_time(monkeypatch, tmp_path)
 
 
 # If the time server can't be reached, the order is not placed and the failure is
-# logged. (error)
+# logged. (failure)
 def test_cart_summary_node_clock_failure_raises_order_not_placed(
     monkeypatch, tmp_path, caplog
 ):
@@ -283,7 +283,7 @@ def test_cart_summary_node_empty_cart_writes_no_order(monkeypatch, tmp_path):
 
 # A store failure while recording the order raises OrderNotPlacedError (chained to the
 # original error) instead of producing a success message, and the failure is logged
-# with its exception for Phoenix. (error)
+# with its exception for Phoenix. (failure)
 @pytest.mark.parametrize(
     "error",
     [db.OrderStoreError("disk I/O error"), db.MenuStoreError("Menu database not found")],
@@ -307,7 +307,7 @@ def test_cart_summary_node_record_order_failure_raises_order_not_placed(
 
 
 # render_order_summary(summary) called without an order_id is byte-identical
-# to today's output. (regression)
+# to today's output. (edge, regression)
 def test_render_order_summary_without_order_id_is_byte_identical():
     summary = build_order_summary(
         {"Kung Pao Chicken": 2, "Spring Rolls": 1}, SAMPLE_MENU
@@ -321,7 +321,7 @@ def test_render_order_summary_without_order_id_is_byte_identical():
     )
 
 
-# order_ticket carries items plus the same lines/total as order_summary. (base)
+# order_ticket carries items plus the same lines/total as order_summary. (happy)
 def test_ticket_gen_node_ticket_mirrors_order_summary():
     state = _base_state()
     summary = build_order_summary(state["cart_items"], SAMPLE_MENU)
@@ -342,7 +342,7 @@ def test_ticket_gen_node_ticket_mirrors_order_summary():
 
 # The ticket's priced values are copied from order_summary, not recomputed
 # from cart_items and the menu — proven with values a fresh calculation
-# could never produce. (regression)
+# could never produce. (edge, regression)
 def test_ticket_gen_node_copies_order_summary_values_without_recomputing():
     state = _base_state()
     state["order_summary"] = {
@@ -375,7 +375,7 @@ def test_ticket_gen_node_defaults_when_order_summary_missing():
 
 
 # A confirmed order with a non-empty order_summary produces a ticket file on
-# disk under the configured tickets directory. (base)
+# disk under the configured tickets directory. (happy)
 def test_ticket_gen_node_writes_order_ticket_file(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     state = _base_state()
@@ -451,7 +451,7 @@ def _refund_base_state() -> dict:
     }
 
 
-# refund_ticket_node produces the data-model.md ticket shape from state. (base)
+# refund_ticket_node produces the data-model.md ticket shape from state. (happy)
 def test_refund_ticket_node_produces_documented_shape():
     state = _refund_base_state()
     state["order_lookup"] = {"order_id": "K7QP3M9X", "total": 22.0, "lines": []}
@@ -497,7 +497,7 @@ def _patch_ticket_gen_llm(monkeypatch, issue):
 
 
 # _extract_refund_issue returns the structured output's stripped issue field
-# when there is a conversation to summarize. (base)
+# when there is a conversation to summarize. (happy)
 def test_extract_refund_issue_returns_stripped_model_reply(monkeypatch):
     _patch_ticket_gen_llm(monkeypatch, "  Customer received the wrong dish.  ")
     state = _refund_base_state()
@@ -539,7 +539,7 @@ def test_extract_refund_issue_returns_none_when_structured_output_has_no_issue(
 
 
 # _extract_refund_issue returns None and logs a WARNING when the structured
-# output call raises, never letting the exception propagate. (error)
+# output call raises, never letting the exception propagate. (failure)
 def test_extract_refund_issue_returns_none_and_logs_warning_on_llm_failure(
     monkeypatch, caplog
 ):
@@ -559,7 +559,7 @@ def test_extract_refund_issue_returns_none_and_logs_warning_on_llm_failure(
 
 
 # ticket_gen_node's refund branch sets issue from _extract_refund_issue's
-# return value and refund_created from whether a refund_request exists. (base)
+# return value and refund_created from whether a refund_request exists. (happy)
 def test_ticket_gen_node_refund_branch_sets_issue_and_refund_created(monkeypatch):
     _patch_ticket_gen_llm(monkeypatch, "Customer received the wrong dish.")
     state = _refund_base_state()
@@ -588,7 +588,7 @@ def test_ticket_gen_node_refund_branch_handles_no_issue_and_no_refund(monkeypatc
 
 # If the complaint lookup fails while building a refund ticket, the ticket is still
 # produced with decision None and the failure is logged, so a store hiccup at the end
-# doesn't hide a conversation that already finished. (error)
+# doesn't hide a conversation that already finished. (failure)
 def test_refund_ticket_node_degrades_when_complaint_lookup_fails(monkeypatch, caplog):
     _patch_ticket_gen_llm(monkeypatch, None)
 

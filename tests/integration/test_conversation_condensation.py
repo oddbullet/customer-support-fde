@@ -144,7 +144,7 @@ def _conversation_sent_to_agent(llm: MagicMock) -> list:
 
 
 # The compaction threshold is 40,000 tokens for both agents; the literal value is pinned so
-# an accidental change is caught. (base)
+# an accidental change is caught. (happy)
 def test_threshold_is_40000_tokens():
     assert common.HISTORY_TOKEN_THRESHOLD == 40_000
     assert order_support_agent.ORDER_HISTORY_TOKEN_THRESHOLD == 40_000
@@ -167,7 +167,7 @@ def test_exactly_40000_tokens_does_not_condense(
     assert result["messages"] == history + [llm.bind_tools.return_value.invoke.return_value]
 
 
-# 40,001 tokens condenses everything except the last 3 messages into the summary. (base)
+# 40,001 tokens condenses everything except the last 3 messages into the summary. (edge)
 @pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_40001_tokens_condenses_all_but_last_three_messages(
     monkeypatch, module, node, summary_key
@@ -273,7 +273,7 @@ def test_cutoff_never_orphans_a_tool_result(
 
 
 # A runaway tool loop in a turn that starts over the threshold still ends at the tool-call
-# limit rather than the workflow recursion limit. (regression)
+# limit rather than the workflow recursion limit. (failure, regression)
 def test_runaway_tool_loop_after_condensation_still_hits_tool_limit(monkeypatch):
     mock_router(monkeypatch, "order_support")
     order_llm = fake_agent_llm(
@@ -305,7 +305,7 @@ def test_runaway_tool_loop_after_condensation_still_hits_tool_limit(monkeypatch)
 
 # A long order conversation condenses repeatedly: each new summary is built on the previous
 # one, the stored history stays bounded, never starts with a tool result, and the newest
-# summary reaches the agent's context. (base)
+# summary reaches the agent's context. (happy)
 def test_long_conversation_condenses_repeatedly_with_bounded_history(monkeypatch):
     mock_router(monkeypatch, "order_support")
     replies = []
@@ -351,7 +351,7 @@ def test_long_conversation_condenses_repeatedly_with_bounded_history(monkeypatch
 
 
 # One huge customer message after a short reply pushes the conversation over the
-# threshold, and compaction runs even though the last reported count was small. (regression)
+# threshold, and compaction runs even though the last reported count was small. (edge, regression)
 @pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_huge_customer_message_triggers_condensation(
     monkeypatch, module, node, summary_key
@@ -368,7 +368,7 @@ def test_huge_customer_message_triggers_condensation(
 
 
 # The estimate is the last reported input size plus a per-character estimate of every
-# message added after that reply. (base)
+# message added after that reply. (happy)
 def test_estimate_counts_messages_after_the_last_reported_reply():
     messages = [
         HumanMessage(content="q1"),
@@ -387,7 +387,7 @@ def test_estimate_of_empty_history_is_zero():
 
 # The summarizer receives the older messages as one plain-text transcript, not as raw chat
 # messages: given raw tool calls and results, a real model continued the conversation and
-# emitted tool-call markup as its "summary", losing the customer's allergy. (regression)
+# emitted tool-call markup as its "summary", losing the customer's allergy. (happy, regression)
 def test_summarizer_receives_older_messages_as_a_transcript():
     llm = MagicMock()
     llm.invoke.return_value = AIMessage(content="Summary.")
@@ -420,7 +420,7 @@ def test_summarizer_receives_older_messages_as_a_transcript():
 # ---------------------------------------------------------------------------
 
 
-# A summarization call that raises is retried, and the second attempt's summary is used. (error)
+# A summarization call that raises is retried, and the second attempt's summary is used. (failure)
 @pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_summarization_error_is_retried(monkeypatch, module, node, summary_key):
     llm = _fake_llm([RuntimeError("provider error"), AIMessage(content="Second try.")])
@@ -435,7 +435,7 @@ def test_summarization_error_is_retried(monkeypatch, module, node, summary_key):
 
 
 # A blank summary counts as a failed attempt and is retried rather than replacing the
-# history with nothing. (error)
+# history with nothing. (failure)
 @pytest.mark.parametrize("blank", ["", "   \n"])
 @pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_blank_summary_is_retried(
@@ -452,7 +452,7 @@ def test_blank_summary_is_retried(
 
 
 # After 2 failed attempts the agent keeps the full, uncondensed history and the prior
-# summary, still replies normally, and logs the failure. (error)
+# summary, still replies normally, and logs the failure. (failure)
 @pytest.mark.parametrize(
     "failures",
     [
@@ -484,7 +484,7 @@ def test_falls_back_to_full_history_after_two_failed_attempts(
 
 
 # When both models are down (ModelUnavailableError) summarization is not retried; the
-# agent's own call then raises the same error, which the CLI turns into its retry prompt. (error)
+# agent's own call then raises the same error, which the CLI turns into its retry prompt. (failure)
 @pytest.mark.parametrize("module, node, summary_key", AGENTS)
 def test_model_unavailable_during_summarization_is_not_retried(
     monkeypatch, module, node, summary_key
@@ -502,7 +502,7 @@ def test_model_unavailable_during_summarization_is_not_retried(
 
 
 # Summarization failing on one turn keeps every message; the next turn condenses
-# successfully. (error)
+# successfully. (failure)
 def test_failed_summarization_recovers_on_the_next_turn(monkeypatch):
     mock_router(monkeypatch, "order_support")
     order_llm = fake_agent_llm(
@@ -544,7 +544,7 @@ def test_failed_summarization_recovers_on_the_next_turn(monkeypatch):
 
 
 # An allergy stated in the first turn and then condensed away still reaches the account's
-# stored preferences: memory_gen_node reads the conversation summary. (regression)
+# stored preferences: memory_gen_node reads the conversation summary. (edge, regression)
 def test_allergy_condensed_away_still_reaches_stored_preferences(monkeypatch, _db):
     account_number = db.create_account(_db)
     mock_router(monkeypatch, "order_support")
@@ -593,7 +593,7 @@ def test_allergy_condensed_away_still_reaches_stored_preferences(monkeypatch, _d
 
 
 # After the refund conversation is condensed, the refund ticket's issue extraction still
-# receives the summary of the condensed turns. (regression guard)
+# receives the summary of the condensed turns. (edge, regression)
 def test_refund_ticket_issue_extraction_receives_the_summary(monkeypatch):
     mock_router(monkeypatch, "refund")
     refund_llm = fake_agent_llm(

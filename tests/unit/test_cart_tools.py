@@ -60,7 +60,7 @@ def _invoke_remove(items: dict[str, int], cart_items):
     )
 
 
-# Adds a single matched item to an empty cart at the requested quantity, reporting success. (base)
+# Adds a single matched item to an empty cart at the requested quantity, reporting success. (happy)
 def test_found_name_added_to_empty_cart_has_quantity_one():
     result = _invoke_add({"Kung Pao Chicken": 1}, {})
 
@@ -77,7 +77,7 @@ def test_adding_item_with_quantity_greater_than_one_sets_that_quantity():
     assert result.update["cart_items"] == {"Kung Pao Chicken": 2}
 
 
-# Quantity for an item persists and accumulates across separate tool calls. (base)
+# Quantity for an item persists and accumulates across separate tool calls. (happy)
 def test_adding_same_item_across_two_calls_increments_quantity():
     first = _invoke_add({"Kung Pao Chicken": 1}, {})
     second = _invoke_add({"Kung Pao Chicken": 1}, first.update["cart_items"])
@@ -120,14 +120,14 @@ def test_batch_with_mixed_results_only_applies_found_items():
 
 # A negative quantity must be refused rather than applied. order_lines enforces
 # quantity > 0, so a negative cart entry would blow up the whole order at record
-# time rather than at the point the bad quantity was introduced. (negative)
+# time rather than at the point the bad quantity was introduced. (failure)
 def test_cart_item_with_negative_quantity_is_rejected():
     with pytest.raises(ValidationError):
         CartItem(name="Kung Pao Chicken", quantity=-2)
 
 
 # Zero adds or removes nothing, so it is refused like any other non-positive
-# quantity. (negative)
+# quantity. (failure)
 def test_cart_item_with_zero_quantity_is_rejected():
     with pytest.raises(ValidationError):
         CartItem(name="Spring Rolls", quantity=0)
@@ -148,7 +148,8 @@ def test_tool_call_with_one_non_positive_quantity_is_rejected(tool):
         )
 
 
-# The tool must copy the cart rather than mutate the caller's state dict in place. (regression)
+# The tool must copy the cart rather than mutate the caller's state dict in place.
+# (edge, regression)
 def test_never_mutates_input_cart_items_in_place():
     original = {"Spring Rolls": 1}
 
@@ -157,7 +158,7 @@ def test_never_mutates_input_cart_items_in_place():
     assert original == {"Spring Rolls": 1}
 
 
-# Confirming a non-empty cart sets order_confirmed and returns a confirmation message. (base)
+# Confirming a non-empty cart sets order_confirmed and returns a confirmation message. (happy)
 def test_mark_order_confirmed_sets_true_for_non_empty_cart():
     result = mark_order_confirmed.func(
         state={"cart_items": {"Spring Rolls": 1}}, tool_call_id="call_1"
@@ -177,7 +178,7 @@ def test_mark_order_confirmed_omits_flag_for_empty_cart():
 
 
 # A quantity matching the current cart quantity deletes the entry entirely, reporting
-# success. (base)
+# success. (happy)
 def test_removal_quantity_matching_current_deletes_entry():
     result = _invoke_remove({"Kung Pao Chicken": 1}, {"Kung Pao Chicken": 1})
 
@@ -188,7 +189,7 @@ def test_removal_quantity_matching_current_deletes_entry():
 
 
 # A stated quantity smaller than the current cart quantity decrements the entry and
-# keeps it. (base)
+# keeps it. (happy)
 def test_quantified_removal_smaller_than_current_decrements_and_keeps_entry():
     result = _invoke_remove({"Kung Pao Chicken": 1}, {"Kung Pao Chicken": 3})
 
@@ -255,7 +256,8 @@ def test_batch_with_mixed_results_applies_only_found_and_in_cart_items():
     )
 
 
-# The tool must copy the cart rather than mutate the caller's state dict in place. (regression)
+# The tool must copy the cart rather than mutate the caller's state dict in place.
+# (edge, regression)
 def test_remove_never_mutates_input_cart_items_in_place():
     original = {"Kung Pao Chicken": 1, "Spring Rolls": 2}
 
@@ -265,7 +267,7 @@ def test_remove_never_mutates_input_cart_items_in_place():
 
 
 # Even when a batch entirely fails, the tool still reports the current (unchanged) cart
-# state in its message rather than only the failure text. (regression)
+# state in its message rather than only the failure text. (failure, regression)
 def test_add_failure_still_reports_current_nonempty_cart_state():
     result = _invoke_add({"Pizza": 1}, {"Spring Rolls": 2})
 
@@ -277,7 +279,8 @@ def test_add_failure_still_reports_current_nonempty_cart_state():
     )
 
 
-# Same guarantee for remove: a fully-failed batch still reports the current cart state. (regression)
+# Same guarantee for remove: a fully-failed batch still reports the current cart state.
+# (failure, regression)
 def test_remove_failure_still_reports_current_nonempty_cart_state():
     result = _invoke_remove({"Pizza": 1}, {"Spring Rolls": 2})
 
@@ -293,14 +296,14 @@ def _invoke_get_cart_total(cart_items):
     return get_cart_total.func(state={"cart_items": cart_items, "menu": SAMPLE_MENU})
 
 
-# A single item at quantity one reports that exact item's price as the total. (base)
+# A single item at quantity one reports that exact item's price as the total. (happy)
 def test_get_cart_total_single_item_reports_exact_price():
     rendered = _invoke_get_cart_total({"Kung Pao Chicken": 1})
 
     assert "$12.95" in rendered
 
 
-# Multiple distinct items at varying quantities report the correct combined total. (base)
+# Multiple distinct items at varying quantities report the correct combined total. (happy)
 def test_get_cart_total_multiple_items_reports_combined_total():
     rendered = _invoke_get_cart_total(
         {"Kung Pao Chicken": 2, "Mapo Tofu": 1, "Spring Rolls": 3}
@@ -322,7 +325,7 @@ def _invoke_get_cart(cart_items):
     return get_cart.func(state={"cart_items": cart_items, "menu": SAMPLE_MENU})
 
 
-# A cart with multiple items renders one line per item in the shared cart-state format. (base)
+# A cart with multiple items renders one line per item in the shared cart-state format. (happy)
 def test_get_cart_multiple_items_renders_current_cart_lines():
     rendered = _invoke_get_cart({"Kung Pao Chicken": 2, "Mapo Tofu": 1})
 
@@ -337,7 +340,7 @@ def test_get_cart_empty_cart_reports_exact_empty_message():
 
 
 # The tool is a pure read: it returns a plain string, not a Command, and never mutates
-# the cart dict passed in via state. (negative)
+# the cart dict passed in via state. (edge)
 def test_get_cart_is_read_only_and_returns_plain_string_not_command():
     original = {"Spring Rolls": 2}
 

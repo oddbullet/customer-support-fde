@@ -13,7 +13,7 @@ pytestmark = pytest.mark.e2e
 
 # A guest asks an ingredient/allergy question and gets a faithful,
 # menu-grounded answer with a peanut-free recommendation - no ordering
-# involved. (base)
+# involved. (happy)
 def test_allergy_question_gets_faithful_recommendation(e2e_db):
     graph = build_graph(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}

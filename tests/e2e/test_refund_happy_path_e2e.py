@@ -13,7 +13,7 @@ pytestmark = pytest.mark.e2e
 
 
 # A recent order where an ordered item never arrived and nothing came in its
-# place results in a submitted refund request for the correct amount. (base)
+# place results in a submitted refund request for the correct amount. (happy)
 def test_missing_item_gets_refund(e2e_db):
     order_id = seed_order(
         e2e_db,

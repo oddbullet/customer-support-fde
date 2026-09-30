@@ -20,7 +20,7 @@ class _FakeResponse:
         self.offset = offset
 
 
-# trusted_now() returns an aware UTC time corrected by the NTP server's offset. (base)
+# trusted_now() returns an aware UTC time corrected by the NTP server's offset. (happy)
 def test_trusted_now_applies_ntp_offset_and_is_utc(monkeypatch):
     monkeypatch.setattr(clock.time, "time", lambda: 1_000_000.0)
     monkeypatch.setattr(
@@ -33,7 +33,7 @@ def test_trusted_now_applies_ntp_offset_and_is_utc(monkeypatch):
     assert now.timestamp() == 1_000_030.0
 
 
-# Any failure reaching the time server surfaces as ClockUnavailableError. (error)
+# Any failure reaching the time server surfaces as ClockUnavailableError. (failure)
 @pytest.mark.parametrize(
     "error", [ntplib.NTPException("no response"), socket.gaierror("dns"), OSError("down")]
 )
@@ -48,7 +48,7 @@ def test_trusted_now_raises_clock_unavailable_on_failure(monkeypatch, error):
 
 
 # A clock failure inside a tool is not turned into a "retry" tool message: it escapes
-# the ToolNode so the CLI can show the generic error and exit. (error)
+# the ToolNode so the CLI can show the generic error and exit. (failure)
 def test_clock_failure_escapes_tool_node():
     @tool
     def needs_clock() -> str:

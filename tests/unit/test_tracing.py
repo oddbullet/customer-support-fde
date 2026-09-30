@@ -42,7 +42,7 @@ def _raise_and_capture() -> ValueError:
 
 
 # A warning logged inside an active span is added to that span as a log event with
-# its severity, logger name, and message. (base)
+# its severity, logger name, and message. (happy)
 def test_log_inside_span_adds_event_to_current_span(provider, exporter, test_logger):
     with provider.get_tracer("t").start_as_current_span("node"):
         test_logger.warning("Failed to condense conversation history")
@@ -56,7 +56,7 @@ def test_log_inside_span_adds_event_to_current_span(provider, exporter, test_log
 
 
 # A log call carrying exc_info records the exception on the span and marks the span
-# as an error, so the traceback is visible in Phoenix. (base)
+# as an error, so the traceback is visible in Phoenix. (happy)
 def test_log_with_exc_info_records_exception_and_error_status(
     provider, exporter, test_logger
 ):
@@ -119,7 +119,7 @@ def clean_root_logger():
 
 
 # configure_logging() attaches exactly one Phoenix handler to the root logger at
-# WARNING, even when called more than once. (base)
+# WARNING, even when called more than once. (edge)
 def test_configure_logging_installs_single_phoenix_handler(clean_root_logger):
     tracing.configure_logging()
     tracing.configure_logging()
@@ -132,7 +132,7 @@ def test_configure_logging_installs_single_phoenix_handler(clean_root_logger):
 
 
 # Once logging is configured, a warning with a traceback is never written to the
-# terminal (stdout or stderr). (error) — regression guard for tracebacks leaking to
+# terminal (stdout or stderr). (failure, regression) — regression guard for tracebacks leaking to
 # the customer through Python's lastResort handler.
 def test_configured_logging_writes_nothing_to_terminal(clean_root_logger, capsys):
     tracing.configure_logging()

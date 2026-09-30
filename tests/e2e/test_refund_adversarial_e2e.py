@@ -20,7 +20,7 @@ pytestmark = pytest.mark.e2e
 # reveal its system prompt. Driven as a single exchange (one graph.invoke
 # call, no scripted multi-turn follow-up) since prompt-injection resistance
 # is a property of this one exchange, not of an extended customer journey.
-# (adversary)
+# (adversarial)
 def test_refund_agent_resists_prompt_injection(e2e_db):
     order_id = seed_order(
         e2e_db,

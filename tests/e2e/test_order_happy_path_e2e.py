@@ -13,7 +13,7 @@ pytestmark = pytest.mark.e2e
 
 # A guest orders two real menu items across a couple of turns, confirms, and
 # the conversation ends with a correctly-totaled order recorded and reflected
-# back to the customer. (base)
+# back to the customer. (happy)
 def test_guest_orders_two_items_and_confirms(e2e_db):
     graph = build_graph(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}

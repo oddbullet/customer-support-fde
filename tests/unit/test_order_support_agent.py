@@ -135,7 +135,7 @@ def _run_inner_loop(state: dict) -> dict:
     return state
 
 
-# A get_menu tool call returns a listing containing every seeded menu item. (base)
+# A get_menu tool call returns a listing containing every seeded menu item. (happy)
 def test_get_menu_tool_call_lists_every_seeded_item(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -153,7 +153,7 @@ def test_get_menu_tool_call_lists_every_seeded_item(monkeypatch):
         assert item["name"] in tool_message.content
 
 
-# A get_menu_item tool call for a matched name returns that item's details. (base)
+# A get_menu_item tool call for a matched name returns that item's details. (happy)
 def test_get_menu_item_tool_call_found(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -216,7 +216,7 @@ def test_get_menu_item_tool_call_not_found(monkeypatch):
     assert "No menu item matches" in tool_message.content
 
 
-# An add_items_to_cart tool call for one item updates the state's cart_items. (base)
+# An add_items_to_cart tool call for one item updates the state's cart_items. (happy)
 def test_add_items_to_cart_tool_call_updates_cart_items(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -236,7 +236,7 @@ def test_add_items_to_cart_tool_call_updates_cart_items(monkeypatch):
     assert state["cart_items"] == {"Kung Pao Chicken": 1}
 
 
-# An add_items_to_cart tool call with multiple names updates all of them at once. (base)
+# An add_items_to_cart tool call with multiple names updates all of them at once. (happy)
 def test_add_items_to_cart_tool_call_batch_updates_cart_items(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -280,7 +280,8 @@ def test_add_items_to_cart_tool_call_not_found_or_tie_leaves_cart_items_unchange
     assert state["cart_items"] == {}
 
 
-# A remove_items_from_cart tool call with a quantity matching the cart deletes the entry entirely. (base)
+# A remove_items_from_cart tool call with a quantity matching the cart deletes the entry
+# entirely. (happy)
 def test_remove_items_from_cart_tool_call_quantity_matching_deletes_entry(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -303,7 +304,7 @@ def test_remove_items_from_cart_tool_call_quantity_matching_deletes_entry(monkey
     assert state["cart_items"] == {}
 
 
-# A remove_items_from_cart tool call with a quantity decrements and keeps the entry. (base)
+# A remove_items_from_cart tool call with a quantity decrements and keeps the entry. (happy)
 def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatch):
     tool_call_response = AIMessage(
         content="",
@@ -328,7 +329,7 @@ def test_remove_items_from_cart_tool_call_quantified_decrements_entry(monkeypatc
 
 # await_customer's standard path: while the order isn't confirmed yet, it interrupts and
 # appends the resumed reply as a new HumanMessage onto the existing transcript instead of
-# wiping it (a prior bug reset the transcript each turn; this also guards that). (base)
+# wiping it (a prior bug reset the transcript each turn; this also guards that). (happy)
 def test_await_customer_interrupts_when_not_confirmed(monkeypatch):
     fake_interrupt = MagicMock(return_value="add one")
     monkeypatch.setattr(order_support_agent, "interrupt", fake_interrupt)
@@ -360,7 +361,7 @@ def test_await_customer_does_not_interrupt_when_confirmed(monkeypatch):
     assert result["order_confirmed"] is True
 
 
-# An LLM call failure in call_model raises rather than returning partial state. (error)
+# An LLM call failure in call_model raises rather than returning partial state. (failure)
 def test_call_model_llm_failure_propagates_rather_than_returning_partial_state(
     monkeypatch,
 ):
@@ -376,13 +377,13 @@ def test_call_model_llm_failure_propagates_rather_than_returning_partial_state(
 
 
 # get_cart_total is registered on the order support agent's tool list, so the
-# model can look up an exact total instead of computing one itself. (base)
+# model can look up an exact total instead of computing one itself. (happy)
 def test_get_cart_total_is_registered_on_order_tools():
     assert get_cart_total in _ORDER_TOOLS
 
 
 # get_cart is registered on the order support agent's tool list, so the model can
-# look up the exact current cart contents instead of guessing from history. (base)
+# look up the exact current cart contents instead of guessing from history. (happy)
 def test_get_cart_is_registered_on_order_tools():
     assert get_cart in _ORDER_TOOLS
 
@@ -390,7 +391,7 @@ def test_get_cart_is_registered_on_order_tools():
 # The token-count estimate never calls get_num_tokens_from_messages() on the LLM
 # client, since that raises NotImplementedError for OpenRouter-style "vendor/model"
 # names (e.g. "openai/gpt-4o-mini") regardless of which model actually handles the
-# call. (regression) — guards the fix for that crash.
+# call. (edge, regression) — guards the fix for that crash.
 def test_call_model_never_calls_get_num_tokens_from_messages(monkeypatch):
     final_response = AIMessage(content="Sure thing!")
     fake_llm = MagicMock()
@@ -408,7 +409,7 @@ def test_call_model_never_calls_get_num_tokens_from_messages(monkeypatch):
 
 # When the last AIMessage carries provider-reported usage_metadata, the token
 # estimate uses its input_tokens directly rather than falling back to a
-# character-count heuristic. (base)
+# character-count heuristic. (happy)
 def test_estimate_token_count_uses_usage_metadata_when_present():
     conversation = _conversation(4, last_turn_tokens=12_345)
 
@@ -429,7 +430,7 @@ def test_estimate_token_count_falls_back_to_character_heuristic_without_usage_me
 
 
 # When state["account_preferences"] is a non-None string, the context includes a
-# SystemMessage whose content contains that text. (base)
+# SystemMessage whose content contains that text. (happy)
 def test_build_context_messages_includes_account_preferences_when_present():
     state = _base_state("What's on the menu?")
     state["account_preferences"] = "Loves spicy food, allergic to peanuts."
@@ -454,7 +455,7 @@ def test_build_context_messages_omits_account_preferences_when_none():
 
 
 # Cart contents are no longer injected as standing context; the cart-mutating tools
-# report cart state directly in their own ToolMessage instead. (regression)
+# report cart state directly in their own ToolMessage instead. (edge, regression)
 def test_build_context_messages_never_includes_cart_summary():
     state = _base_state("What's on the menu?")
     state["cart_items"] = {"Kung Pao Chicken": 2}

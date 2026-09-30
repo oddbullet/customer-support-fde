@@ -49,7 +49,7 @@ def _patch_llm(monkeypatch, responses: list[AIMessage]) -> None:
 # When messages is empty, refund_agent seeds only the customer's query as a
 # HumanMessage — no SystemMessage lives in state["messages"] anymore, since the
 # system prompt/sentiment/summary are now assembled fresh via
-# _build_context_messages instead of being baked into the transcript. (regression) —
+# _build_context_messages instead of being baked into the transcript. (happy, regression) —
 # supersedes the old assertion that a SystemMessage is seeded into messages.
 def test_refund_agent_seeds_only_human_message_when_messages_empty(monkeypatch):
     ai_message = AIMessage(content="Sure, can you give me the order id?")
@@ -65,7 +65,7 @@ def test_refund_agent_seeds_only_human_message_when_messages_empty(monkeypatch):
 
 
 # _build_context_messages assembles the system prompt and, when sentiment is set,
-# a sentiment-reading SystemMessage right after it, in that order. (base)
+# a sentiment-reading SystemMessage right after it, in that order. (happy)
 def test_build_context_messages_includes_system_prompt_and_sentiment():
     state = _base_state(sentiment="negative")
 
@@ -90,7 +90,7 @@ def test_refund_agent_omits_sentiment_message_when_sentiment_is_none():
 
 
 # _build_context_messages appends the running summary as a further SystemMessage
-# when refund_conversation_summary is present. (base) — regression guard for
+# when refund_conversation_summary is present. (happy) — regression guard for
 # research.md Decision 2, mirroring specs/008's cart-summary-refresh guard.
 def test_build_context_messages_includes_running_summary_when_present():
     state = _base_state(
@@ -109,7 +109,7 @@ def test_build_context_messages_includes_running_summary_when_present():
 
 # On a later turn (messages already populated), refund_agent reuses the existing
 # transcript as-is rather than re-seeding anything — messages now holds only
-# Human/AIMessage entries, never a SystemMessage. (regression) — supersedes the
+# Human/AIMessage entries, never a SystemMessage. (happy, regression) — supersedes the
 # old SystemMessage-in-transcript assumption.
 def test_refund_agent_reuses_existing_transcript_on_later_turns(monkeypatch):
     _patch_llm(monkeypatch, [AIMessage(content="Got it, thanks.")])
@@ -126,7 +126,7 @@ def test_refund_agent_reuses_existing_transcript_on_later_turns(monkeypatch):
     assert len(result["messages"]) == 4
 
 
-# refund_await_customer appends the reply as a HumanMessage without clearing the transcript. (base)
+# refund_await_customer appends the reply as a HumanMessage without clearing the transcript. (happy)
 def test_refund_await_customer_appends_reply_without_clearing_transcript(monkeypatch):
     fake_interrupt = MagicMock(return_value="K7QP3M9X")
     monkeypatch.setattr(refund_agent_module, "interrupt", fake_interrupt)
@@ -185,7 +185,7 @@ def _conversation(num_turns: int, last_turn_tokens: int | None = None) -> list:
 # The token-count estimate never calls get_num_tokens_from_messages() on the LLM
 # client, since that raises NotImplementedError for OpenRouter-style "vendor/model"
 # names (e.g. "openai/gpt-4o-mini") regardless of which model actually handles the
-# call. (regression) — guards the fix for that crash.
+# call. (edge, regression) — guards the fix for that crash.
 def test_refund_agent_never_calls_get_num_tokens_from_messages(monkeypatch):
     final_response = AIMessage(content="Sure thing!")
     fake_llm = MagicMock()
@@ -202,7 +202,7 @@ def test_refund_agent_never_calls_get_num_tokens_from_messages(monkeypatch):
 
 # When the last AIMessage carries provider-reported usage_metadata, the token
 # estimate uses its input_tokens directly rather than falling back to a
-# character-count heuristic. (base)
+# character-count heuristic. (happy)
 def test_estimate_token_count_uses_usage_metadata_when_present():
     conversation = _conversation(4, last_turn_tokens=12_345)
 

@@ -37,7 +37,7 @@ def _validation_error() -> ValidationError:
 
 
 # is_retryable() returns True exactly for the failures the openai client itself
-# retries, and False for everything else. (base)
+# retries, and False for everything else. (happy)
 @pytest.mark.parametrize(
     ("exc", "expected"),
     [
@@ -114,7 +114,7 @@ def _wrapper(clock, primary=None, probe=None, fallback=None):
 
 
 # Closed circuit, primary succeeds: its reply is returned, the fallback is never
-# called, and the circuit stays closed. (base)
+# called, and the circuit stays closed. (happy)
 def test_closed_primary_success_returns_primary_reply(clock):
     llm = _wrapper(clock)
 
@@ -124,7 +124,7 @@ def test_closed_primary_success_returns_primary_reply(clock):
 
 
 # Closed circuit, primary exhausts its retries: the same input object is re-sent to
-# the fallback, whose reply is returned, and the circuit opens. (base)
+# the fallback, whose reply is returned, and the circuit opens. (failure)
 def test_closed_primary_retryable_failure_falls_back_and_opens(clock):
     llm = _wrapper(clock, primary=FakeRunnable(error=_retryable()))
     request = ["the", "request"]
@@ -135,7 +135,7 @@ def test_closed_primary_retryable_failure_falls_back_and_opens(clock):
 
 
 # Both models fail with retryable errors: ModelUnavailableError is raised, chained to
-# the fallback's error, and the circuit is open. (error)
+# the fallback's error, and the circuit is open. (failure)
 def test_closed_both_models_retryable_failure_raises_model_unavailable(clock):
     fallback_error = _retryable()
     llm = _wrapper(
@@ -152,7 +152,7 @@ def test_closed_both_models_retryable_failure_raises_model_unavailable(clock):
 
 
 # A non-retryable fallback error (e.g. bad API key) is re-raised unchanged instead of
-# being mapped to ModelUnavailableError. (error)
+# being mapped to ModelUnavailableError. (failure)
 def test_closed_fallback_non_retryable_error_is_reraised(clock):
     fallback_error = _non_retryable()
     llm = _wrapper(
@@ -168,7 +168,7 @@ def test_closed_fallback_non_retryable_error_is_reraised(clock):
 
 
 # A non-retryable primary error is re-raised, never triggers the fallback, and leaves
-# the circuit closed. (error)
+# the circuit closed. (failure)
 def test_closed_primary_non_retryable_error_is_reraised_without_fallback(clock):
     primary_error = _non_retryable()
     llm = _wrapper(clock, primary=FakeRunnable(error=primary_error))
@@ -182,7 +182,7 @@ def test_closed_primary_non_retryable_error_is_reraised_without_fallback(clock):
 
 
 # bind_tools and with_structured_output apply the same call to all three inner
-# runnables and return a new wrapper sharing the same breaker. (base)
+# runnables and return a new wrapper sharing the same breaker. (happy)
 @pytest.mark.parametrize("method", ["bind_tools", "with_structured_output"])
 def test_wrapper_passes_binding_calls_to_every_inner_runnable(clock, method):
     llm = _wrapper(clock)
@@ -204,7 +204,7 @@ def _opened_wrapper(clock, **runnables):
 
 
 # Within the cool-down, requests skip the primary (and the probe) and go straight to
-# the fallback; the circuit stays open. (base)
+# the fallback; the circuit stays open. (failure)
 def test_open_circuit_skips_primary_within_cooldown(clock):
     llm = _opened_wrapper(clock)
     clock["now"] = 30
@@ -216,7 +216,7 @@ def test_open_circuit_skips_primary_within_cooldown(clock):
 
 
 # While open, a retryable fallback failure raises ModelUnavailableError without
-# restarting the cool-down. (error)
+# restarting the cool-down. (failure)
 def test_open_circuit_fallback_failure_raises_model_unavailable(clock):
     llm = _opened_wrapper(clock, fallback=FakeRunnable(error=_retryable()))
     clock["now"] = 30
@@ -228,7 +228,7 @@ def test_open_circuit_fallback_failure_raises_model_unavailable(clock):
 
 
 # Exactly at the end of the cool-down the circuit is half-open: the single-attempt
-# probe answers and the circuit closes. (base)
+# probe answers and the circuit closes. (edge)
 def test_half_open_probe_success_closes_circuit(clock):
     llm = _opened_wrapper(clock)
     clock["now"] = 60
@@ -241,7 +241,7 @@ def test_half_open_probe_success_closes_circuit(clock):
 
 
 # A retryable probe failure is served by the fallback and reopens the circuit with a
-# fresh cool-down. (error)
+# fresh cool-down. (failure)
 def test_half_open_probe_retryable_failure_reopens_circuit(clock):
     llm = _opened_wrapper(clock, probe=FakeRunnable(error=_retryable()))
     clock["now"] = 60
@@ -277,7 +277,7 @@ def test_circuit_stays_open_just_before_cooldown_ends(clock):
     assert llm.breaker.effective_state() == "open"
 
 
-# reset_circuit() returns the shared breaker to closed. (base)
+# reset_circuit() returns the shared breaker to closed. (happy)
 def test_reset_circuit_closes_shared_breaker():
     circuit_breaker.SHARED_BREAKER.record_open()
 
@@ -311,7 +311,7 @@ def _event_names(span) -> list[str]:
 
 
 # A primary success is traced as a closed-circuit request answered by the primary,
-# with no fallback and no primary error. (base)
+# with no fallback and no primary error. (happy)
 def test_span_records_primary_success(clock, spans):
     _wrapper(clock).invoke("hi")
 
@@ -324,7 +324,7 @@ def test_span_records_primary_success(clock, spans):
 
 
 # A fallback after a primary failure is traced with the primary's error, the model
-# that answered, and a circuit_opened event. (base)
+# that answered, and a circuit_opened event. (failure)
 def test_span_records_fallback_and_circuit_opening(clock, spans):
     _wrapper(clock, primary=FakeRunnable(error=_retryable())).invoke("hi")
 
@@ -338,7 +338,7 @@ def test_span_records_fallback_and_circuit_opening(clock, spans):
 
 
 # A successful half-open probe is traced as the primary resuming, with a
-# circuit_closed event. (base)
+# circuit_closed event. (edge)
 def test_span_records_probe_closing_circuit(clock, spans):
     llm = _opened_wrapper(clock)
     clock["now"] = 60
@@ -352,7 +352,7 @@ def test_span_records_probe_closing_circuit(clock, spans):
     assert _event_names(span) == ["circuit_closed"]
 
 
-# When both models fail, the span has no answering model and an ERROR status. (error)
+# When both models fail, the span has no answering model and an ERROR status. (failure)
 def test_span_records_both_models_failing(clock, spans):
     from opentelemetry.trace import StatusCode
 
@@ -387,7 +387,7 @@ def test_span_records_open_circuit_request(clock, spans):
 
 
 # Without a fallback configured, build_llm() keeps ChatOpenAI's built-in retries and
-# raises once they are exhausted, exactly as before the circuit breaker. (regression)
+# raises once they are exhausted, exactly as before the circuit breaker. (failure, regression)
 def test_build_llm_retries_failing_api_calls_before_giving_up(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("FALLBACK_MODEL", raising=False)
@@ -411,7 +411,7 @@ def test_build_llm_retries_failing_api_calls_before_giving_up(monkeypatch):
 
 
 # An unset, empty, or whitespace-only FALLBACK_MODEL disables the circuit breaker, so
-# build_llm() returns a plain ChatOpenAI. (regression)
+# build_llm() returns a plain ChatOpenAI. (edge, regression)
 @pytest.mark.parametrize("fallback", [None, "", "   "])
 def test_build_llm_returns_plain_chat_model_without_fallback(monkeypatch, fallback):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
@@ -423,7 +423,7 @@ def test_build_llm_returns_plain_chat_model_without_fallback(monkeypatch, fallba
     assert isinstance(common.build_llm(), ChatOpenAI)
 
 # With FALLBACK_MODEL set, build_llm() wraps a retrying primary, a single-attempt
-# probe of the same model, and a retrying fallback around the shared breaker. (base)
+# probe of the same model, and a retrying fallback around the shared breaker. (happy)
 def test_build_llm_returns_circuit_breaker_when_fallback_set(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("OPENROUTER_MODEL", "primary/model")
@@ -455,20 +455,20 @@ def test_build_llm_circuit_breaker_primary_defaults_to_default_model(monkeypatch
 
 
 # The model-retry prompt is a fixed, friendly message that asks for Enter to retry,
-# with no internal details. (base)
+# with no internal details. (happy)
 def test_model_retry_prompt_text():
     assert messages.MODEL_RETRY_PROMPT == (
         "Sorry, something went wrong on our end. Press Enter to try again."
     )
 
 
-# The CLI allows 2 manual retries per step when both models are unavailable. (base)
+# The CLI allows 2 manual retries per step when both models are unavailable. (happy)
 def test_model_retry_limit_is_2():
     assert interactive.MODEL_RETRY_LIMIT == 2
 
 
 # When both models are unavailable, the retry prompt is shown, one Enter is read, and
-# the failed step is replayed with invoke(None) on the same thread. (base)
+# the failed step is replayed with invoke(None) on the same thread. (failure)
 def test_run_conversation_retries_failed_step_after_model_unavailable(monkeypatch):
     warnings = record_warnings(monkeypatch)
     stdin = io.StringIO("\n")
@@ -509,7 +509,7 @@ def test_run_conversation_retries_up_to_the_limit(monkeypatch):
 
 
 # Once the 2 manual retries are used up, the next outage is re-raised instead of
-# prompting again, so run_interactive shows the generic message. (error)
+# prompting again, so run_interactive shows the generic message. (failure)
 def test_run_conversation_gives_up_after_retry_limit(monkeypatch):
     warnings = record_warnings(monkeypatch)
     stdin = io.StringIO("\n\nleftover\n")
@@ -531,7 +531,7 @@ def test_run_conversation_gives_up_after_retry_limit(monkeypatch):
 
 
 # A model outage while resuming an interrupt is retried the same way, and the
-# conversation then continues through its next interrupt normally. (base)
+# conversation then continues through its next interrupt normally. (failure)
 def test_run_conversation_retries_after_outage_on_interrupt_resume(monkeypatch):
     record_warnings(monkeypatch)
     monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("2\n\nyes\n"))
@@ -553,7 +553,7 @@ def test_run_conversation_retries_after_outage_on_interrupt_resume(monkeypatch):
 
 
 # Errors other than ModelUnavailableError are not caught by _run_conversation, so they
-# still reach run_interactive's generic error handler. (regression)
+# still reach run_interactive's generic error handler. (failure, regression)
 def test_run_conversation_does_not_catch_other_errors(monkeypatch):
     warnings = record_warnings(monkeypatch)
     graph, _calls = scripted_graph([RuntimeError("boom")])
@@ -564,7 +564,7 @@ def test_run_conversation_does_not_catch_other_errors(monkeypatch):
     assert warnings == []
 
 
-# The raw ModelUnavailableError text is never shown to the customer. (error)
+# The raw ModelUnavailableError text is never shown to the customer. (failure)
 def test_run_conversation_hides_model_unavailable_details(monkeypatch):
     monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("\n"))
     console = buffer_console()

@@ -35,7 +35,7 @@ def _sample_lines() -> list[dict]:
 
 
 # A found order id sets order_lookup and renders lines, quantities, unit prices, total,
-# and placement time. (base)
+# and placement time. (happy)
 def test_lookup_order_found_sets_order_lookup_and_renders_details(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     order_id = db.record_order(
@@ -56,7 +56,7 @@ def test_lookup_order_found_sets_order_lookup_and_renders_details(refund_db, mon
 
 
 # The agent sees when the order was placed in the restaurant's local time, not raw
-# UTC. (cross-region)
+# UTC. (edge, cross-region)
 def test_lookup_order_shows_placed_time_in_restaurant_timezone(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     order_id = db.record_order(
@@ -100,7 +100,7 @@ def test_lookup_order_resolves_forgiving_id_forms(refund_db, monkeypatch):
     assert result.update["order_lookup"]["order_id"] == order_id
 
 
-# conclude_refund_conversation returns a Command setting refund_resolved: True. (base)
+# conclude_refund_conversation returns a Command setting refund_resolved: True. (happy)
 def test_conclude_refund_conversation_sets_refund_resolved_true():
     result = conclude_refund_conversation.func(state={}, tool_call_id="call_1")
 
@@ -160,7 +160,7 @@ def _invoke_process_refund(
 
 
 # A zero or negative undelivered quantity is rejected before it can record a $0.00 or
-# negative refund amount. (negative)
+# negative refund amount. (failure)
 @pytest.mark.parametrize("quantity", [0, -1])
 def test_undelivered_item_with_non_positive_quantity_is_rejected(quantity):
     with pytest.raises(ValidationError):
@@ -168,7 +168,7 @@ def test_undelivered_item_with_non_positive_quantity_is_rejected(quantity):
 
 
 # The eligible path writes a request and the reply states the amount and that it is
-# submitted and awaiting review, but never "complete" (FR-016). (base)
+# submitted and awaiting review, but never "complete" (FR-016). (happy)
 def test_process_refund_request_eligible_writes_request_and_reports_pending(
     refund_db, monkeypatch
 ):
@@ -193,7 +193,7 @@ def test_process_refund_request_eligible_writes_request_and_reports_pending(
 
 
 # The refund check uses the trusted (NTP) time: the same instant is used for the
-# 48h window, stored on the refund, and shown to the customer in local time. (base)
+# 48h window, stored on the refund, and shown to the customer in local time. (happy)
 def test_process_refund_request_uses_trusted_time_for_check_record_and_message(
     refund_db, monkeypatch
 ):
@@ -216,7 +216,7 @@ def test_process_refund_request_uses_trusted_time_for_check_record_and_message(
 
 
 # The 48h window is measured against the trusted time, not the host clock: an order
-# that the host clock sees as 1h old is denied when the trusted time says it's 49h. (base)
+# that the host clock sees as 1h old is denied when the trusted time says it's 49h. (edge)
 def test_process_refund_request_window_uses_trusted_time(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     order = _order_with_lines(refund_db, hours_old=1)
@@ -233,7 +233,7 @@ def test_process_refund_request_window_uses_trusted_time(refund_db, monkeypatch)
 
 
 # An unreachable time server is not handled inside the tool: it propagates so the
-# conversation ends with the generic error, and nothing is recorded. (error)
+# conversation ends with the generic error, and nothing is recorded. (failure)
 def test_process_refund_request_clock_failure_propagates(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     order = _order_with_lines(refund_db)
@@ -333,7 +333,7 @@ def test_process_refund_request_existing_request_reports_status_not_duplicate(
 
 
 # An OrderStoreError during the write yields the standard "not submitted" message
-# rather than a confirmation, and logs the error for Phoenix (FR-025). (error)
+# rather than a confirmation, and logs the error for Phoenix (FR-025). (failure)
 def test_process_refund_request_store_error_yields_not_submitted_message(
     refund_db, monkeypatch, caplog
 ):
@@ -359,7 +359,7 @@ def test_process_refund_request_store_error_yields_not_submitted_message(
 
 
 # An OrderStoreError while checking for an existing request yields the "not submitted"
-# message and writes nothing. (error)
+# message and writes nothing. (failure)
 def test_process_refund_request_existing_check_failure_yields_not_submitted(
     refund_db, monkeypatch
 ):
@@ -381,7 +381,7 @@ def test_process_refund_request_existing_check_failure_yields_not_submitted(
 
 
 # If the refund is recorded but re-reading it fails, the customer is still told it was
-# submitted, and refund_request is built from the values just written. (error)
+# submitted, and refund_request is built from the values just written. (failure)
 def test_process_refund_request_reread_failure_still_reports_submitted(
     refund_db, monkeypatch
 ):
@@ -415,7 +415,7 @@ def test_process_refund_request_reread_failure_still_reports_submitted(
 
 
 # An OrderStoreError while recording a denial's complaint yields the standard
-# "complaint not recorded" message. (error)
+# "complaint not recorded" message. (failure)
 def test_process_refund_request_denial_store_error_yields_complaint_not_recorded(
     refund_db, monkeypatch
 ):
@@ -439,7 +439,7 @@ def test_process_refund_request_denial_store_error_yields_complaint_not_recorded
 
 
 # A denial (order older than 48h) writes a complaint carrying customer_issue and the
-# outside_window reason code, and writes no refund_requests row (FR-010, FR-018). (base)
+# outside_window reason code, and writes no refund_requests row (FR-010, FR-018). (failure)
 def test_process_refund_request_denial_outside_window_writes_complaint_no_request(
     refund_db, monkeypatch
 ):
@@ -463,7 +463,7 @@ def test_process_refund_request_denial_outside_window_writes_complaint_no_reques
 
 
 # An order dated in the future is auto-rejected: the customer is sent to staff, a
-# complaint records the reason, and a WARNING goes to Phoenix. (negative)
+# complaint records the reason, and a WARNING goes to Phoenix. (failure)
 def test_process_refund_request_future_order_date_is_rejected_and_logged(
     refund_db, monkeypatch, caplog
 ):
@@ -485,7 +485,7 @@ def test_process_refund_request_future_order_date_is_rejected_and_logged(
     )
 
 
-# A denial (no undelivered items reported) writes a complaint with that reason. (base)
+# A denial (no undelivered items reported) writes a complaint with that reason. (failure)
 def test_process_refund_request_denial_no_undelivered_items(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     order = _order_with_lines(refund_db)
@@ -497,7 +497,7 @@ def test_process_refund_request_denial_no_undelivered_items(refund_db, monkeypat
     assert complaints[0]["policy_reason"] == "no_undelivered_items"
 
 
-# A denial (substitute received, return declined) writes a complaint with that reason. (base)
+# A denial (substitute received, return declined) writes a complaint with that reason. (failure)
 def test_process_refund_request_denial_return_declined(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     order = _order_with_lines(refund_db)
@@ -577,7 +577,7 @@ def _invoke_log_complaint(description, order_lookup=None, complaint_ids=None):
     )
 
 
-# log_complaint records a complaint with policy_reason NULL. (base)
+# log_complaint records a complaint with policy_reason NULL. (happy)
 def test_log_complaint_records_with_null_policy_reason(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
 
@@ -591,7 +591,7 @@ def test_log_complaint_records_with_null_policy_reason(refund_db, monkeypatch):
 
 
 # log_complaint links to order_lookup's order when one was retrieved, and stores
-# order_id NULL otherwise (FR-019). (base)
+# order_id NULL otherwise (FR-019). (happy)
 def test_log_complaint_links_to_order_when_retrieved_else_null(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     order = _order_with_lines(refund_db)
@@ -626,7 +626,7 @@ def test_log_complaint_extends_rather_than_duplicates(refund_db, monkeypatch):
 
 
 # An OrderStoreError yields the standard "complaint not recorded" message rather than
-# a confirmation (FR-025). (error)
+# a confirmation (FR-025). (failure)
 def test_log_complaint_store_error_yields_not_recorded_message(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     monkeypatch.setattr(
@@ -641,7 +641,7 @@ def test_log_complaint_store_error_yields_not_recorded_message(refund_db, monkey
 
 
 # An OrderStoreError while looking up the order leaves order_lookup unchanged and
-# tells the model the lookup failed, rather than crashing the conversation. (error)
+# tells the model the lookup failed, rather than crashing the conversation. (failure)
 def test_lookup_order_store_error_yields_lookup_failed_message(refund_db, monkeypatch):
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(refund_db))
     monkeypatch.setattr(
@@ -661,7 +661,7 @@ def test_lookup_order_store_error_yields_lookup_failed_message(refund_db, monkey
 
 
 # The refund-agent store-failure texts say plainly that nothing went through and give
-# the same exit-and-retry / counter guidance. (base)
+# the same exit-and-retry / counter guidance. (happy)
 def test_refund_store_failure_message_texts():
     guidance = (
         "Please exit the application and try again. If the problem continues, please "
@@ -683,14 +683,14 @@ def test_refund_store_failure_message_texts():
 
 
 # A blank or spaces-only complaint is rejected at the tool-call boundary, so the model
-# gets the validation message back instead of an empty complaint being stored. (negative)
+# gets the validation message back instead of an empty complaint being stored. (failure)
 @pytest.mark.parametrize("blank", ["", "   "])
 def test_log_complaint_rejects_blank_description(blank):
     with pytest.raises(ValidationError):
         log_complaint.tool_call_schema.model_validate({"description": blank})
 
 
-# The same rule applies to the issue passed with a refund request. (negative)
+# The same rule applies to the issue passed with a refund request. (failure)
 @pytest.mark.parametrize("blank", ["", "   "])
 def test_process_refund_request_rejects_blank_customer_issue(blank):
     with pytest.raises(ValidationError):

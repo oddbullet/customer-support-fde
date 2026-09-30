@@ -6,21 +6,21 @@ import pytest
 from customer_support_fde import tickets
 
 
-# tickets_dir() defaults to Path("tickets") when no env var is set. (base)
+# tickets_dir() defaults to Path("tickets") when no env var is set. (happy)
 def test_tickets_dir_defaults_to_tickets_folder(monkeypatch):
     monkeypatch.delenv("CUSTOMER_SUPPORT_TICKETS_DIR", raising=False)
 
     assert tickets.tickets_dir() == tickets.Path("tickets")
 
 
-# tickets_dir() resolves CUSTOMER_SUPPORT_TICKETS_DIR when set. (base)
+# tickets_dir() resolves CUSTOMER_SUPPORT_TICKETS_DIR when set. (happy)
 def test_tickets_dir_resolves_env_override(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
 
     assert tickets.tickets_dir() == tickets.Path(str(tmp_path))
 
 
-# The shared write path creates a missing tickets directory before writing. (base)
+# The shared write path creates a missing tickets directory before writing. (edge)
 def test_shared_write_creates_missing_directory(monkeypatch, tmp_path):
     target_dir = tmp_path / "nested" / "tickets"
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(target_dir))
@@ -32,7 +32,7 @@ def test_shared_write_creates_missing_directory(monkeypatch, tmp_path):
 
 
 # An OSError during directory creation or write is caught, logged, and the
-# caller gets None back with no exception propagating. (error)
+# caller gets None back with no exception propagating. (failure)
 def test_shared_write_handles_oserror(monkeypatch, tmp_path, caplog):
     target_path = tmp_path / "order-ABC123.md"
 
@@ -51,7 +51,7 @@ def test_shared_write_handles_oserror(monkeypatch, tmp_path, caplog):
 
 # Non-ASCII content (e.g. a customer's own words in the issue text) is
 # written as UTF-8 rather than the platform's default encoding, which on
-# Windows (cp1252) would raise UnicodeEncodeError for characters like this. (regression)
+# Windows (cp1252) would raise UnicodeEncodeError for characters like this. (edge, regression)
 def test_shared_write_handles_non_ascii_content(monkeypatch, tmp_path):
     target_path = tmp_path / "refund-ABC123.md"
 
@@ -86,7 +86,7 @@ def _order_ticket(order_id="ABC123", lines=None, total=31.40):
 
 
 # write_order_ticket writes every line's name/quantity/unit price/line total
-# and the total to order-<order_id>.md, returning that path. (base)
+# and the total to order-<order_id>.md, returning that path. (happy)
 def test_write_order_ticket_writes_lines_and_total(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     order_ticket = _order_ticket()
@@ -146,7 +146,7 @@ def _refund_ticket(
 
 
 # write_refund_ticket writes the issue, sentiment, order ID, and
-# refund-created status to refund-<order_id>-<suffix>.md for a known order id. (base)
+# refund-created status to refund-<order_id>-<suffix>.md for a known order id. (happy)
 def test_write_refund_ticket_known_order_id(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     refund_ticket = _refund_ticket()
@@ -162,7 +162,7 @@ def test_write_refund_ticket_known_order_id(monkeypatch, tmp_path):
     assert "**Refund Request Created:** Yes" in content
 
 
-# write_refund_ticket denotes no refund created for a denied/no-refund case. (base)
+# write_refund_ticket denotes no refund created for a denied/no-refund case. (happy)
 def test_write_refund_ticket_no_refund_created(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     refund_ticket = _refund_ticket(refund_created=False)
@@ -201,7 +201,7 @@ def test_write_refund_ticket_renders_missing_sentiment_and_issue(monkeypatch, tm
 
 # write_refund_ticket bolds only the field label, leaving the value as
 # plain text after it, for every field (order id, issue, sentiment,
-# refund-created status). (regression)
+# refund-created status). (happy, regression)
 def test_write_refund_ticket_bolds_only_labels(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     refund_ticket = _refund_ticket()
@@ -216,7 +216,7 @@ def test_write_refund_ticket_bolds_only_labels(monkeypatch, tmp_path):
 
 
 # write_refund_ticket never wraps an entire field line (label and value
-# together) in bold markdown - only the label is bold. (regression)
+# together) in bold markdown - only the label is bold. (happy, regression)
 def test_write_refund_ticket_does_not_bold_entire_field_line(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     refund_ticket = _refund_ticket()
@@ -231,7 +231,7 @@ def test_write_refund_ticket_does_not_bold_entire_field_line(monkeypatch, tmp_pa
 
 
 # write_refund_ticket leaves the document header unaffected by the
-# label/value bolding fix. (regression)
+# label/value bolding fix. (happy, regression)
 def test_write_refund_ticket_header_unchanged(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     refund_ticket = _refund_ticket()

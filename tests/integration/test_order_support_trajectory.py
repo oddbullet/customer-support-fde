@@ -61,7 +61,8 @@ def _use_tmp_db(monkeypatch, tmp_path):
     return path
 
 
-# Asking about the menu triggers a get_menu tool call, then the graph pauses for the customer. (base)
+# Asking about the menu triggers a get_menu tool call, then the graph pauses for the
+# customer. (happy)
 def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -111,7 +112,8 @@ def test_menu_question_pauses_for_the_next_customer_message(monkeypatch):
     assert "__interrupt__" in result
 
 
-# Adding the same and different items across three separate turns accumulates quantities correctly. (base)
+# Adding the same and different items across three separate turns accumulates quantities
+# correctly. (happy)
 def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -186,7 +188,7 @@ def test_repeated_adds_across_turns_accumulate_quantities(monkeypatch):
     assert final_cart_items == {"Kung Pao Chicken": 2, "Spring Rolls": 1}
 
 
-# Adding two items then removing one entirely in a later turn leaves only the other. (base)
+# Adding two items then removing one entirely in a later turn leaves only the other. (happy)
 def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
     _use_tmp_db(monkeypatch, tmp_path)
     monkeypatch.setattr(
@@ -282,7 +284,7 @@ def test_add_then_remove_across_turns_reflects_removal(monkeypatch, tmp_path):
 
 # Conversation history persists across turns and, once it grows past the token
 # threshold, is condensed into a running summary instead of either being wiped
-# every turn (the old contract) or growing without bound. (regression) —
+# every turn (the old contract) or growing without bound. (edge, regression) —
 # supersedes the old wipe-every-turn assertion this test previously guarded.
 def test_condenses_conversation_history_past_the_threshold(monkeypatch):
     monkeypatch.setattr(order_support_agent, "ORDER_HISTORY_TOKEN_THRESHOLD", 1)
@@ -352,7 +354,7 @@ def test_condenses_conversation_history_past_the_threshold(monkeypatch):
 
 # A dislike/allergy stated early in a long conversation is preserved in
 # order_conversation_summary once older turns are condensed out, and later
-# model calls still receive that summary in their context. (base)
+# model calls still receive that summary in their context. (edge)
 def test_preference_stated_early_survives_condensation(monkeypatch):
     monkeypatch.setattr(order_support_agent, "ORDER_HISTORY_TOKEN_THRESHOLD", 1)
     monkeypatch.setattr(
@@ -425,7 +427,7 @@ def test_preference_stated_early_survives_condensation(monkeypatch):
 
 
 # A returning customer who identifies a seeded account reaches the order/support agent
-# with that account's stored preferences injected into the model's context. (base)
+# with that account's stored preferences injected into the model's context. (happy)
 def test_returning_customer_account_preferences_reach_order_agent_context(
     monkeypatch, tmp_path
 ):
@@ -494,7 +496,7 @@ def test_returning_customer_account_preferences_reach_order_agent_context(
 
 
 # Signing up shows the customer a formatted account number that a later, separate
-# conversation can look up successfully with no preferences recorded yet. (base)
+# conversation can look up successfully with no preferences recorded yet. (happy)
 def test_sign_up_account_number_is_retrievable_in_a_later_conversation(
     monkeypatch, tmp_path
 ):
@@ -572,7 +574,7 @@ def test_sign_up_account_number_is_retrievable_in_a_later_conversation(
 # The resume that merely acknowledges the sign-up message must not create a
 # second account behind the scenes: the account number recorded in the
 # conversation's own final state must match the one shown to the customer,
-# and exactly one row must exist for it. (regression)
+# and exactly one row must exist for it. (edge, regression)
 def test_sign_up_does_not_duplicate_account_on_acknowledgement_resume(
     monkeypatch, tmp_path
 ):
@@ -642,7 +644,7 @@ def test_sign_up_does_not_duplicate_account_on_acknowledgement_resume(
 
 
 # Continuing without an account reaches call_model within the same invoke cycle with
-# both account fields None, and no account-preferences SystemMessage in context. (base)
+# both account fields None, and no account-preferences SystemMessage in context. (happy)
 def test_continue_without_account_reaches_call_model_with_no_account_state(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -695,7 +697,8 @@ def test_continue_without_account_reaches_call_model_with_no_account_state(monke
     assert not any("preferences" in m.content.lower() for m in system_messages)
 
 
-# A full multi-turn conversation confirms the order and produces the expected ticket and graph trajectory. (base)
+# A full multi-turn conversation confirms the order and produces the expected ticket and
+# graph trajectory. (happy)
 def test_full_conversation_confirms_and_produces_order_ticket(monkeypatch, tmp_path):
     _use_tmp_db(monkeypatch, tmp_path)
     monkeypatch.setattr(
@@ -888,7 +891,7 @@ def test_confirming_with_an_empty_cart_never_reaches_cart_summary(monkeypatch):
 
 
 # A price changed in the database mid-conversation does not affect the
-# confirmed order — the run keeps using the menu snapshot taken at start. (regression)
+# confirmed order — the run keeps using the menu snapshot taken at start. (edge, regression)
 def test_price_change_mid_conversation_does_not_affect_confirmed_order(
     monkeypatch, tmp_path
 ):
@@ -970,7 +973,7 @@ def test_price_change_mid_conversation_does_not_affect_confirmed_order(
 
 # An account-holding customer's stated preferences are captured into their
 # account record once their order is confirmed, running alongside ticket
-# generation with no interrupt left pending. (base, US1)
+# generation with no interrupt left pending. (happy, US1)
 def test_account_holder_preferences_are_saved_on_order_confirmation(
     monkeypatch, tmp_path
 ):
@@ -1054,7 +1057,7 @@ def test_account_holder_preferences_are_saved_on_order_confirmation(
 
 # A guest who states a clear allergy during ordering never has any preference
 # data extracted or stored — no accounts row is created and none exists to
-# check against. (base, US2, FR-002, SC-002)
+# check against. (happy, US2, FR-002, SC-002)
 def test_guest_conversation_writes_no_preference_data(monkeypatch, tmp_path):
     db_path = _use_tmp_db(monkeypatch, tmp_path)
     monkeypatch.setattr(
@@ -1132,7 +1135,7 @@ def test_guest_conversation_writes_no_preference_data(monkeypatch, tmp_path):
 
 # A failure in memory_gen_node's branch never affects order ticket delivery —
 # the two branches are independent, so the ticket is produced with the same
-# contents regardless of the memory-capture outcome. (base, US3, FR-007, FR-008,
+# contents regardless of the memory-capture outcome. (failure, US3, FR-007, FR-008,
 # SC-003)
 def test_memory_gen_node_failure_does_not_affect_ticket_delivery(monkeypatch, tmp_path):
     db_path = _use_tmp_db(monkeypatch, tmp_path)

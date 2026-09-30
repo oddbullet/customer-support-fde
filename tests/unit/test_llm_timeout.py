@@ -2,7 +2,7 @@ from customer_support_fde.nodes import common
 
 
 # Without a fallback, each request attempt is capped at LLM_TIMEOUT_SECONDS instead of
-# the openai client's 600-second default. (base)
+# the openai client's 600-second default. (happy)
 def test_build_llm_sets_request_timeout_without_fallback(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("FALLBACK_MODEL", raising=False)
@@ -13,7 +13,7 @@ def test_build_llm_sets_request_timeout_without_fallback(monkeypatch):
 
 
 # With FALLBACK_MODEL set, the primary, probe, and fallback all cap each request
-# attempt at LLM_TIMEOUT_SECONDS, so a hung primary opens the circuit. (base)
+# attempt at LLM_TIMEOUT_SECONDS, so a hung primary opens the circuit. (happy)
 def test_build_llm_sets_request_timeout_on_all_circuit_breaker_models(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("FALLBACK_MODEL", "fallback/model")
@@ -26,7 +26,7 @@ def test_build_llm_sets_request_timeout_on_all_circuit_breaker_models(monkeypatc
 
 
 # Without a fallback, each request's output is capped at LLM_MAX_OUTPUT_TOKENS, so a
-# runaway generation stops instead of streaming past the per-read timeout. (base)
+# runaway generation stops instead of streaming past the per-read timeout. (happy)
 def test_build_llm_caps_output_tokens_without_fallback(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.delenv("FALLBACK_MODEL", raising=False)
@@ -36,7 +36,7 @@ def test_build_llm_caps_output_tokens_without_fallback(monkeypatch):
     assert llm.max_tokens == common.LLM_MAX_OUTPUT_TOKENS == 4000
 
 
-# With FALLBACK_MODEL set, the primary, probe, and fallback all cap output. (base)
+# With FALLBACK_MODEL set, the primary, probe, and fallback all cap output. (happy)
 def test_build_llm_caps_output_tokens_on_all_circuit_breaker_models(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setenv("FALLBACK_MODEL", "fallback/model")

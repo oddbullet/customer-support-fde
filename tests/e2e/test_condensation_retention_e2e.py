@@ -31,7 +31,7 @@ def _new_graph():
 
 
 # A peanut allergy stated in the first message is condensed away, yet the agent's later
-# recommendation still avoids peanuts. (base)
+# recommendation still avoids peanuts. (edge)
 def test_judge_allergy_retained_after_condensation(e2e_db):
     graph, config = _new_graph()
     first_message = "Hi! Just so you know, I'm severely allergic to peanuts."
@@ -69,7 +69,7 @@ def test_judge_allergy_retained_after_condensation(e2e_db):
 
 
 # Refund facts given early (order id, missing dish, no substitute) are condensed away, yet
-# the agent neither re-asks for them nor reaches the wrong policy outcome. (base)
+# the agent neither re-asks for them nor reaches the wrong policy outcome. (edge)
 def test_judge_refund_facts_retained_after_condensation(e2e_db):
     order_id = seed_order(
         e2e_db,

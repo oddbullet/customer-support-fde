@@ -136,7 +136,7 @@ def test_too_long_message_is_refused_before_redaction(monkeypatch):
 
 
 # A prompt-injection message that asks the model to repeat a card number still has
-# the card redacted, so the digits never reach the graph. (adversary)
+# the card redacted, so the digits never reach the graph. (adversarial)
 def test_card_inside_prompt_injection_never_reaches_the_graph(monkeypatch):
     graph, calls = scripted_graph(
         [{"__interrupt__": [FakeInterrupt("Anything else?")]}, RESOLVED_STATE]
@@ -155,7 +155,7 @@ def test_card_inside_prompt_injection_never_reaches_the_graph(monkeypatch):
 
 
 # Reformatting the number (no separators, parentheses, country code) doesn't slip
-# past the filter. (adversary)
+# past the filter. (adversarial)
 @pytest.mark.parametrize(
     "text, expected",
     [
@@ -170,6 +170,6 @@ def test_redact_catches_reformatted_pii(text, expected):
     assert pii.redact(text) == expected
 
 
-# A customer typing a placeholder themselves gets no special treatment. (adversary)
+# A customer typing a placeholder themselves gets no special treatment. (adversarial)
 def test_literal_placeholder_passes_through():
     assert pii.redact("<CREDIT_CARD>") == "<CREDIT_CARD>"

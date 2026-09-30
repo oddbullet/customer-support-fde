@@ -36,7 +36,7 @@ def test_unrecognized_primary_menu_reply_re_asks_the_same_question(monkeypatch):
 
 
 # Replying "2" returns None/None account fields, with no other outcome reached and
-# no account row created. (base)
+# no account row created. (happy)
 def test_primary_menu_continue_without_account_returns_none_none(monkeypatch):
     monkeypatch.setattr(node_module, "interrupt", MagicMock(return_value="2"))
     monkeypatch.setattr(
@@ -52,7 +52,7 @@ def test_primary_menu_continue_without_account_returns_none_none(monkeypatch):
 
 
 # Replying "1" then a number db.get_account resolves sets account_number/
-# account_preferences from that account's row. (base)
+# account_preferences from that account's row. (happy)
 def test_existing_account_found_sets_account_fields_from_row(monkeypatch):
     fake_interrupt = MagicMock(side_effect=["1", "K7QP3M9X"])
     monkeypatch.setattr(node_module, "interrupt", fake_interrupt)
@@ -140,7 +140,7 @@ def test_recovery_menu_try_again_loops_back_and_succeeds(monkeypatch):
 # returns the new number with no preferences, and shows the customer the
 # formatted account number. _create_account is mocked directly rather than
 # db.create_account because @task requires a real graph run to resolve its
-# future, which these direct-call unit tests don't provide. (base)
+# future, which these direct-call unit tests don't provide. (happy)
 def test_primary_menu_sign_up_creates_account_and_shows_formatted_number(monkeypatch):
     fake_interrupt = MagicMock(side_effect=["3", "ok"])
     monkeypatch.setattr(node_module, "interrupt", fake_interrupt)
@@ -182,7 +182,7 @@ def _raise_store_error(*_args, **_kwargs):
 
 # If the account lookup fails with a store error, the node stops the workflow by
 # letting the error propagate (the CLI turns it into a warning) instead of treating
-# the account as not found or continuing without it. (error)
+# the account as not found or continuing without it. (failure)
 def test_account_lookup_store_error_stops_the_workflow(monkeypatch):
     fake_interrupt = MagicMock(side_effect=["1", "K7QP3M9X"])
     monkeypatch.setattr(node_module, "interrupt", fake_interrupt)
@@ -197,7 +197,7 @@ def test_account_lookup_store_error_stops_the_workflow(monkeypatch):
 
 
 # If creating an account fails with a store error, the node stops the workflow by
-# letting the error propagate, without showing an account number. (error)
+# letting the error propagate, without showing an account number. (failure)
 def test_sign_up_store_error_stops_the_workflow(monkeypatch):
     fake_interrupt = MagicMock(side_effect=["3"])
     monkeypatch.setattr(node_module, "interrupt", fake_interrupt)

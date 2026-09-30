@@ -37,7 +37,7 @@ def _alternating_tool_calls() -> list[AIMessage]:
 # A refund agent looping between two different tools within one customer turn is
 # stopped by the workflow iteration limit: the real graph raises GraphRecursionError
 # after roughly WORKFLOW_ITERATION_LIMIT / 2 agent steps, long before the script runs
-# out. (error)
+# out. (failure)
 def test_runaway_tool_loop_is_stopped_by_iteration_limit(monkeypatch, tmp_path):
     db_path = tmp_path / "test.db"
     db.init_database(db_path)
@@ -77,7 +77,7 @@ _LONG_CONVERSATION_TURNS = 30
 
 # A long but normal refund conversation is never cut off: the iteration limit counts the
 # steps of each graph.invoke() (one customer turn), not the whole conversation, so the
-# conversation reaches its ticket even though it takes well over 100 steps in total. (base)
+# conversation reaches its ticket even though it takes well over 100 steps in total. (edge)
 def test_long_normal_conversation_completes_within_iteration_limit(monkeypatch, tmp_path):
     db_path = use_tmp_db(monkeypatch, tmp_path)
     order_id = seed_order(db_path)

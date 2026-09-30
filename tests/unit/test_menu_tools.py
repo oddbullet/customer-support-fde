@@ -36,7 +36,7 @@ SAMPLE_MENU = [
 ]
 
 
-# An exact name match resolves directly to that menu item. (base)
+# An exact name match resolves directly to that menu item. (happy)
 def test_exact_name_match_resolves_found():
     match = resolve_menu_item("Kung Pao Chicken", SAMPLE_MENU)
 
@@ -84,7 +84,7 @@ def test_tie_when_two_items_score_equally_at_the_top():
 
 
 # Sanity-checks that the real menu.json data, seeded into the database, is
-# present and well-formed. (base)
+# present and well-formed. (happy)
 def test_seeded_menu_json_has_at_least_five_well_formed_items(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -98,7 +98,7 @@ def test_seeded_menu_json_has_at_least_five_well_formed_items(tmp_path):
         assert isinstance(item["ingredients"], list) and item["ingredients"]
 
 
-# get_menu reads the menu from state["menu"] rather than loading it itself. (base)
+# get_menu reads the menu from state["menu"] rather than loading it itself. (happy)
 def test_get_menu_reads_menu_from_state():
     rendered = get_menu.func(state={"menu": SAMPLE_MENU})
 
@@ -113,7 +113,7 @@ def test_get_menu_empty_state_menu_renders_no_items_available():
     assert rendered == "There are no items available on the menu right now."
 
 
-# get_menu_item reads the menu from state["menu"] rather than loading it itself. (base)
+# get_menu_item reads the menu from state["menu"] rather than loading it itself. (happy)
 def test_get_menu_item_reads_menu_from_state():
     rendered = get_menu_item.func(name="Mapo Tofu", state={"menu": SAMPLE_MENU})
 
@@ -129,7 +129,7 @@ def test_get_menu_item_not_found_reports_no_match_message():
     assert "No menu item matches" in rendered
 
 
-# An exact canonical-name match returns that menu entry's price. (base)
+# An exact canonical-name match returns that menu entry's price. (happy)
 def test_price_for_item_returns_price_on_exact_match():
     assert price_for_item("Kung Pao Chicken", SAMPLE_MENU) == 12.95
 
@@ -141,20 +141,20 @@ def test_price_for_item_returns_none_when_name_not_on_menu():
 
 # A near-miss name that resolve_menu_item would fuzzy-match returns None
 # instead of another item's price, guarding the mispricing risk in
-# research.md §4. (regression)
+# research.md §4. (edge, regression)
 def test_price_for_item_does_not_fuzzy_match_near_miss_name():
     assert resolve_menu_item("Sprng Rolls", SAMPLE_MENU).status == "found"
 
     assert price_for_item("Sprng Rolls", SAMPLE_MENU) is None
 
 
-# A single item at quantity 1 totals to exactly that item's price. (base)
+# A single item at quantity 1 totals to exactly that item's price. (happy)
 def test_cart_total_single_item_quantity_one():
     assert cart_total({"Kung Pao Chicken": 1}, SAMPLE_MENU) == 12.95
 
 
 # Multiple distinct items at varying quantities sum to price times quantity
-# across every line. (base)
+# across every line. (happy)
 def test_cart_total_multiple_items_varying_quantities():
     cart = {"Kung Pao Chicken": 2, "Mapo Tofu": 1, "Spring Rolls": 3}
 

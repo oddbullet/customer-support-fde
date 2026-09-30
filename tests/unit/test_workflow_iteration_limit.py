@@ -15,13 +15,13 @@ from _cli_fakes import (
 )
 
 
-# The workflow iteration limit is 100 graph steps per invoke. (base)
+# The workflow iteration limit is 100 graph steps per invoke. (happy)
 def test_workflow_iteration_limit_is_100():
     assert interactive.WORKFLOW_ITERATION_LIMIT == 100
 
 
 # Every graph.invoke call (the first message, interrupt resumes, and model-outage
-# replays) carries the workflow iteration limit as its recursion_limit. (base)
+# replays) carries the workflow iteration limit as its recursion_limit. (happy)
 def test_run_conversation_passes_iteration_limit_on_every_invoke(monkeypatch):
     record_warnings(monkeypatch)
     monkeypatch.setattr(interactive.sys, "stdin", io.StringIO("2\n\n"))
@@ -48,7 +48,7 @@ def test_run_conversation_passes_iteration_limit_on_every_invoke(monkeypatch):
 
 
 # GraphRecursionError is not retried by _run_conversation: replaying the step would
-# only hit the limit again. (regression)
+# only hit the limit again. (failure, regression)
 def test_run_conversation_does_not_retry_iteration_limit(monkeypatch):
     warnings = record_warnings(monkeypatch)
     graph, calls = scripted_graph([GraphRecursionError("Recursion limit of 100 reached")])
@@ -62,7 +62,7 @@ def test_run_conversation_does_not_retry_iteration_limit(monkeypatch):
 
 # When a conversation hits the iteration limit, only the generic message is shown,
 # the CLI waits for Enter and exits with code 1, and the raw LangGraph message is
-# never printed. (base)
+# never printed. (failure)
 def test_run_interactive_shows_generic_message_and_exits_when_iteration_limit_reached(
     monkeypatch, capsys
 ):

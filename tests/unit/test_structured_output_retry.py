@@ -176,7 +176,7 @@ def _completion(message: dict, finish_reason: str = "stop") -> dict:
 
 # Real replies from OpenRouter that the parser can't turn into a RouterDecision,
 # including a customer message crafted to make the model refuse: the router asks
-# again, then asks the customer to clarify rather than crashing. (adversary)
+# again, then asks the customer to clarify rather than crashing. (adversarial)
 @pytest.mark.parametrize(
     ("message", "finish_reason"),
     [

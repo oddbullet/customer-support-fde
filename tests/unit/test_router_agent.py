@@ -14,7 +14,7 @@ def _fake_llm(decision: RouterDecision) -> MagicMock:
     return llm
 
 
-# A clear order/menu query routes to order_support and carries no sentiment. (base)
+# A clear order/menu query routes to order_support and carries no sentiment. (happy)
 def test_order_support_query_has_no_sentiment(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -37,7 +37,7 @@ def test_order_support_query_has_no_sentiment(monkeypatch):
     assert result["user_query"] == query
 
 
-# A clear complaint routes to refund and carries the negative sentiment through. (base)
+# A clear complaint routes to refund and carries the negative sentiment through. (happy)
 def test_refund_query_carries_negative_sentiment(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -113,7 +113,7 @@ def test_ambiguous_or_mixed_signal_query_stays_unclear_and_keeps_sentiment(
 
 
 # A past-order complaint with no refund/money-back language still routes to refund
-# with sentiment attached, mirroring spec.md User Story 1 Acceptance Scenarios 1-3. (base)
+# with sentiment attached, mirroring spec.md User Story 1 Acceptance Scenarios 1-3. (happy)
 @pytest.mark.parametrize(
     "query",
     [
@@ -142,7 +142,7 @@ def test_complaint_only_query_routes_to_refund_with_sentiment(monkeypatch, query
 
 # A message combining a past-order complaint with an explicit refund ask routes
 # directly to refund (never unclear), mirroring spec.md User Story 2 Acceptance
-# Scenarios 1-2. (base)
+# Scenarios 1-2. (happy)
 @pytest.mark.parametrize(
     "query",
     [
@@ -168,7 +168,7 @@ def test_complaint_plus_refund_ask_query_routes_directly_to_refund(monkeypatch, 
     assert result["sentiment"] is not None
 
 
-# An LLM call failure in router_agent raises rather than returning partial state. (error)
+# An LLM call failure in router_agent raises rather than returning partial state. (failure)
 def test_llm_call_failure_propagates_rather_than_returning_partial_state(monkeypatch):
     failing_llm = MagicMock()
     failing_llm.invoke.side_effect = RuntimeError("OpenRouter request failed")
@@ -184,7 +184,7 @@ def test_llm_call_failure_propagates_rather_than_returning_partial_state(monkeyp
 
 
 # A model reply that doesn't fit RouterDecision (pydantic ValidationError) falls back
-# to "unclear" with neutral sentiment instead of raising. (error)
+# to "unclear" with neutral sentiment instead of raising. (failure)
 def test_malformed_structured_output_falls_back_to_unclear(monkeypatch):
     with pytest.raises(ValidationError) as excinfo:
         RouterDecision.model_validate({"destination": "kitchen", "sentiment": "angry"})

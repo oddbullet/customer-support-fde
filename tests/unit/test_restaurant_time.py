@@ -15,7 +15,7 @@ def restaurant_in(monkeypatch):
 
 
 # The same UTC instant shows as PDT in summer and PST in winter: daylight saving is
-# handled by the zone, not a fixed offset. (base)
+# handled by the zone, not a fixed offset. (happy)
 def test_format_local_switches_between_daylight_and_standard_time(restaurant_in):
     restaurant_in("America/Los_Angeles")
 
@@ -32,7 +32,7 @@ def test_format_local_arizona_has_no_daylight_saving(restaurant_in):
 
 
 # A time stored with another region's offset is shown in the restaurant's local time.
-# (cross-region)
+# (edge, cross-region)
 def test_format_local_converts_other_region_offset_to_restaurant_time(restaurant_in):
     restaurant_in("America/New_York")
 
@@ -43,7 +43,7 @@ def test_format_local_converts_other_region_offset_to_restaurant_time(restaurant
     )
 
 
-# A datetime object is accepted as well as an ISO string. (base)
+# A datetime object is accepted as well as an ISO string. (happy)
 def test_format_local_accepts_datetime(restaurant_in):
     restaurant_in("America/Chicago")
 
@@ -52,7 +52,7 @@ def test_format_local_accepts_datetime(restaurant_in):
     assert restaurant_time.format_local(value) == "Sep 29, 2026, 9:03 AM CDT"
 
 
-# Unusable values show "unknown" instead of raising. (negative)
+# Unusable values show "unknown" instead of raising. (failure)
 @pytest.mark.parametrize("value", [None, "", "not-a-date", "2026-09-29T14:03:00"])
 def test_format_local_unusable_value_is_unknown(restaurant_in, value):
     restaurant_in("America/Los_Angeles")
@@ -60,14 +60,14 @@ def test_format_local_unusable_value_is_unknown(restaurant_in, value):
     assert restaurant_time.format_local(value) == "unknown"
 
 
-# Every supported US zone name maps to a real IANA timezone. (base)
+# Every supported US zone name maps to a real IANA timezone. (happy)
 def test_us_timezones_cover_main_us_zones():
     assert set(restaurant_time.US_TIMEZONES) == {
         "eastern", "central", "mountain", "arizona", "pacific", "alaska", "hawaii"
     }
 
 
-# The timezone is read from the database once and then cached. (base)
+# The timezone is read from the database once and then cached. (happy)
 def test_load_reads_database_once(restaurant_in, monkeypatch):
     restaurant_in("America/Denver")
     calls = {"n": 0}
@@ -86,7 +86,7 @@ def test_load_reads_database_once(restaurant_in, monkeypatch):
     assert calls["n"] == 1
 
 
-# No timezone configured, or one outside the supported list, raises with the fix. (error)
+# No timezone configured, or one outside the supported list, raises with the fix. (failure)
 @pytest.mark.parametrize("stored", [None, "Europe/London"])
 def test_load_without_valid_timezone_raises_with_fix(monkeypatch, stored):
     monkeypatch.setattr(restaurant_time, "_timezone", None)
@@ -97,7 +97,7 @@ def test_load_without_valid_timezone_raises_with_fix(monkeypatch, stored):
 
 
 # A database without the settings table (created before this feature) points to the
-# fix instead of crashing. (error)
+# fix instead of crashing. (failure)
 def test_load_on_old_database_raises_with_fix(monkeypatch):
     def _store_error(*args, **kwargs):
         raise db.OrderStoreError("no such table: restaurant_settings")

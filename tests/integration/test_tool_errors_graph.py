@@ -87,7 +87,7 @@ def _start_refund_conversation(monkeypatch, query, responses):
 
 # Tool-call arguments that don't match the tool's schema are returned to the order
 # agent as an error ToolMessage, and the agent gets to recover with a normal reply
-# instead of the graph crashing. (error)
+# instead of the graph crashing. (failure)
 def test_order_tool_invalid_args_are_reported_back_to_the_agent(monkeypatch, tmp_path):
     result, llm = _start_order_conversation(
         monkeypatch,
@@ -106,7 +106,7 @@ def test_order_tool_invalid_args_are_reported_back_to_the_agent(monkeypatch, tmp
 
 # A single unexpected exception inside an order tool is sent back to the order agent
 # only as the fixed retry instruction (no internal details); the agent retries the
-# same call, it succeeds, and the conversation carries on with no warning. (error)
+# same call, it succeeds, and the conversation carries on with no warning. (failure)
 def test_order_tool_single_exception_is_retried_by_the_agent(monkeypatch, tmp_path):
     monkeypatch.setattr(
         menu_tools, "resolve_menu_item", _fail_once(menu_tools.resolve_menu_item)
@@ -132,7 +132,7 @@ def test_order_tool_single_exception_is_retried_by_the_agent(monkeypatch, tmp_pa
 
 # An order agent that keeps retrying a tool that keeps raising is stopped by the
 # tool limit: the tool runs 3 times (each an error ToolMessage), then the graph ends
-# with tool_limit_reached recorded so the CLI shows its warning. (error)
+# with tool_limit_reached recorded so the CLI shows its warning. (failure)
 def test_order_tool_repeated_exceptions_end_at_tool_limit(monkeypatch, tmp_path):
     monkeypatch.setattr(menu_tools, "resolve_menu_item", _raise_internal_error)
     result, _llm = _start_order_conversation(
@@ -147,7 +147,7 @@ def test_order_tool_repeated_exceptions_end_at_tool_limit(monkeypatch, tmp_path)
 
 # A single unexpected exception inside a refund tool is sent back to the refund agent
 # only as the fixed retry instruction (no internal details); the agent retries the
-# same call, it succeeds, and the conversation carries on with no warning. (error)
+# same call, it succeeds, and the conversation carries on with no warning. (failure)
 def test_refund_tool_single_exception_is_retried_by_the_agent(monkeypatch, tmp_path):
     order_id = seed_order(use_tmp_db(monkeypatch, tmp_path))
     monkeypatch.setattr(db, "get_order", _fail_once(db.get_order))
@@ -170,7 +170,7 @@ def test_refund_tool_single_exception_is_retried_by_the_agent(monkeypatch, tmp_p
 
 # A refund agent that keeps retrying a tool that keeps raising is stopped by the
 # tool limit: the tool runs 3 times (each an error ToolMessage), then the graph ends
-# with tool_limit_reached recorded and no refund ticket written. (error)
+# with tool_limit_reached recorded and no refund ticket written. (failure)
 def test_refund_tool_repeated_exceptions_end_at_tool_limit(monkeypatch, tmp_path):
     use_tmp_db(monkeypatch, tmp_path)
     monkeypatch.setattr(db, "get_order", _raise_internal_error)

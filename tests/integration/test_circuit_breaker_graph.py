@@ -86,7 +86,7 @@ def _interrupt_value(result) -> str:
 
 # With the primary down, the router's structured classification is answered by the
 # fallback after the primary's 1 + 3 attempts, and the graph moves on to account
-# identification. (base)
+# identification. (failure)
 def test_router_falls_back_when_primary_is_down(openrouter):
     graph = build_graph(checkpointer=MemorySaver())
 
@@ -97,7 +97,7 @@ def test_router_falls_back_when_primary_is_down(openrouter):
 
 
 # The order agent's tool-bound call is also answered by the fallback, so the customer
-# gets a normal reply. (base)
+# gets a normal reply. (failure)
 def test_order_agent_reply_comes_from_fallback(openrouter):
     graph = build_graph(checkpointer=MemorySaver())
     graph.invoke(initial_state("Do you have dumplings?"), CONFIG)
@@ -109,7 +109,7 @@ def test_order_agent_reply_comes_from_fallback(openrouter):
 
 
 # When both models fail, the graph raises ModelUnavailableError; once a model recovers,
-# invoke(None) replays the failed router step from the checkpoint. (error)
+# invoke(None) replays the failed router step from the checkpoint. (failure)
 def test_failed_first_step_is_replayed_after_recovery(openrouter):
     graph = build_graph(checkpointer=MemorySaver())
     openrouter.failing = {PRIMARY, FALLBACK}
@@ -124,7 +124,7 @@ def test_failed_first_step_is_replayed_after_recovery(openrouter):
 
 
 # A failure after an interrupt resume is replayed without duplicating the customer's
-# message in the conversation. (regression)
+# message in the conversation. (failure, regression)
 def test_failed_resume_step_is_replayed_without_duplicating_message(openrouter):
     graph = build_graph(checkpointer=MemorySaver())
     graph.invoke(initial_state("Do you have dumplings?"), CONFIG)
@@ -146,7 +146,7 @@ def test_failed_resume_step_is_replayed_without_duplicating_message(openrouter):
 
 
 # Once the circuit has opened, the customer's next message makes no primary attempts
-# at all, so it doesn't pay the retry delay again. (base)
+# at all, so it doesn't pay the retry delay again. (failure)
 def test_open_circuit_skips_primary_on_next_message(openrouter):
     graph = build_graph(checkpointer=MemorySaver())
     graph.invoke(initial_state("Do you have dumplings?"), CONFIG)
@@ -159,7 +159,7 @@ def test_open_circuit_skips_primary_on_next_message(openrouter):
 
 
 # A primary that times out at the transport layer is retried like any other
-# retryable failure, and the fallback answers once those retries are spent. (error)
+# retryable failure, and the fallback answers once those retries are spent. (failure)
 def test_router_falls_back_when_primary_times_out(openrouter):
     openrouter.failing = set()
     openrouter.timing_out = {PRIMARY}
@@ -172,7 +172,7 @@ def test_router_falls_back_when_primary_times_out(openrouter):
 
 
 # When both models time out, the graph raises ModelUnavailableError so the CLI can
-# offer a retry, rather than surfacing a raw timeout. (error)
+# offer a retry, rather than surfacing a raw timeout. (failure)
 def test_both_models_timing_out_raises_model_unavailable(openrouter):
     openrouter.failing = set()
     openrouter.timing_out = {PRIMARY, FALLBACK}
@@ -183,7 +183,7 @@ def test_both_models_timing_out_raises_model_unavailable(openrouter):
 
 
 # A router reply that doesn't fit RouterDecision (unknown destination, or not JSON
-# at all) falls back to asking the customer what they want. (error)
+# at all) falls back to asking the customer what they want. (failure)
 @pytest.mark.parametrize(
     "router_reply",
     [

@@ -69,7 +69,7 @@ def _run_and_extract_trajectory(graph, initial_state):
 
 
 # An order/menu-style request routes through router_agent to the account menu, then
-# (continuing without an account) to call_model and pauses for the customer. (base)
+# (continuing without an account) to call_model and pauses for the customer. (happy)
 def test_order_support_style_request_reaches_call_model_and_pauses(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -103,7 +103,7 @@ def test_order_support_style_request_reaches_call_model_and_pauses(monkeypatch):
     assert result["score"] is True
 
 
-# A clear refund/complaint request routes through refund_agent and pauses for the customer. (base)
+# A clear refund/complaint request routes through refund_agent and pauses for the customer. (happy)
 def test_refund_style_request_routes_through_refund_agent(monkeypatch):
     monkeypatch.setattr(
         router_agent,
@@ -291,7 +291,8 @@ LABELED_SAMPLES = [
 ]
 
 
-# Acceptance check: routing accuracy across a labeled sample set (spec.md flows + edge cases) meets the 90% bar. (base)
+# Acceptance check: routing accuracy across a labeled sample set (spec.md flows + edge
+# cases) meets the 90% bar. (happy)
 def test_labeled_sample_set_routes_to_the_expected_destination_at_least_90_percent(
     monkeypatch,
 ):

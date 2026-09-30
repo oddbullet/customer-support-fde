@@ -15,7 +15,7 @@ MENU_JSON_PATH = (
 )
 
 
-# database_path() returns CUSTOMER_SUPPORT_DB when the env var is set and non-empty. (base)
+# database_path() returns CUSTOMER_SUPPORT_DB when the env var is set and non-empty. (happy)
 def test_database_path_returns_env_var_when_set(monkeypatch, tmp_path):
     target = tmp_path / "custom.db"
     monkeypatch.setenv("CUSTOMER_SUPPORT_DB", str(target))
@@ -31,7 +31,7 @@ def test_database_path_falls_back_to_default_when_env_var_empty(monkeypatch):
 
 
 # database_path() is read at call time, not import time, so changing the env var
-# between two calls changes the result. (base)
+# between two calls changes the result. (edge)
 def test_database_path_is_read_at_call_time_not_import_time(monkeypatch, tmp_path):
     monkeypatch.delenv("CUSTOMER_SUPPORT_DB", raising=False)
     assert db.database_path() == Path(db.DEFAULT_DB_FILENAME)
@@ -42,7 +42,7 @@ def test_database_path_is_read_at_call_time_not_import_time(monkeypatch, tmp_pat
 
 
 # init_database() on a fresh path creates all three tables and seeds every dish
-# from menu.json, returning the seeded count. (base)
+# from menu.json, returning the seeded count. (happy)
 def test_init_database_creates_tables_and_seeds_menu(tmp_path):
     path = tmp_path / "fresh.db"
 
@@ -81,7 +81,7 @@ def test_init_database_is_idempotent(tmp_path):
 
 
 # Re-running init_database() updates price and ingredients of an existing dish
-# but deletes nothing. (base)
+# but deletes nothing. (happy)
 def test_init_database_updates_existing_dish_without_deleting_others(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -116,7 +116,7 @@ def test_init_database_updates_existing_dish_without_deleting_others(tmp_path):
 
 
 # load_menu() returns dishes with exactly the names, prices, and ingredient
-# lists in menu.json, in stable name order. (base)
+# lists in menu.json, in stable name order. (happy)
 def test_load_menu_returns_exact_menu_json_contents_in_name_order(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -130,7 +130,7 @@ def test_load_menu_returns_exact_menu_json_contents_in_name_order(tmp_path):
     assert menu == expected
 
 
-# A price edited directly in the database is reflected by the next load_menu() call. (base)
+# A price edited directly in the database is reflected by the next load_menu() call. (happy)
 def test_load_menu_reflects_a_direct_database_price_edit(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -147,7 +147,7 @@ def test_load_menu_reflects_a_direct_database_price_edit(tmp_path):
     assert updated["price"] == 42.00
 
 
-# load_menu() against a missing file raises MenuStoreError naming the path. (error)
+# load_menu() against a missing file raises MenuStoreError naming the path. (failure)
 def test_load_menu_missing_file_raises_menu_store_error(tmp_path):
     missing = tmp_path / "does-not-exist.db"
 
@@ -157,7 +157,7 @@ def test_load_menu_missing_file_raises_menu_store_error(tmp_path):
     assert str(missing) in str(excinfo.value)
 
 
-# load_menu() against a file with no menu_items table raises MenuStoreError. (error)
+# load_menu() against a file with no menu_items table raises MenuStoreError. (failure)
 def test_load_menu_missing_table_raises_menu_store_error(tmp_path):
     path = tmp_path / "no-table.db"
     conn = sqlite3.connect(path)
@@ -170,7 +170,7 @@ def test_load_menu_missing_table_raises_menu_store_error(tmp_path):
 
 
 # A row whose ingredients JSON will not parse raises MenuStoreError rather
-# than returning a partial menu. (error)
+# than returning a partial menu. (failure)
 def test_load_menu_malformed_ingredients_json_raises_menu_store_error(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -224,7 +224,7 @@ def _sample_summary() -> dict:
     }
 
 
-# Every generated order ID uses only ID_ALPHABET, never I, L, O, or U. (base)
+# Every generated order ID uses only ID_ALPHABET, never I, L, O, or U. (happy)
 def test_generated_order_ids_use_only_the_documented_alphabet():
     forbidden = set("ILOU")
     for _ in range(200):
@@ -234,7 +234,7 @@ def test_generated_order_ids_use_only_the_documented_alphabet():
         assert not (set(order_id) & forbidden)
 
 
-# 1,000 generated IDs are all distinct and show no sequential pattern. (base)
+# 1,000 generated IDs are all distinct and show no sequential pattern. (happy)
 def test_generated_order_ids_are_distinct_and_not_sequential():
     ids = [db._new_order_id() for _ in range(1000)]
 
@@ -242,7 +242,7 @@ def test_generated_order_ids_are_distinct_and_not_sequential():
     assert ids != sorted(ids)
 
 
-# format_order_id hyphenates mid-code and normalize_order_id inverts it exactly. (base)
+# format_order_id hyphenates mid-code and normalize_order_id inverts it exactly. (happy)
 def test_format_and_normalize_order_id_round_trip():
     assert db.format_order_id("K7QP3M9X") == "K7QP-3M9X"
     assert db.normalize_order_id("K7QP-3M9X") == "K7QP3M9X"
@@ -254,7 +254,7 @@ def test_normalize_order_id_folds_case_and_whitespace():
     assert db.normalize_order_id("k7qp 3m9x") == "K7QP3M9X"
 
 
-# record_order returns an 8-char ID and get_order round-trips every line field. (base)
+# record_order returns an 8-char ID and get_order round-trips every line field. (happy)
 def test_record_order_returns_id_and_get_order_round_trips(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -269,7 +269,7 @@ def test_record_order_returns_id_and_get_order_round_trips(tmp_path):
     assert stored["lines"] == summary["lines"]
 
 
-# Two record_order calls return different IDs and both orders remain readable. (base)
+# Two record_order calls return different IDs and both orders remain readable. (happy)
 def test_two_record_order_calls_return_different_ids_and_both_readable(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -284,7 +284,7 @@ def test_two_record_order_calls_return_different_ids_and_both_readable(tmp_path)
 
 
 # A failure partway through record_order leaves no orders row and no
-# order_lines rows. (error)
+# order_lines rows. (failure)
 def test_record_order_failure_partway_through_leaves_no_rows(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -319,7 +319,7 @@ def test_record_order_failure_partway_through_leaves_no_rows(tmp_path):
 
 
 # Editing menu_items after an order does not change that order's stored
-# names or prices. (regression)
+# names or prices. (edge, regression)
 def test_record_order_immune_to_later_menu_edits(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -339,7 +339,7 @@ def test_record_order_immune_to_later_menu_edits(tmp_path):
     assert reread["lines"][0]["unit_price"] == 12.95
 
 
-# record_order with an empty lines list raises ValueError and writes nothing. (error)
+# record_order with an empty lines list raises ValueError and writes nothing. (failure)
 def test_record_order_empty_lines_raises_value_error(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -354,7 +354,7 @@ def test_record_order_empty_lines_raises_value_error(tmp_path):
         conn.close()
 
 
-# A forced ID collision is retried onto a fresh ID and the order still saves. (error)
+# A forced ID collision is retried onto a fresh ID and the order still saves. (edge)
 def test_record_order_retries_past_a_forced_id_collision(tmp_path, monkeypatch):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -400,7 +400,7 @@ def test_get_order_returns_none_for_unrecognizable_id(tmp_path):
 
 # The _new_id/_normalize_id/_format_id refactor leaves order-id behavior unchanged:
 # _new_order_id still returns 8-char ID_ALPHABET strings, and format/normalize still
-# round-trip exactly as before. (regression)
+# round-trip exactly as before. (happy, regression)
 def test_id_helper_refactor_preserves_order_id_behavior():
     order_id = db._new_order_id()
     assert len(order_id) == db.ID_LENGTH
@@ -409,7 +409,7 @@ def test_id_helper_refactor_preserves_order_id_behavior():
     assert db.format_order_id("K7QP3M9X") == "K7QP-3M9X"
 
 
-# _new_account_number returns an 8-char ID_ALPHABET string, same scheme as order ids. (base)
+# _new_account_number returns an 8-char ID_ALPHABET string, same scheme as order ids. (happy)
 def test_generated_account_numbers_use_only_the_documented_alphabet():
     forbidden = set("ILOU")
     for _ in range(200):
@@ -419,7 +419,7 @@ def test_generated_account_numbers_use_only_the_documented_alphabet():
         assert not (set(account_number) & forbidden)
 
 
-# format_account_number hyphenates mid-code and normalize_account_number inverts it. (base)
+# format_account_number hyphenates mid-code and normalize_account_number inverts it. (happy)
 def test_format_and_normalize_account_number_round_trip():
     assert db.format_account_number("K7QP3M9X") == "K7QP-3M9X"
     assert db.normalize_account_number("K7QP-3M9X") == "K7QP3M9X"
@@ -441,7 +441,7 @@ def test_get_account_returns_none_for_unknown_number(tmp_path):
 
 
 # create_account then get_account round-trips with preferences None and a populated
-# created_at. (base)
+# created_at. (happy)
 def test_create_account_then_get_account_round_trips(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -467,7 +467,7 @@ def test_get_account_resolves_forgiving_number_forms(tmp_path, monkeypatch):
 
 
 # A forced account-number collision is retried onto a fresh number and the account
-# still saves. (error)
+# still saves. (edge)
 def test_create_account_retries_past_a_forced_number_collision(tmp_path, monkeypatch):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -492,7 +492,7 @@ def test_create_account_retries_past_a_forced_number_collision(tmp_path, monkeyp
     assert db.get_account(account_number, path) is not None
 
 
-# init_database creates the three refund/complaint tables alongside the existing ones. (base)
+# init_database creates the three refund/complaint tables alongside the existing ones. (happy)
 def test_init_database_creates_refund_and_complaint_tables(tmp_path):
     path = tmp_path / "fresh.db"
 
@@ -511,7 +511,7 @@ def test_init_database_creates_refund_and_complaint_tables(tmp_path):
     assert {"refund_requests", "refund_request_lines", "complaints"} <= tables
 
 
-# A second refund_requests insert for the same order_id raises IntegrityError (UNIQUE). (error)
+# A second refund_requests insert for the same order_id raises IntegrityError (UNIQUE). (failure)
 def test_refund_requests_order_id_is_unique(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -538,7 +538,7 @@ def test_refund_requests_order_id_is_unique(tmp_path):
         conn.close()
 
 
-# refund_requests.return_confirmed rejects values outside (0, 1). (error)
+# refund_requests.return_confirmed rejects values outside (0, 1). (failure)
 def test_refund_requests_return_confirmed_rejects_values_outside_zero_one(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -559,7 +559,7 @@ def test_refund_requests_return_confirmed_rejects_values_outside_zero_one(tmp_pa
 
 
 # A row with return_confirmed = 0 and a non-NULL substitute_dishes is rejected by the
-# CHECK constraint (FR-006 waiver only applies when nothing arrived). (error)
+# CHECK constraint (FR-006 waiver only applies when nothing arrived). (failure)
 def test_refund_requests_rejects_unconfirmed_return_with_substitute_dishes(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -598,7 +598,7 @@ def _sample_refund_lines() -> list[dict]:
 
 
 # record_refund_request writes one refund_requests row plus its refund_request_lines and
-# returns the new id, with status written as pending. (base)
+# returns the new id, with status written as pending. (happy)
 def test_record_refund_request_writes_row_and_lines_returns_id(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -630,7 +630,7 @@ def test_record_refund_request_writes_row_and_lines_returns_id(tmp_path):
     assert line_count == 1
 
 
-# substitute_dishes round-trips as a JSON array and is NULL when nothing arrived. (base)
+# substitute_dishes round-trips as a JSON array and is NULL when nothing arrived. (happy)
 def test_record_refund_request_substitute_dishes_round_trips_as_json_or_null(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -660,7 +660,7 @@ def test_record_refund_request_substitute_dishes_round_trips_as_json_or_null(tmp
     assert without_result["substitute_dishes"] is None
 
 
-# get_refund_request_for_order returns the request with lines attached, or None. (base)
+# get_refund_request_for_order returns the request with lines attached, or None. (happy)
 def test_get_refund_request_for_order_returns_request_with_lines_or_none(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -682,7 +682,7 @@ def test_get_refund_request_for_order_returns_request_with_lines_or_none(tmp_pat
     assert missing is None
 
 
-# list_refund_requests returns newest first. (base)
+# list_refund_requests returns newest first. (happy)
 def test_list_refund_requests_returns_newest_first(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -710,7 +710,7 @@ def test_list_refund_requests_returns_newest_first(tmp_path):
     assert [r["order_id"] for r in requests] == [order_id_2, order_id_1]
 
 
-# A sqlite3.Error during record_refund_request surfaces as OrderStoreError. (error)
+# A sqlite3.Error during record_refund_request surfaces as OrderStoreError. (failure)
 def test_record_refund_request_sqlite_error_surfaces_as_order_store_error(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -731,7 +731,7 @@ def _sample_complaint_kwargs() -> dict:
 
 
 # record_complaint writes a row and returns its id, with order_id NULL when none is
-# supplied and policy_reason NULL for a standalone complaint. (base)
+# supplied and policy_reason NULL for a standalone complaint. (happy)
 def test_record_complaint_writes_row_with_nullable_order_id_and_policy_reason(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -750,7 +750,7 @@ def test_record_complaint_writes_row_with_nullable_order_id_and_policy_reason(tm
 
 
 # extend_complaint updates description, policy_reason, and updated_at while leaving id
-# and created_at unchanged. (base)
+# and created_at unchanged. (happy)
 def test_extend_complaint_updates_fields_but_preserves_id_and_created_at(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -772,7 +772,7 @@ def test_extend_complaint_updates_fields_but_preserves_id_and_created_at(tmp_pat
     assert updated["description"] == "Second complaint, same issue."
 
 
-# list_complaints returns newest first. (base)
+# list_complaints returns newest first. (happy)
 def test_list_complaints_returns_newest_first(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -784,7 +784,7 @@ def test_list_complaints_returns_newest_first(tmp_path):
     assert [c["id"] for c in complaints] == [second_id, first_id]
 
 
-# A sqlite3.Error during record_complaint surfaces as OrderStoreError. (error)
+# A sqlite3.Error during record_complaint surfaces as OrderStoreError. (failure)
 def test_record_complaint_sqlite_error_surfaces_as_order_store_error(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -794,7 +794,7 @@ def test_record_complaint_sqlite_error_surfaces_as_order_store_error(tmp_path):
 
 
 # update_account_preferences sets the preferences column for an existing account
-# and returns None. (base)
+# and returns None. (happy)
 def test_update_account_preferences_sets_column_and_returns_none(tmp_path):
     path = tmp_path / "fresh.db"
     db.init_database(path)
@@ -828,7 +828,7 @@ def test_update_account_preferences_resolves_forgiving_number_forms(
 
 
 # update_account_preferences on an account number matching no row raises
-# OrderStoreError. (error)
+# OrderStoreError. (failure)
 def test_update_account_preferences_unknown_number_raises_order_store_error(
     tmp_path,
 ):
@@ -840,7 +840,7 @@ def test_update_account_preferences_unknown_number_raises_order_store_error(
 
 
 # A forced sqlite3.Error during update_account_preferences raises
-# OrderStoreError wrapping it. (error)
+# OrderStoreError wrapping it. (failure)
 def test_update_account_preferences_sqlite_error_surfaces_as_order_store_error(
     tmp_path, monkeypatch
 ):
@@ -876,7 +876,7 @@ def _db_without_tables(tmp_path):
 
 
 # A sqlite3.Error while reading an order or account, or creating an account, surfaces
-# as OrderStoreError, matching the write paths. (error)
+# as OrderStoreError, matching the write paths. (failure)
 @pytest.mark.parametrize(
     "call",
     [
@@ -894,7 +894,7 @@ def test_sqlite_error_surfaces_as_order_store_error(tmp_path, call):
 
 
 # A fresh database has no restaurant timezone until one is set; setting it twice keeps
-# only the latest value, and re-running init_database leaves it in place. (base)
+# only the latest value, and re-running init_database leaves it in place. (happy)
 def test_restaurant_timezone_round_trip_and_survives_reinit(tmp_path):
     path = tmp_path / "tz.db"
     db.init_database(path)

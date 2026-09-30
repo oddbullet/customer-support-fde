@@ -21,7 +21,7 @@ def _order_aged(hours: float) -> dict:
     return {**ORDER, "created_at": created_at}
 
 
-# An order 47h59m old, with a confirmed return of the received substitute, is eligible. (base)
+# An order 47h59m old, with a confirmed return of the received substitute, is eligible. (edge)
 def test_eligible_at_47h59m_with_confirmed_return():
     order = _order_aged(47 + 59 / 60)
 
@@ -69,7 +69,7 @@ def test_denied_outside_window_at_48h01m():
 
 
 # A correctly delivered item complained about for quality/temperature/timing is denied
-# item_delivered when no line is reported undelivered. (base)
+# item_delivered when no line is reported undelivered. (failure)
 def test_denied_item_delivered_when_no_undelivered_line_and_item_complaint():
     order = _order_aged(1)
 
@@ -85,7 +85,8 @@ def test_denied_item_delivered_when_no_undelivered_line_and_item_complaint():
     assert decision.reason == "no_undelivered_items"
 
 
-# A substitute was received but the customer declines to return it: denied return_declined. (base)
+# A substitute was received but the customer declines to return it: denied
+# return_declined. (failure)
 def test_denied_return_declined_when_substitute_received_and_return_not_confirmed():
     order = _order_aged(1)
 
@@ -119,7 +120,7 @@ def test_eligible_when_item_never_arrived_and_no_substitute_waives_return():
 
 
 # An order dated in the future (even by one second) can't be trusted, so it is
-# auto-rejected rather than treated as inside the window. (negative)
+# auto-rejected rather than treated as inside the window. (failure)
 @pytest.mark.parametrize("hours_ahead", [1 / 3600, 72])
 def test_denied_invalid_order_date_when_created_at_is_in_the_future(hours_ahead):
     order = _order_aged(-hours_ahead)
@@ -138,7 +139,7 @@ def test_denied_invalid_order_date_when_created_at_is_in_the_future(hours_ahead)
 
 
 # A malformed, empty, missing, or timezone-less created_at is auto-rejected instead of
-# raising. (negative)
+# raising. (failure)
 @pytest.mark.parametrize(
     "created_at", ["not-a-date", "", None, "2026-01-03T10:00:00.000"]
 )
@@ -174,7 +175,7 @@ def test_non_utc_offset_is_compared_by_actual_moment():
 
 
 # Identical inputs produce identical PolicyDecision values regardless of any sentiment
-# value held elsewhere — evaluate() takes no sentiment argument at all (SC-009). (regression)
+# value held elsewhere — evaluate() takes no sentiment argument at all (SC-009). (happy, regression)
 def test_evaluate_has_no_sentiment_parameter_and_is_deterministic():
     order = _order_aged(1)
 

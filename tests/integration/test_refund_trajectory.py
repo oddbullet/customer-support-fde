@@ -73,7 +73,7 @@ def _tool_call(name: str, args: dict, call_id: str) -> AIMessage:
 
 
 # A qualifying refund conversation results in a stored pending refund request and the
-# reply says it is submitted and awaiting review, never complete. (base)
+# reply says it is submitted and awaiting review, never complete. (happy)
 def test_qualifying_refund_conversation_creates_pending_request(monkeypatch, tmp_path):
     db_path = _use_tmp_db(monkeypatch, tmp_path)
     order_id = _seed_order(db_path, age_hours=2)
@@ -179,7 +179,7 @@ def _run_denial_conversation(monkeypatch, tmp_path, order_id, process_args):
 
 
 # A refund request against an order placed more than 48 hours ago is denied
-# outside_window, with no refund request stored and a complaint recorded (FR-004, FR-009). (base)
+# outside_window, with no refund request stored and a complaint recorded (FR-004, FR-009). (failure)
 def test_denial_order_outside_48_hour_window(monkeypatch, tmp_path):
     db_path = _use_tmp_db(monkeypatch, tmp_path)
     order_id = _seed_order(db_path, age_hours=72)
@@ -204,7 +204,7 @@ def test_denial_order_outside_48_hour_window(monkeypatch, tmp_path):
 
 
 # A complaint about a correctly delivered item (no undelivered lines reported) is
-# denied no_undelivered_items, with no refund request stored (FR-005, FR-009). (base)
+# denied no_undelivered_items, with no refund request stored (FR-005, FR-009). (failure)
 def test_denial_correctly_delivered_item(monkeypatch, tmp_path):
     db_path = _use_tmp_db(monkeypatch, tmp_path)
     order_id = _seed_order(db_path, age_hours=1)
@@ -228,7 +228,7 @@ def test_denial_correctly_delivered_item(monkeypatch, tmp_path):
 
 
 # A denial where a substitute dish arrived but the customer declines to return it is
-# denied return_declined, with no refund request stored (FR-006, FR-009). (base)
+# denied return_declined, with no refund request stored (FR-006, FR-009). (failure)
 def test_denial_return_declined(monkeypatch, tmp_path):
     db_path = _use_tmp_db(monkeypatch, tmp_path)
     order_id = _seed_order(db_path, age_hours=1)
@@ -251,7 +251,7 @@ def test_denial_return_declined(monkeypatch, tmp_path):
     assert result["refund_ticket"]["decision"] == "return_declined"
 
 
-# A complaint-only conversation (no refund requested) creates no refund request. (base)
+# A complaint-only conversation (no refund requested) creates no refund request. (happy)
 def test_complaint_only_conversation_creates_no_refund_request(monkeypatch, tmp_path):
     db_path = _use_tmp_db(monkeypatch, tmp_path)
     _mock_router(monkeypatch, sentiment="negative")
@@ -331,7 +331,7 @@ def _refund_initial_state(user_query: str) -> dict:
 
 # Refund conversation history persists across turns and, once it grows past the
 # token threshold, is condensed into a running summary instead of growing
-# without bound. (base)
+# without bound. (edge)
 def test_refund_condenses_conversation_history_past_the_threshold(monkeypatch):
     monkeypatch.setattr(refund_agent, "REFUND_HISTORY_TOKEN_THRESHOLD", 1)
     _mock_router(monkeypatch, sentiment="neutral")
@@ -372,7 +372,7 @@ def test_refund_condenses_conversation_history_past_the_threshold(monkeypatch):
 # customer's return commitment are established early survives condensation: the
 # final refund request/ticket still reflects those facts without the agent
 # re-asking for them or reversing the outcome (spec.md User Story 1, Acceptance
-# Scenarios 1-2). (base)
+# Scenarios 1-2). (edge)
 def test_early_established_facts_survive_condensation_single_order(
     monkeypatch, tmp_path
 ):
@@ -455,7 +455,7 @@ def test_early_established_facts_survive_condensation_single_order(
 # (denied, outside the refund window) before the conversation continues past the
 # condensation threshold: the second order's own outcome is not conflated with
 # the first order's already-reached outcome (spec.md User Story 1, Acceptance
-# Scenario 3). (base)
+# Scenario 3). (edge)
 def test_second_order_outcome_not_conflated_with_first_after_condensation(
     monkeypatch, tmp_path
 ):

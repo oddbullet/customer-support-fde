@@ -51,12 +51,12 @@ def _exceeding_limit(tool_name: str) -> list[AnyMessage]:
     )
 
 
-# The limit is 3 consecutive calls to the same tool. (base)
+# The limit is 3 consecutive calls to the same tool. (happy)
 def test_max_consecutive_tool_calls_is_three():
     assert MAX_CONSECUTIVE_TOOL_CALLS == 3
 
 
-# A 4th consecutive get_menu call exceeds the limit of 3 and is reported. (base)
+# A 4th consecutive get_menu call exceeds the limit of 3 and is reported. (edge)
 def test_fourth_consecutive_get_menu_exceeds_limit():
     messages = _history(
         _step("get_menu"),  # 1
@@ -80,7 +80,8 @@ def test_fourth_consecutive_call_exceeds_limit_when_bundled_with_another_tool():
     assert find_repeated_tool(messages) == "get_menu"
 
 
-# When several tools in the newest step are over the limit, the first in tool_calls order is reported. (edge)
+# When several tools in the newest step are over the limit, the first in tool_calls
+# order is reported. (edge)
 def test_first_over_limit_tool_in_call_order_is_reported():
     both = ("get_cart", "get_menu")
     messages = _history(_step(*both), _step(*both), _step(*both), _pending(*both))
@@ -88,21 +89,22 @@ def test_first_over_limit_tool_in_call_order_is_reported():
     assert find_repeated_tool(messages) == "get_cart"
 
 
-# route_after_agent sends a call over the limit to the tool-limit node instead of the tools. (base)
+# route_after_agent sends a call over the limit to the tool-limit node instead of the
+# tools. (failure)
 def test_route_after_agent_routes_call_over_limit_to_tool_limit():
     messages = _exceeding_limit("get_menu")
 
     assert route_after_agent({"messages": messages}) == "tool_limit"
 
 
-# route_after_agent sends a first tool request to the tool node. (base)
+# route_after_agent sends a first tool request to the tool node. (happy)
 def test_route_after_agent_routes_first_tool_call_to_tools():
     messages = _history(_pending("get_menu"))
 
     assert route_after_agent({"messages": messages}) == "tools"
 
 
-# route_after_agent ends the agent loop when the newest message has no tool calls. (base)
+# route_after_agent ends the agent loop when the newest message has no tool calls. (happy)
 def test_route_after_agent_routes_plain_reply_to_end():
     messages = _history(_step("get_menu")) + [AIMessage(content="Here's the menu.")]
 
@@ -157,7 +159,7 @@ def test_tool_messages_between_steps_do_not_affect_result():
 
 
 # tool_limit_node names the right agent and tool on both paths, which is what the
-# Phoenix span for this node records. (base)
+# Phoenix span for this node records. (failure)
 @pytest.mark.parametrize(
     ("destination", "tool"),
     [("refund", "lookup_order"), ("order_support", "add_items_to_cart")],
@@ -186,7 +188,7 @@ _TOOL_LIMIT_STATE = {
 
 # When a conversation exceeds the tool limit, only the generic message is shown, the
 # CLI waits for Enter and exits with code 1, and the tool-limit details are logged at
-# ERROR for Phoenix rather than printed. (base)
+# ERROR for Phoenix rather than printed. (failure)
 def test_run_interactive_shows_generic_message_and_exits_when_tool_limit_exceeded(
     monkeypatch, capsys, caplog
 ):
@@ -213,7 +215,7 @@ def test_run_interactive_shows_generic_message_and_exits_when_tool_limit_exceede
 
 
 # tool_limit_node logs a warning naming the agent and the repeated tool, so the
-# runaway loop is visible in Phoenix. (base)
+# runaway loop is visible in Phoenix. (failure)
 def test_tool_limit_node_logs_agent_and_tool(caplog):
     messages_so_far = [HumanMessage(content="hi")]
     for _ in range(MAX_CONSECUTIVE_TOOL_CALLS):

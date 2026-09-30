@@ -14,7 +14,7 @@ pytestmark = pytest.mark.e2e
 
 # A correctly-delivered order complained about only for being cold and late
 # is denied a refund - no refund request is created, a complaint is logged
-# with the specific policy reason, and the customer is told why. (negative)
+# with the specific policy reason, and the customer is told why. (failure)
 def test_correctly_delivered_order_complaint_is_denied(e2e_db):
     order_id = seed_order(
         e2e_db,

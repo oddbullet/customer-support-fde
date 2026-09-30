@@ -20,7 +20,7 @@ from _graph_fakes import (
 
 
 # An order agent that calls get_menu over the limit runs it only 3 times, then the graph
-# ends with the breach recorded and no order confirmed or ticket written. (base)
+# ends with the breach recorded and no order confirmed or ticket written. (failure)
 def test_order_agent_exceeding_tool_limit_ends_conversation(monkeypatch, tmp_path):
     use_tmp_db(monkeypatch, tmp_path)
     mock_router(monkeypatch, "order_support")
@@ -48,7 +48,7 @@ def test_order_agent_exceeding_tool_limit_ends_conversation(monkeypatch, tmp_pat
 
 
 # Three get_menu steps before replying don't trip the limit, and the count resets on the
-# customer's reply so three more in the next turn don't trip it either. (regression)
+# customer's reply so three more in the next turn don't trip it either. (edge, regression)
 def test_three_same_tool_steps_per_turn_do_not_trip_limit(monkeypatch, tmp_path):
     use_tmp_db(monkeypatch, tmp_path)
     mock_router(monkeypatch, "order_support")
@@ -77,7 +77,7 @@ def test_three_same_tool_steps_per_turn_do_not_trip_limit(monkeypatch, tmp_path)
 
 
 # A refund agent that calls lookup_order over the limit runs it only 3 times, then the
-# graph ends with the breach recorded and the refund left unresolved with no ticket. (base)
+# graph ends with the breach recorded and the refund left unresolved with no ticket. (failure)
 def test_refund_agent_exceeding_tool_limit_ends_conversation(monkeypatch, tmp_path):
     db_path = use_tmp_db(monkeypatch, tmp_path)
     order_id = seed_order(db_path)

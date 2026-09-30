@@ -30,7 +30,7 @@ def test_make_console_emits_no_ansi_when_not_a_tty(capsys):
 
 
 # _run_conversation generates a distinct thread_id on each call, and drives an
-# __interrupt__ / Command(resume=...) cycle through to a resolved state. (base)
+# __interrupt__ / Command(resume=...) cycle through to a resolved state. (happy)
 def test_run_conversation_generates_distinct_thread_ids_and_resolves_interrupt(monkeypatch):
     console = interactive._make_console(force_terminal=False)
 
@@ -70,7 +70,7 @@ def test_run_conversation_generates_distinct_thread_ids_and_resolves_interrupt(m
     assert len(set(seen_thread_ids)) == 2
 
 
-# run_interactive() prints a welcome/intro message before the first prompt is shown. (base)
+# run_interactive() prints a welcome/intro message before the first prompt is shown. (happy)
 def test_run_interactive_prints_welcome_before_prompt(monkeypatch, capsys):
     monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
     monkeypatch.setattr(
@@ -88,7 +88,7 @@ def test_run_interactive_prints_welcome_before_prompt(monkeypatch, capsys):
 
 
 # A submitted question is passed through to _run_conversation, and its result is
-# printed. (base)
+# printed. (happy)
 def test_run_interactive_passes_query_to_run_conversation_and_prints_result(
     monkeypatch, capsys
 ):
@@ -119,7 +119,7 @@ def test_run_interactive_passes_query_to_run_conversation_and_prints_result(
 
 
 # Each graph.invoke call inside _run_conversation is wrapped in a visible
-# "Thinking..." status indicator. (base)
+# "Thinking..." status indicator. (happy)
 def test_run_conversation_wraps_each_invoke_call_in_thinking_status(monkeypatch):
     console = interactive._make_console(force_terminal=False)
     status_calls = []
@@ -213,7 +213,7 @@ def test_run_conversation_does_not_wrap_interrupt_input_in_thinking_status(monke
     assert read_while_status_active == [False]
 
 
-# A human turn renders with the text label "You:". (base)
+# A human turn renders with the text label "You:". (happy)
 def test_print_turn_renders_human_turn_with_label(capsys):
     console = interactive._make_console(force_terminal=False)
     interactive._print_turn(console, "human", "what's on the menu?")
@@ -223,7 +223,7 @@ def test_print_turn_renders_human_turn_with_label(capsys):
     assert "what's on the menu?" in captured.out
 
 
-# An AI turn renders with the text label "Assistant:". (base)
+# An AI turn renders with the text label "Assistant:". (happy)
 def test_print_turn_renders_ai_turn_with_label(capsys):
     console = interactive._make_console(force_terminal=False)
     interactive._print_turn(console, "ai", "We have kung pao chicken.")
@@ -233,7 +233,7 @@ def test_print_turn_renders_ai_turn_with_label(capsys):
     assert "We have kung pao chicken." in captured.out
 
 
-# human and ai turns use visually distinct labels from each other. (base)
+# human and ai turns use visually distinct labels from each other. (happy)
 def test_print_turn_uses_distinct_labels_for_human_and_ai():
     assert interactive._SPEAKER_LABELS["human"] != interactive._SPEAKER_LABELS["ai"]
 
@@ -280,7 +280,7 @@ def test_print_turn_puts_label_on_own_line_for_multiline_content():
     assert text.plain == "Assistant:\n" + multiline
 
 
-# A single-line turn keeps the speaker label inline with its content. (base)
+# A single-line turn keeps the speaker label inline with its content. (happy)
 def test_print_turn_keeps_label_inline_for_single_line_content():
     console = interactive._make_console(force_terminal=False)
     printed = {}
@@ -298,7 +298,7 @@ def test_print_turn_keeps_label_inline_for_single_line_content():
 
 # A mid-conversation interrupt question renders with AI styling, and the user's
 # reply to it is not echoed back through _print_turn (the terminal already shows
-# what the user typed). (base)
+# what the user typed). (happy)
 def test_run_conversation_routes_interrupt_and_resume_answer_through_print_turn(
     monkeypatch,
 ):
@@ -352,7 +352,7 @@ def test_print_turn_emits_no_ansi_when_console_is_non_color(capsys):
 
 
 # After a conversation resolves, the console is cleared and a new prompt is shown,
-# allowing a second, independent conversation to run. (base)
+# allowing a second, independent conversation to run. (happy)
 def test_run_interactive_clears_screen_and_loops_for_a_second_conversation(monkeypatch):
     console_clear_calls = []
     monkeypatch.setattr(
@@ -379,7 +379,7 @@ def test_run_interactive_clears_screen_and_loops_for_a_second_conversation(monke
 
 
 # Typing /exit (case-insensitive) at a new-conversation prompt ends the session
-# with exit code 0 and no closing message. (base)
+# with exit code 0 and no closing message. (happy)
 def test_run_interactive_exits_on_slash_exit_command(monkeypatch):
     def _fail_if_called(*args, **kwargs):
         raise AssertionError("_run_conversation should not be called")
@@ -422,7 +422,7 @@ def test_run_interactive_exits_cleanly_on_keyboard_interrupt_mid_conversation(mo
 
 
 # A blank or spaces-only line is skipped (no conversation, no exit), and a question
-# that happens to contain the literal word "exit" does not end the session. (regression)
+# that happens to contain the literal word "exit" does not end the session. (edge, regression)
 def test_run_interactive_skips_blank_lines_and_does_not_exit_on_word_exit(monkeypatch):
     monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
 
@@ -514,7 +514,7 @@ def test_run_interactive_exits_cleanly_at_end_of_input(monkeypatch):
     run_conversation.assert_not_called()
 
 
-# The too-long message tells the customer the limit. (base)
+# The too-long message tells the customer the limit. (happy)
 def test_input_too_long_message_text():
     assert messages.INPUT_TOO_LONG == (
         "Sorry, that message is too long. Please keep it to 1,000 characters or fewer."
@@ -525,7 +525,7 @@ def _color_console() -> Console:
     return Console(file=io.StringIO(), force_terminal=True, color_system="standard")
 
 
-# print_warning() renders the given message in red on a color terminal. (base)
+# print_warning() renders the given message in red on a color terminal. (happy)
 def test_print_warning_renders_message_in_red():
     console = _color_console()
 
@@ -579,7 +579,7 @@ def test_print_warning_accepts_empty_message():
     assert console.file.getvalue() == "\n"
 
 
-# With no console given, the warning prints to stdout via the default console. (base)
+# With no console given, the warning prints to stdout via the default console. (happy)
 def test_print_warning_defaults_to_stdout_console(capsys):
     interactive.print_warning("System issue")
 
@@ -589,7 +589,7 @@ def test_print_warning_defaults_to_stdout_console(capsys):
 # If the menu can't be loaded at startup (database file missing, or present without
 # the dishes table), the CLI shows a red warning that includes the --init-db fix and
 # exits with 1 before taking any customer message, instead of failing every
-# conversation. (error)
+# conversation. (failure)
 @pytest.mark.parametrize("db_state", ["missing_file", "missing_table"])
 def test_run_interactive_exits_with_remedy_when_menu_cannot_load(
     monkeypatch, tmp_path, db_state
@@ -610,7 +610,7 @@ def test_run_interactive_exits_with_remedy_when_menu_cannot_load(
 
 
 # When the restaurant timezone isn't configured, the CLI shows a red warning with the
-# --set-tz fix and exits 1 before taking any customer message. (error)
+# --set-tz fix and exits 1 before taking any customer message. (failure)
 def test_run_interactive_exits_with_remedy_when_timezone_not_set(monkeypatch):
     monkeypatch.setattr(restaurant_time, "_timezone", None)
     monkeypatch.setattr(db, "get_restaurant_timezone", lambda *a, **k: None)
@@ -628,7 +628,7 @@ def test_run_interactive_exits_with_remedy_when_timezone_not_set(monkeypatch):
 
 
 # The generic error message is one fixed, friendly text that tells the customer to
-# exit and try again, with a counter fallback. (base)
+# exit and try again, with a counter fallback. (happy)
 def test_generic_error_message_text():
     assert messages.GENERIC_ERROR_MESSAGE == (
         "Sorry, something went wrong on our end. Please exit the application and try "
@@ -637,7 +637,7 @@ def test_generic_error_message_text():
 
 
 # The order-not-placed message states plainly that the order was not placed, with the
-# same recovery guidance. (base)
+# same recovery guidance. (happy)
 def test_order_not_placed_message_text():
     assert messages.ORDER_NOT_PLACED_MESSAGE == (
         "Sorry, something went wrong on our end and your order was not placed. Please "
@@ -648,7 +648,7 @@ def test_order_not_placed_message_text():
 
 # Every unrecoverable failure that escapes a conversation shows only the generic
 # message, waits for Enter, and exits with code 1 without running another
-# conversation or printing the raw error. (error)
+# conversation or printing the raw error. (failure)
 @pytest.mark.parametrize(
     "error",
     [
@@ -692,7 +692,7 @@ def test_run_interactive_shows_generic_message_and_exits_on_unrecoverable_error(
 
 
 # A failure to record a confirmed order tells the customer their order was not
-# placed, then exits. (error)
+# placed, then exits. (failure)
 def test_run_interactive_shows_order_not_placed_message(monkeypatch, capsys):
     warnings = record_warnings(monkeypatch)
     monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
@@ -713,7 +713,7 @@ def test_run_interactive_shows_order_not_placed_message(monkeypatch, capsys):
 
 
 # The unrecoverable failure is logged at ERROR with its exception, so the handler
-# sends the traceback to Phoenix. (error)
+# sends the traceback to Phoenix. (failure)
 def test_run_interactive_logs_unrecoverable_error_with_exception(monkeypatch, caplog):
     record_warnings(monkeypatch)
     monkeypatch.setattr(interactive, "build_graph", lambda checkpointer: object())
