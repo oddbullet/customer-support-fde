@@ -36,3 +36,7 @@ REFUND_NOT_SUBMITTED = (
 COMPLAINT_NOT_RECORDED = (
     "Your complaint was not recorded because of a problem on our end. " + _ASK_GUIDANCE
 )
+
+INPUT_TOO_LONG = (
+    "Sorry, that message is too long. Please keep it to 1,000 characters or fewer."
+)

@@ -41,6 +41,9 @@ WORKFLOW_ITERATION_LIMIT = 100
 # of the client retries and circuit breaker; after that the CLI gives up.
 MODEL_RETRY_LIMIT = 2
 
+# Longest customer message accepted; a longer one is refused before it reaches the model.
+MAX_INPUT_CHARS = 1000
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +60,22 @@ def _fail_and_exit(message: str, console: Console) -> int:
     console.print("Press Enter to exit.")
     sys.stdin.readline()
     return 1
+
+
+def _read_customer_input(console: Console) -> str:
+    # Blank lines are skipped and over-long ones refused, so neither reaches the graph.
+    while True:
+        console.print("> ", end="")
+        line = sys.stdin.readline()
+        if not line:
+            raise EOFError
+        text = line.rstrip("\n")
+        if not text.strip():
+            continue
+        if len(text) > MAX_INPUT_CHARS:
+            print_warning(messages.INPUT_TOO_LONG, console)
+            continue
+        return text
 
 
 def _invoke_with_status(console: Console, graph, state_or_command, config) -> SupportState:
@@ -93,8 +112,7 @@ def _run_conversation(console: Console, graph, query: str) -> SupportState:
 
     while "__interrupt__" in result:
         _print_turn(console, "ai", result["__interrupt__"][0].value)
-        console.print("> ", end="")
-        answer = sys.stdin.readline().rstrip("\n")
+        answer = _read_customer_input(console)
         console.print()
         result = _invoke_with_retry(console, graph, Command(resume=answer), config)
 
@@ -135,8 +153,7 @@ def run_interactive() -> int:
 
     while True:
         try:
-            console.print("> ", end="")
-            query = sys.stdin.readline().rstrip("\n")
+            query = _read_customer_input(console)
 
             if query.strip().lower() == "/exit":
                 return 0
@@ -149,7 +166,7 @@ def run_interactive() -> int:
                 return _fail_and_exit(messages.GENERIC_ERROR_MESSAGE, console)
             content = result["messages"][-1].content if result.get("messages") else ""
             _print_turn(console, "ai", content)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             console.print()
             return 0
         except OrderNotPlacedError as exc:

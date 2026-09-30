@@ -146,14 +146,15 @@ def _refund_ticket(
 
 
 # write_refund_ticket writes the issue, sentiment, order ID, and
-# refund-created status to refund-<order_id>.md for a known order id. (base)
+# refund-created status to refund-<order_id>-<suffix>.md for a known order id. (base)
 def test_write_refund_ticket_known_order_id(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
     refund_ticket = _refund_ticket()
 
     path = tickets.write_refund_ticket(refund_ticket)
 
-    assert path == tmp_path / "refund-K7QP3M9X.md"
+    assert path.parent == tmp_path
+    assert re.match(r"refund-K7QP3M9X-[0-9a-f]{8}\.md$", path.name)
     content = path.read_text()
     assert "Customer received the wrong dish." in content
     assert "negative" in content
@@ -241,13 +242,39 @@ def test_write_refund_ticket_header_unchanged(monkeypatch, tmp_path):
     assert content.startswith("# Refund Ticket\n")
 
 
-# A second write for the same known order_id replaces the first file. (edge)
-def test_write_refund_ticket_repeat_write_replaces_file(monkeypatch, tmp_path):
+# Two refund conversations about the same order write two separate tickets; the
+# second never overwrites the first. (edge)
+def test_write_refund_ticket_same_order_twice_keeps_both_files(monkeypatch, tmp_path):
     monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
-    tickets.write_refund_ticket(_refund_ticket())
+    first = tickets.write_refund_ticket(_refund_ticket())
 
-    tickets.write_refund_ticket(_refund_ticket(refund_created=False))
+    second = tickets.write_refund_ticket(_refund_ticket(refund_created=False))
 
-    matching = list(tmp_path.glob("refund-K7QP3M9X.md"))
-    assert len(matching) == 1
-    assert "**Refund Request Created:** No" in matching[0].read_text()
+    assert first != second
+    assert len(list(tmp_path.glob("refund-K7QP3M9X-*.md"))) == 2
+    assert "**Refund Request Created:** Yes" in first.read_text()
+    assert "**Refund Request Created:** No" in second.read_text()
+
+
+# A blank or spaces-only issue/sentiment falls back to the same default as a missing
+# one, so no ticket field is ever empty. (edge)
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_write_refund_ticket_renders_blank_fields_as_defaults(monkeypatch, tmp_path, blank):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
+    refund_ticket = _refund_ticket(issue=blank, sentiment=blank)
+
+    content = tickets.write_refund_ticket(refund_ticket).read_text()
+
+    assert "**Issue:** Not recorded" in content
+    assert "**Customer Sentiment:** unavailable" in content
+
+
+# Chinese characters and emoji in the customer's issue reach the ticket file
+# unchanged. (edge)
+def test_write_refund_ticket_keeps_chinese_and_emoji(monkeypatch, tmp_path):
+    monkeypatch.setenv("CUSTOMER_SUPPORT_TICKETS_DIR", str(tmp_path))
+    refund_ticket = _refund_ticket(issue="My 宫保鸡丁 was missing 😊")
+
+    content = tickets.write_refund_ticket(refund_ticket).read_text(encoding="utf-8")
+
+    assert "**Issue:** My 宫保鸡丁 was missing 😊" in content

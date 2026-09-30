@@ -6,12 +6,16 @@ from langchain_core.messages import ToolMessage
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from customer_support_fde import clock, db, messages, refund_policy, restaurant_time
 from customer_support_fde.state import SupportState
 
 _logger = logging.getLogger(__name__)
+
+# Rejects an empty or spaces-only complaint; the model gets the validation message
+# back and asks the customer what went wrong.
+NonBlankStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 def _store_failure(content: str, tool_call_id: str) -> Command:
@@ -144,7 +148,7 @@ def process_refund_request(
     undelivered_items: list[UndeliveredItem],
     substitute_dishes: list[str],
     return_confirmed: bool,
-    customer_issue: str,
+    customer_issue: NonBlankStr,
     state: Annotated[SupportState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
@@ -290,7 +294,7 @@ def process_refund_request(
 
 @tool
 def log_complaint(
-    description: str,
+    description: NonBlankStr,
     state: Annotated[SupportState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:

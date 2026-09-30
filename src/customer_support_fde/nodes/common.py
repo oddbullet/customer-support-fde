@@ -34,6 +34,10 @@ LLM_MAX_RETRIES = 3
 # Per-attempt cap; without it the openai client waits up to 600 seconds per attempt.
 LLM_TIMEOUT_SECONDS = 40
 
+# Per-request output cap. The timeout only bounds the wait between received chunks, so
+# a runaway generation that keeps streaming is stopped by this instead.
+LLM_MAX_OUTPUT_TOKENS = 4000
+
 # The agent retries silently; if the tool keeps failing, the tool-call limit ends the
 # conversation and the CLI shows its fixed warning, so the agent never explains it.
 TOOL_ERROR_MESSAGE = (
@@ -51,6 +55,7 @@ def _chat_model(model: str, max_retries: int) -> ChatOpenAI:
         model=model,
         max_retries=max_retries,
         timeout=LLM_TIMEOUT_SECONDS,
+        max_tokens=LLM_MAX_OUTPUT_TOKENS,
     )
 
 
@@ -221,6 +226,7 @@ __all__ = [
     "HISTORY_TOKEN_THRESHOLD",
     "LLM_MAX_RETRIES",
     "LLM_TIMEOUT_SECONDS",
+    "LLM_MAX_OUTPUT_TOKENS",
     "TOOL_ERROR_MESSAGE",
     "build_llm",
     "handle_tool_error",
