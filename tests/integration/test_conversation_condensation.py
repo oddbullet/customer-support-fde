@@ -480,6 +480,7 @@ def test_falls_back_to_full_history_after_two_failed_attempts(
     reply = llm.bind_tools.return_value.invoke.return_value
     assert result["messages"] == history + [reply]
     assert _conversation_sent_to_agent(llm) == history
+    # Check if issue was logged.
     assert any("condense" in r.getMessage().lower() for r in caplog.records)
 
 
